@@ -151,7 +151,7 @@ netstat -an | grep "10.100.1.16"
 
 ---
 
-## Étape 5 — Hook de démarrage (timing reboot) (timing reboot)
+## Étape 5 — Hook de démarrage (timing reboot)
 
 syslog-ng démarre avant que les agents soient joignables au boot. Créer `/usr/local/etc/rc.syshook.d/start/99-syslog-ng-restart` :
 
@@ -198,3 +198,7 @@ Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événe
 ---
 
 > ℹ️ *Testé sur OPNsense 26.1, UTMStack v11.2.8, agent Windows v11.1.4*
+
+---
+
+[← Installation & Architecture](01-installation.md) | [→ Intégration CrowdSec](03-crowdsec.md)

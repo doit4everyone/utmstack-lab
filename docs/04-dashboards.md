@@ -237,3 +237,7 @@ Les événements apparaissent dans les dashboards dans les 30 secondes.
 ---
 
 > ℹ️ *Testé sur UTMStack v11.2.8, OpenSearch 2.x intégré*
+
+---
+
+[← Intégration CrowdSec](03-crowdsec.md) | [→ SOAR & Incident Response](05-soar.md)

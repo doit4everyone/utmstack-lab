@@ -186,3 +186,7 @@ tcp4 ... 10.100.1.254.XXXXX  10.100.1.16.7019  ESTABLISHED
 ---
 
 > ℹ️ *Testé sur OPNsense 26.1, CrowdSec 1.6.x, UTMStack v11.2.8*
+
+---
+
+[← Intégration Suricata](02-suricata.md) | [→ Dashboards](04-dashboards.md)
