@@ -37,7 +37,7 @@ description: "UTMStack v11.2.8 Community Edition — Guide de déploiement pour 
 2. [Guides disponibles](#guides-disponibles)
    - [Installation & Architecture](#-installation--architecture)
    - [Intégration Suricata](#-intégration-suricata-opnsense)
-   - [Intégration CrowdSec](#-intégration-crowdsec)
+   - [Intégration CrowdSec](03-crowdsec.md)
    - [Dashboards UTMStack](#-dashboards-utmstack)
    - [SOAR & Automatisation](#-soar--automatisation)
    - [Checklist post-migration OPNsense](#-checklist-post-migration-opnsense)
