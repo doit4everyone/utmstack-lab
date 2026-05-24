@@ -1,9 +1,8 @@
 title: "UTMStack Lab — Guide et Procédures de déploiement"
-description: "UTMStack v11.2.8 Community Edition — Procédures de déploiement pour lab PME Suisse 🇨🇭. Installation VMware, Suricata, CrowdSec, SOAR automatisé, OPNsense."
+description: "UTMStack v11.2.8 Community Edition — Procédures de déploiement pour lab PME Suisse. Installation VMware, Suricata, CrowdSec, SOAR, OPNsense."
 url: "https://doit4everyone.github.io"
 baseurl: "/utmstack-lab"
 lang: fr
-
 theme: jekyll-theme-minimal
 plugins:
   - jekyll-seo-tag
