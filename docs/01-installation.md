@@ -24,7 +24,7 @@ description: "Guide complet installation UTMStack v11.2.8 Community Edition sous
 
 # Installation UTMStack v11.2.8 sous VMware Workstation
 
-> [← Retour à l'index](index.md)
+> [← Retour à l'index](../)
 
 ## 📋 Table des matières
 
