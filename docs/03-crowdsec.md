@@ -1,6 +1,6 @@
 # Intégration CrowdSec — OPNsense → UTMStack
 
-> [← Retour à l'index](../README.md)
+> [← Retour à l'index](../)
 
 ## Architecture
 
