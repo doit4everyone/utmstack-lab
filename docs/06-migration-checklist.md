@@ -24,7 +24,7 @@ description: "Points de vigilance après migration OPNsense 25.7 vers 26.1. GUI 
 
 # Checklist post-migration OPNsense 26.1
 
-> [← Retour à l'index](index.md)
+> [← Retour à l'index](../)
 
 ## 📋 Table des matières
 
