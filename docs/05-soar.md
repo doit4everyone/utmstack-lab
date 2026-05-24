@@ -24,7 +24,7 @@ description: "Configuration du SOAR UTMStack v11.2.8 — Ban automatique CrowdSe
 
 # SOAR & Automatisation
 
-> [← Retour à l'index](../README.md)
+> [← Retour à l'index](../)
 
 > ⚠️ **Version préliminaire v0.1** — Cette documentation couvre l'infrastructure SOAR. Les tests Red Team / Kali seront ajoutés en V4.
 
