@@ -3,9 +3,7 @@ description: "UTMStack v11.2.8 Community Edition — Procédures de déploiement
 url: "https://doit4everyone.github.io"
 baseurl: "/utmstack-lab"
 lang: fr
-author:
-  name: "DoIt4Everyone"
-  url: "https://doit4everyone.github.io"
+
 theme: jekyll-theme-minimal
 plugins:
   - jekyll-seo-tag
