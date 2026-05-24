@@ -42,7 +42,7 @@ lang: fr
 
 👉 **[Accéder à la documentation complète](https://doit4everyone.github.io/utmstack-lab/)**
 
-🇬🇧 **[English version](https://doit4everyone.github.io/utmstack-lab/index.en.html)**
+🇬🇧 *English version — coming soon*
 
 ---
 
