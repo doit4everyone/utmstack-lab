@@ -35,8 +35,8 @@ permalink: /
 
 # 🛡️ UTMStack Lab — Guide et Procédures de déploiement
 
-**UTMStack v11.2.8 Community Edition**  
-*Environnement de lab — Consultant IT indépendant — Suisse 🇨🇭*
+# **UTMStack v11.2.8 Community Edition**  
+# *Environnement de lab — Consultant IT indépendant — Suisse 🇨🇭*
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Disponible-brightgreen)](https://doit4everyone.github.io/utmstack-lab/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
