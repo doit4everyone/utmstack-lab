@@ -5,23 +5,32 @@ lang: fr
 permalink: /
 ---
 <style>
+  /* 1. On cache le header et le footer du thème */
   header, footer { display: none !important; }
+
+  /* 2. On réinitialise le conteneur principal pour le centrage et la typographie */
   .wrapper {
     max-width: 900px !important;
     margin: 0 auto !important;
-    float: none !important;
+    float: none !important; 
     position: relative !important;
     padding: 40px 20px !important;
+    
+    /* Typographie moderne et lisible */
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
     font-size: 1.1em !important;
   }
+
+  /* 3. On force la section de texte à prendre toute la largeur */
   section {
     width: 100% !important;
     float: none !important;
     margin: 0 !important;
+    padding-top: 0 !important;
   }
+
+  /* Centrage des titres principaux */
   h1, h2 { text-align: center; }
-  table { width: 100%; display: table; margin: 20px 0; }
 </style>
 
 # 🛡️ UTMStack Lab — Guide et Procédures de déploiement
