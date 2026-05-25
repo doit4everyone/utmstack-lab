@@ -60,7 +60,14 @@ Toutes les procédures sont testées et validées en conditions réelles sur un 
 | [03 — Intégration CrowdSec](docs/03-crowdsec.md) | Décisions CrowdSec → UTMStack, whitelist Azure |
 | [04 — Dashboards](docs/04-dashboards.md) | Visualisations Suricata & CrowdSec dans UTMStack |
 | [05 — SOAR & Automatisation](docs/05-soar.md) | Ban automatique CrowdSec via playbooks UTMStack |
-| [06 — Checklist Migration OPNsense 26.1](docs/06-migration-checklist.md) | Points de vigilance post-migration OPNsense 25.7 → 26.1 |
+
+---
+
+## 📎 Documents annexes
+
+| Document | Description |
+|----------|-------------|
+| [Checklist Migration OPNsense 26.1](docs/06-migration-checklist.md) | Points de vigilance post-migration OPNsense 25.7 → 26.1 |
 
 ---
 
