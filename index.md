@@ -54,6 +54,7 @@ Toutes les procédures sont testées et validées en conditions réelles sur un 
 | [03 — Intégration CrowdSec](docs/03-crowdsec.md) | Décisions CrowdSec → UTMStack, whitelist Azure |
 | [04 — Dashboards](docs/04-dashboards.md) | Visualisations Suricata & CrowdSec dans UTMStack |
 | [05 — SOAR & Automatisation](docs/05-soar.md) | Réponse automatique aux incidents via playbooks UTMStack ⚠️ *v0.1* |
+| [06 — SOC AI](docs/06-soc-ai.md) | Analyse automatique des alertes — Mistral AI, Gemini, création d'incidents |
 
 ---
 
@@ -92,7 +93,7 @@ Clé SSH SYSTEM, script soar_ban.sh OPNsense, déduplication, compatibilité Mic
 |--------|---------|--------|
 | V1 | Installation & Architecture | 🟢 Publié |
 | V2 | Configuration SIEM — Agents, sources de logs, règles | 📋 Planifié |
-| V3 | Modules complémentaires — SOC AI, OPNsense stack | 📋 Planifié |
+| V3 | Modules complémentaires — SOC AI, OPNsense stack | 🟡 En cours |
 | V4 | SOAR & Incident Response — Tests Red Team Kali | 🟡 En cours |
 | V5 | Red Team / Validation Kali | 📋 Planifié |
 
