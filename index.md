@@ -5,38 +5,30 @@ lang: fr
 permalink: /
 ---
 <style>
-  /* 1. On cache le header et le footer du thème */
   header, footer { display: none !important; }
-
-  /* 2. On réinitialise le conteneur principal pour le centrage et la typographie */
   .wrapper {
     max-width: 900px !important;
     margin: 0 auto !important;
-    float: none !important; 
+    float: none !important;
     position: relative !important;
     padding: 40px 20px !important;
-    
-    /* Typographie moderne et lisible */
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
     font-size: 1.1em !important;
   }
-
-  /* 3. On force la section de texte à prendre toute la largeur */
   section {
     width: 100% !important;
     float: none !important;
     margin: 0 !important;
     padding-top: 0 !important;
   }
-
-  /* Centrage des titres principaux */
   h1, h2 { text-align: center; }
+  table { width: 100%; display: table; margin: 20px 0; }
 </style>
 
 # 🛡️ UTMStack Lab — Guide et Procédures de déploiement
 
-# **UTMStack v11.2.8 Community Edition**  
-# *Environnement de lab — Consultant IT indépendant — Suisse 🇨🇭*
+**UTMStack v11.2.8 Community Edition**  
+*Environnement de lab — Consultant IT indépendant — Suisse 🇨🇭*
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Disponible-brightgreen)](https://doit4everyone.github.io/utmstack-lab/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -45,9 +37,11 @@ permalink: /
 
 ## 📖 À propos
 
-Ce site documente le déploiement complet d'un lab UTMStack v11.2.8 Community Edition dans un environnement de lab PME, incluant l'intégration Suricata, CrowdSec, et l'automatisation SOAR.
+Ce site documente le déploiement complet d'un lab **UTMStack v11.2.8 Community Edition** dans un environnement de lab simulant une infrastructure PME, incluant l'intégration Suricata IDS, CrowdSec, et l'automatisation SOAR pour la réponse automatique aux incidents.
 
-Toutes les procédures sont testées et validées en conditions réelles sur un HP ProDesk 400 G2 Mini sous VMware Workstation, avec OPNsense comme firewall.
+Toutes les procédures sont testées et validées en conditions réelles sur un HP ProDesk 400 G2 Mini sous VMware Workstation, avec OPNsense comme firewall/IDS.
+
+> ℹ️ **UTMStack est un SIEM** — il centralise, corrèle et analyse les événements de sécurité. Un SIEM ne remplace pas un antivirus/EDR (protection des endpoints) ni une solution de conformité et protection des données (type Microsoft Purview). Ces outils sont complémentaires : le SIEM agit au niveau réseau et infrastructure, l'EDR protège les machines de l'intérieur.
 
 ---
 
@@ -56,10 +50,74 @@ Toutes les procédures sont testées et validées en conditions réelles sur un 
 | Guide | Description |
 |-------|-------------|
 | [01 — Installation & Architecture](docs/01-installation.md) | Installation VMware, bug DHCP critique, optimisations lab |
-| [02 — Intégration Suricata](docs/02-suricata.md) | Pipeline OPNsense → UTMStack port 7019 |
+| [02 — Intégration Suricata](docs/02-suricata.md) | Pipeline OPNsense → UTMStack port 7019, syslog-ng |
 | [03 — Intégration CrowdSec](docs/03-crowdsec.md) | Décisions CrowdSec → UTMStack, whitelist Azure |
 | [04 — Dashboards](docs/04-dashboards.md) | Visualisations Suricata & CrowdSec dans UTMStack |
-| [05 — SOAR & Automatisation](docs/05-soar.md) | Ban automatique CrowdSec via playbooks UTMStack |
+| [05 — SOAR & Automatisation](docs/05-soar.md) | Réponse automatique aux incidents via playbooks UTMStack ⚠️ *v0.1* |
+
+---
+
+## 🔧 Guides disponibles
+
+### 🔧 Installation & Architecture
+[→ Installation UTMStack v11 sous VMware Workstation](docs/01-installation.md)
+
+Configuration VM, procédure d'installation, optimisations post-install, ports importants v11.2.8.
+
+### 🔍 Intégration Suricata (OPNsense)
+[→ Pipeline OPNsense → UTMStack](docs/02-suricata.md)
+
+Architecture syslog-ng, parseur natif port 7019, persistance des services OPNsense.
+
+### 🛡️ Intégration CrowdSec
+[→ CrowdSec → UTMStack](docs/03-crowdsec.md)
+
+Forwarding des décisions vers UTMStack, bouncer OPNsense, whitelist Azure, dashboard.
+
+### 📊 Dashboards UTMStack
+[→ Création des dashboards Suricata & CrowdSec](docs/04-dashboards.md)
+
+Visualisations OpenSearch, index v11-log-suricata-*, champs géolocalisation, threat map.
+
+### ⚡ SOAR & Automatisation
+[→ Playbooks automatiques — Réponse aux incidents](docs/05-soar.md)
+
+Clé SSH SYSTEM, script soar_ban.sh OPNsense, déduplication, compatibilité Microsoft Defender for Endpoint.
+
+---
+
+## 📅 Roadmap documentation
+
+| Volume | Contenu | Statut |
+|--------|---------|--------|
+| V1 | Installation & Architecture | 🟢 Publié |
+| V2 | Configuration SIEM — Agents, sources de logs, règles | 📋 Planifié |
+| V3 | Modules complémentaires — SOC AI, OPNsense stack | 📋 Planifié |
+| V4 | SOAR & Incident Response — Tests Red Team Kali | 🟡 En cours |
+| V5 | Red Team / Validation Kali | 📋 Planifié |
+
+---
+
+## 🖥️ Environnement de lab
+
+| Composant | Détail |
+|-----------|--------|
+| **SIEM** | UTMStack v11.2.8 Community Edition |
+| **Hôte** | HP ProDesk 400 G2 Mini — i7-6700 — 32 GB RAM |
+| **Hyperviseur** | VMware Workstation |
+| **Firewall / IDS** | OPNsense 26.1 + Suricata 7.x |
+| **OS SIEM** | Ubuntu 24.04 LTS |
+| **Agents** | Windows Server 2022 — gest-srv (10.100.1.16), DC01 (10.100.1.1) |
+
+---
+
+## 🔩 Stack technique
+
+- **IDS** : Suricata 7.x sur OPNsense — règles Emerging Threats Open
+- **HIDS** : CrowdSec + bouncer OPNsense — blocage temps réel
+- **SOAR** : UTMStack Incident Response + SSH → CrowdSec
+- **Logs** : syslog-ng → Agent UTMStack → OpenSearch
+- **SOC AI** : Mistral AI — analyse d'alertes assistée
 
 ---
 
@@ -71,31 +129,9 @@ Toutes les procédures sont testées et validées en conditions réelles sur un 
 
 ---
 
-## 🖥️ Environnement de lab
-
-| Composant | Détail |
-|-----------|--------|
-| **SIEM** | UTMStack v11.2.8 Community Edition |
-| **Hôte** | HP ProDesk 400 G2 Mini — i7-6700 — 32 GB RAM |
-| **Hyperviseur** | VMware Workstation |
-| **Firewall** | OPNsense 26.1 |
-| **OS SIEM** | Ubuntu 24.04 LTS |
-| **Agent** | Windows Server 2022 (gest-srv) |
-
----
-
-## 🔧 Stack technique
-
-- **IDS** : Suricata 7.x sur OPNsense — règles ET Open
-- **HIDS** : CrowdSec + bouncer OPNsense
-- **SOAR** : UTMStack Incident Response + SSH → CrowdSec
-- **Logs** : syslog-ng → Agent UTMStack → OpenSearch
-
----
-
 ## ☕ Soutenir le projet
 
-Si ces procédures vous ont été utiles :
+Ces guides représentent des dizaines d'heures de tests en environnements réels.
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/R5R31YHNIB)
 
