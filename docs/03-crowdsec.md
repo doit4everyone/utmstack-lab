@@ -1,3 +1,28 @@
+---
+title: "Intégration CrowdSec → UTMStack | DoIt4Everyone"
+description: "Procédure d'intégration CrowdSec dans UTMStack v11.2.8. Forwarding des décisions, bouncer OPNsense, whitelist Azure, dashboard."
+lang: fr
+---
+<style>
+  header, footer { display: none !important; }
+  .wrapper {
+    max-width: 900px !important;
+    margin: 0 auto !important;
+    float: none !important;
+    position: relative !important;
+    padding: 40px 20px !important;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+    font-size: 1.1em !important;
+  }
+  section {
+    width: 100% !important;
+    float: none !important;
+    margin: 0 !important;
+  }
+  h1, h2 { text-align: center; }
+  table { width: 100%; display: table; margin: 20px 0; }
+</style>
+
 # Intégration CrowdSec — OPNsense → UTMStack
 
 > [← Retour à l'index](../)
@@ -46,7 +71,6 @@ fi
 while true; do
     LAST_ID=$(cat "$LAST_FILE")
 
-    # Récupérer les décisions depuis le dernier ID connu
     $CSCLI decisions list -o json 2>/dev/null | \
     /usr/local/bin/python3 -c "
 import sys, json
