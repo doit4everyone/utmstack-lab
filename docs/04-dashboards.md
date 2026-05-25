@@ -170,21 +170,21 @@ Types attendus : `alert`, `http`, `anomaly`, `dns`, `flow`
 
 **Save dashboard → `Dashboard Suricata`**
 
-Le sélecteur de date global en haut à droite s'applique à toutes les visualisations simultanément — utile pour l'investigation sur une plage horaire spécifique.
-
 ---
 
 ## Dashboard CrowdSec
 
 ### Index et données disponibles
 
-Les décisions CrowdSec arrivent dans l'index **`v11-log-syslog-*`** (pas d'index dédié dans UTMStack v11.2.8). Les données sont filtrées par la présence de `CROWDSEC_BAN` dans le champ `raw`.
+Les décisions CrowdSec arrivent dans l'index **`v11-log-syslog-*`**. Les données sont filtrées par la présence de `CROWDSEC_BAN` dans le champ `raw`.
 
 Format d'un événement dans `raw` :
 
 ```
-<169>May 20 10:14:18 ms.bsculier.ch crowdsec[83339]: CROWDSEC_BAN | ip=117.175.140.121 | reason=crowdsecurity/http-probing | country=CN | as=China Mobile | type=ban | path=/admin | ua=python-requests
+<169>May 25 16:45:53 ms.bsculier.ch crowdsec[22617]: CROWDSEC_BAN | ip=20.163.15.91 | reason=utmstack | country=US | as=AS8075 | type=ban | path=/ | ua=-
 ```
+
+> ℹ️ Le champ `country` est inclus dans le message `raw` mais n'est pas extrait comme champ structuré par UTMStack v11.2.8 — la visualisation Top Pays n'est pas disponible pour les données CrowdSec.
 
 ---
 
@@ -245,8 +245,6 @@ Format d'un événement dans `raw` :
 
 ## Test des visualisations
 
-Pour vérifier que les données arrivent sans attendre un vrai incident, injecter un événement de test sur OPNsense :
-
 **Test Suricata :**
 ```bash
 logger -p local5.info -t suricata '{"event_type":"alert","timestamp":"now","src_ip":"1.2.3.4","alert":{"signature":"TEST RULE","severity":1}}'
@@ -254,7 +252,7 @@ logger -p local5.info -t suricata '{"event_type":"alert","timestamp":"now","src_
 
 **Test CrowdSec :**
 ```bash
-logger -p local5.alert -t crowdsec "CROWDSEC_BAN | ip=1.2.3.4 | reason=test | country=CH | as=TestAS | type=ban | path=/ | ua=test"
+logger -p local5.alert -t crowdsec "CROWDSEC_BAN | ip=1.2.3.4 | reason=test | country=CH | as=AS0 | type=ban | path=/ | ua=test"
 ```
 
 Les événements apparaissent dans les dashboards dans les 30 secondes.

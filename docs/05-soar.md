@@ -1,6 +1,7 @@
 ---
-title: "SOAR & Automatisation — UTMStack Lab"
-description: "Configuration du SOAR UTMStack v11.2.8 — Ban automatique CrowdSec via SSH, flows, clé SSH SYSTEM, script OPNsense."
+title: "SOAR & Automatisation — UTMStack Lab | DoIt4Everyone"
+description: "Configuration du SOAR UTMStack v11.2.8 — Ban automatique CrowdSec via SSH, GeoIP enrichissement, clé SSH SYSTEM, script OPNsense, compatibilité MDE."
+lang: fr
 ---
 <style>
   header, footer { display: none !important; }
@@ -26,7 +27,7 @@ description: "Configuration du SOAR UTMStack v11.2.8 — Ban automatique CrowdSe
 
 > [← Retour à l'index](../)
 
-> ⚠️ **Version préliminaire v0.1** — Cette documentation couvre l'infrastructure SOAR. Les tests Red Team / Kali seront ajoutés en V4.
+> ⚠️ **Version v0.1** — Les tests Red Team / Kali seront ajoutés en V4.
 
 ---
 
@@ -39,9 +40,11 @@ Flow SOAR déclenche soar_ban.bat (agent gest-srv)
     ↓
 SSH → OPNsense (10.100.1.254)
     ↓
-soar_ban.sh vérifie si l'IP est déjà bannie
+soar_ban.sh — GeoIP lookup + déduplication + cscli ban
     ↓
 CrowdSec banne l'IP 24h
+    ↓
+logger syslog → CROWDSEC_BAN avec country/ASN → UTMStack
 ```
 
 ---
@@ -61,10 +64,8 @@ ssh-keygen -t ed25519 -f C:\UTMStack\ssh\soar_key -N ""
 ### Dépôt de la clé dans le profil SYSTEM
 
 ```powershell
-# Créer le répertoire .ssh de SYSTEM si inexistant
 mkdir C:\Windows\System32\config\systemprofile\.ssh -ErrorAction SilentlyContinue
 
-# Copier la clé via une tâche planifiée (seul SYSTEM peut écrire dans son profil)
 schtasks /create /tn "CopySOARKey" /tr "cmd /c copy /y C:\UTMStack\ssh\soar_key C:\Windows\System32\config\systemprofile\.ssh\soar_key" /sc once /st 00:00 /ru SYSTEM /f
 schtasks /run /tn "CopySOARKey"
 ping -n 8 127.0.0.1 > nul
@@ -72,8 +73,6 @@ schtasks /delete /tn "CopySOARKey" /f
 ```
 
 ### Autorisation de la clé sur OPNsense
-
-Sur **OPNsense** :
 
 ```bash
 # Afficher la clé publique (depuis gest-srv)
@@ -84,9 +83,9 @@ echo "ssh-ed25519 AAAA... utmstack-soar" > /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
 ```
 
-> ⚠️ **Persistance** — La clé `authorized_keys` est perdue après un reboot OPNsense si elle n'est pas configurée via **System → Access → Users → root → Authorized Keys** dans l'interface GUI.
+> ⚠️ **Persistance** — Configurer la clé via **System → Access → Users → root → Authorized Keys** dans l'interface GUI OPNsense pour survivre aux reboots.
 
-### Test de la connexion SSH depuis SYSTEM
+### Test depuis SYSTEM
 
 ```cmd
 schtasks /create /tn "SOARTest" /tr "cmd /c C:\Windows\System32\OpenSSH\ssh.exe -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -o ConnectTimeout=10 -i C:\Windows\System32\config\systemprofile\.ssh\soar_key root@10.100.1.254 echo ssh_ok >> C:\UTMStack\soar_debug.log 2>&1" /sc once /st 00:00 /ru SYSTEM /f
@@ -95,13 +94,11 @@ ping -n 8 127.0.0.1 > nul
 type C:\UTMStack\soar_debug.log
 ```
 
-Résultat attendu : `ssh_ok` dans le log.
-
 ---
 
 ## Étape 2 — Script soar_ban.sh sur OPNsense
 
-Ce script gère la déduplication — il vérifie si l'IP est déjà bannie avant d'agir.
+Ce script gère la déduplication et l'enrichissement GeoIP via ipapi.co (1000 req/jour gratuit).
 
 ```bash
 nano /usr/local/bin/soar_ban.sh
@@ -110,8 +107,18 @@ nano /usr/local/bin/soar_ban.sh
 ```sh
 #!/bin/sh
 IP=$1
+
+# GeoIP lookup (ipapi.co - 1000 req/jour gratuit)
+COUNTRY=$(fetch -qo - "https://ipapi.co/$IP/country_code/" 2>/dev/null | tr -d '\n\r')
+ASN=$(fetch -qo - "https://ipapi.co/$IP/asn/" 2>/dev/null | tr -d '\n\r')
+[ -z "$COUNTRY" ] || [ "$COUNTRY" = "Undefined" ] && COUNTRY="Unknown"
+[ -z "$ASN" ] || [ "$ASN" = "Undefined" ] && ASN="AS0"
+
 if ! /usr/local/bin/cscli decisions list --ip "$IP" 2>/dev/null | grep -q "ban"; then
     /usr/local/bin/cscli decisions add --ip "$IP" --duration 24h --reason utmstack
+    logger -p local5.alert -t crowdsec \
+      "CROWDSEC_BAN | ip=$IP | reason=utmstack | country=$COUNTRY | as=$ASN | type=ban | path=/ | ua=-"
+    echo "Decision successfully added for $IP ($COUNTRY / $ASN)"
 else
     echo "IP $IP already banned, skipping"
 fi
@@ -119,35 +126,42 @@ fi
 
 ```bash
 chmod +x /usr/local/bin/soar_ban.sh
+cp /usr/local/bin/soar_ban.sh /conf/soar_ban.sh
 ```
+
+> ℹ️ Les IPs privées (192.168.x.x) retournent "Undefined" depuis ipapi.co — comportement normal.
+
+> ℹ️ Les bans SOAR via `cscli` sont loggués directement par soar_ban.sh. Le script `crowdsec-to-syslog.py` traite uniquement les alertes CrowdSec natives — aucun doublon.
 
 ### Persistance aux reboots et mises à jour OPNsense
 
 ```bash
-# Sauvegarder dans /conf/ (stockage persistant)
-cp /usr/local/bin/soar_ban.sh /conf/soar_ban.sh
+nano /usr/local/etc/rc.syshook.d/start/98-soar-ban
+```
 
-# Hook de restauration au démarrage
-cat > /usr/local/etc/rc.syshook.d/start/98-soar-ban << 'EOF'
+```sh
 #!/bin/sh
 cp /conf/soar_ban.sh /usr/local/bin/soar_ban.sh
 chmod +x /usr/local/bin/soar_ban.sh
-EOF
+```
+
+```bash
 chmod +x /usr/local/etc/rc.syshook.d/start/98-soar-ban
 ```
 
-### Test du script
+### Test
 
 ```bash
-/usr/local/bin/soar_ban.sh 192.168.99.1   # → Decision successfully added
-/usr/local/bin/soar_ban.sh 192.168.99.1   # → IP already banned, skipping
+/usr/local/bin/soar_ban.sh 45.205.1.71
+# → Decision successfully added for 45.205.1.71 (ES / AS215925)
+
+/usr/local/bin/soar_ban.sh 45.205.1.71
+# → IP 45.205.1.71 already banned, skipping
 ```
 
 ---
 
 ## Étape 3 — Script soar_ban.bat sur gest-srv
-
-Créer le fichier dans le répertoire de l'agent (répertoire de travail par défaut lors de l'exécution SOAR) :
 
 ```powershell
 Set-Content "C:\Program Files\UTMStack\UTMStack Agent\soar_ban.bat" -Encoding ASCII -Value '@echo off
@@ -164,6 +178,9 @@ echo [%DATE% %TIME%] Exit: %ERRORLEVEL% >> "%LOGFILE%"'
 - Rotation automatique du log à 1 MB
 - Timestamp sur chaque entrée
 - Exit code enregistré
+- Appel de soar_ban.sh avec l'IP uniquement (GeoIP géré côté OPNsense)
+
+> ⚠️ **Encodage** — Utiliser impérativement `-Encoding ASCII`. Un encodage UTF-16 (défaut PowerShell) rend le BAT silencieusement non fonctionnel.
 
 ---
 
@@ -193,12 +210,11 @@ Dans UTMStack → **SOAR → Automation Rules → New Rule** :
 
 ### ⚠️ Bug UTMStack v11.2.8 — Cache backend
 
-Après toute modification d'un flow (via UI ou DB), le backend conserve l'ancienne commande en mémoire. L'UI affiche également l'ancienne règle après sauvegarde.
+Après toute modification d'un flow, le backend conserve l'ancienne commande en mémoire. L'UI affiche également l'ancienne règle après sauvegarde — les modifications via l'interface ne sont pas fiables.
 
 **Procédure obligatoire après modification :**
 
 ```bash
-# Sur le serveur UTMStack
 docker exec -it $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
   "DELETE FROM utm_alert_response_rule_execution WHERE execution_status = 'PENDING';"
 
@@ -212,6 +228,8 @@ docker exec -it $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d ut
   "UPDATE utm_alert_response_rule SET rule_cmd = 'soar_ban.bat \$(adversary.ip)' WHERE id IN (5000, 5001);"
 ```
 
+> ℹ️ **Limitation** — UTMStack v11.2.8 n'expose pas `$(origin.geolocation.countryCode)` comme variable SOAR au niveau de l'alerte de corrélation, même si ce champ est présent dans les événements sous-jacents. L'enrichissement GeoIP est donc géré directement dans `soar_ban.sh`.
+
 ---
 
 ## Étape 5 — Compatibilité Microsoft Defender for Endpoint
@@ -223,21 +241,21 @@ Si MDE est actif sur l'agent Windows, les règles ASR bloquent silencieusement l
 - Log `soar.log` vide
 - Console interactive UTMStack freeze sur gest-srv
 
-**Cause :** La règle ASR `d1e49aac-8f56-4280-b9ba-993a6d77406c` (*Block process creations originating from PSExec and WMI commands*) bloque les processus enfants créés par le service agent UTMStack.
+**Cause :** La règle ASR `d1e49aac-8f56-4280-b9ba-993a6d77406c` (*Block process creations originating from PSExec and WMI commands*) bloque les processus enfants créés par le service agent UTMStack. MDE voit le pattern `service inconnu → cmd.exe → ssh.exe → connexion externe` comme un comportement C2 malware.
 
 **Lab — Offboarder MDE :**
 - M365 Defender portal → **Settings → Endpoints → Offboarding** → script local
-- Supprimer les clés de registre résiduelles après offboarding :
+- Supprimer les clés de registre résiduelles :
 
 ```powershell
 Remove-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Windows Defender Exploit Guard\ASR\Rules" -Force
 ```
 
+- Réinstaller l'agent UTMStack après offboarding (MDE peut endommager des fichiers)
+
 **Production — Indicator of Allow :**
 - M365 Defender → **Settings → Endpoints → Indicators → Files → Add**
 - Hash SHA1 de `utmstack_agent_service_windows_amd64.exe` → Action : **Allow**
-
-> ℹ️ Reinstaller l'agent UTMStack après offboarding MDE — MDE peut endommager des fichiers de l'agent pendant son fonctionnement.
 
 ---
 
@@ -246,17 +264,18 @@ Remove-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Windows De
 **Log soar.log (gest-srv) :**
 
 ```
-[24.05.2026 02:09:59,06] SOAR triggered - IP: 74.249.178.25
+[25.05.2026 16:45:53,87] SOAR triggered - IP: 20.163.15.91
 Warning: Permanently added '10.100.1.254' (ED25519) to the list of known hosts.
 level=info msg="Decision successfully added"
-[24.05.2026 02:09:59,25] Exit: 0
+Decision successfully added for 20.163.15.91 (US / AS8075)
+[25.05.2026 16:45:53,87] Exit: 0
 ```
 
 **Décisions CrowdSec (OPNsense) :**
 
 ```
 cscli decisions list
-→ Ip:74.249.178.25 | utmstack | ban | 23h59m
+→ Ip:20.163.15.91 | utmstack | ban | US | AS8075 (Microsoft)
 ```
 
 ---
@@ -277,11 +296,15 @@ SET rule_definition_def = rule_definition_def ||
 WHERE rule_name = 'PowerShell Empire Detection';
 ```
 
-Restart backend après modification.
+Restart backend après modification :
+
+```bash
+docker service update --force utmstack_backend
+```
 
 ---
 
-> ℹ️ *Testé sur UTMStack v11.2.8, agent Windows v11.1.4, OPNsense 26.1, CrowdSec 1.6.x*
+> ℹ️ *Testé sur UTMStack v11.2.8, agent Windows v11.1.4, OPNsense 26.1, CrowdSec 1.6.x, ipapi.co free tier*
 
 ---
 
