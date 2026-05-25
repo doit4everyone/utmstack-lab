@@ -1,6 +1,6 @@
 ---
 title: "Intégration Suricata OPNsense → UTMStack | DoIt4Everyone"
-description: "Procédure d'intégration Suricata dans UTMStack v11.2.8 via syslog-ng. Pipeline OPNsense → agent Windows port 7019, parseur natif, persistance."
+description: "Procédure d'intégration Suricata dans UTMStack v11.2.8 via syslog-ng natif. Pipeline OPNsense → agent Windows port 7019, source file() native, haute performance."
 lang: fr
 ---
 <style>
@@ -27,14 +27,12 @@ lang: fr
 
 > [← Retour à l'index](../)
 
-## Architecture finale
+## Architecture
 
 ```
 OPNsense (WAN only)
     ↓ /var/log/suricata/eve.json
-suricata_syslog (suricata-to-syslog.sh)
-    ↓ syslog tag=suricata
-syslog-ng (suricata-native.conf)
+syslog-ng source file() native (C, asynchrone)
     ↓ TCP 10.100.1.16:7019
 Agent UTMStack gest-srv
     ↓
@@ -43,7 +41,7 @@ Parseur natif Suricata UTMStack
 Alertes + champs parsés automatiquement
 ```
 
-> ℹ️ OPNsense tourne sous FreeBSD — aucun agent UTMStack ou Filebeat n'est disponible. Le pipeline syslog-ng est la solution standard pour cette plateforme.
+> ℹ️ OPNsense tourne sous FreeBSD — aucun agent UTMStack ou Filebeat n'est disponible. La source `file()` native syslog-ng lit directement `eve.json` en C de façon asynchrone — aucun script shell intermédiaire nécessaire.
 
 ---
 
@@ -51,7 +49,7 @@ Alertes + champs parsés automatiquement
 
 Dans UTMStack → **Data Sources** → sélectionner l'agent **gest-srv** → activer l'intégration **Suricata**.
 
-UTMStack fournit la commande à exécuter sur l'agent. Sur **gest-srv** en PowerShell Administrator :
+Sur **gest-srv** en PowerShell Administrator :
 
 ```powershell
 Start-Process "C:\Program Files\UTMStack\UTMStack Agent\utmstack_agent_service_windows_amd64.exe" `
@@ -76,109 +74,61 @@ Résultat attendu : `0.0.0.0:7019 ... LISTENING`
 
 ---
 
-## Étape 2 — Script de forwarding sur OPNsense
-
-Créer le script `/usr/local/bin/suricata-to-syslog.sh` :
-
-```bash
-#!/bin/sh
-tail -n 0 -F /var/log/suricata/eve.json | while read line; do
-    logger -p local5.info -t suricata "$line"
-done
-```
-
-Rendre exécutable :
-
-```bash
-chmod +x /usr/local/bin/suricata-to-syslog.sh
-```
-
----
-
-## Étape 3 — Service rc.d persistant sur OPNsense
-
-Créer `/usr/local/etc/rc.d/suricata_syslog` :
-
-```sh
-#!/bin/sh
-# PROVIDE: suricata_syslog
-# REQUIRE: suricata syslog-ng
-# KEYWORD: shutdown
-
-. /etc/rc.subr
-
-name="suricata_syslog"
-rcvar="suricata_syslog_enable"
-command="/usr/local/bin/suricata-to-syslog.sh"
-pidfile="/var/run/suricata_syslog.pid"
-
-start_cmd="${name}_start"
-stop_cmd="${name}_stop"
-
-suricata_syslog_start() {
-    echo "Starting ${name}."
-    daemon -p ${pidfile} ${command}
-}
-
-suricata_syslog_stop() {
-    echo "Stopping ${name}."
-    if [ -f ${pidfile} ]; then
-        kill $(cat ${pidfile})
-        rm -f ${pidfile}
-    fi
-}
-
-load_rc_config $name
-run_rc_command "$1"
-```
-
-```bash
-chmod +x /usr/local/etc/rc.d/suricata_syslog
-echo 'suricata_syslog_enable="YES"' >> /etc/rc.conf.local
-service suricata_syslog start
-service suricata_syslog status
-```
-
----
-
-## Étape 4 — Configuration syslog-ng sur OPNsense
+## Étape 2 — Configuration syslog-ng native sur OPNsense
 
 Créer `/usr/local/etc/syslog-ng.conf.d/suricata-native.conf` :
+
+```bash
+nano /usr/local/etc/syslog-ng.conf.d/suricata-native.conf
+```
 
 ```
 destination d_utmstack_suricata {
     network("10.100.1.16" port(7019) transport("tcp"));
 };
 
-filter f_suricata {
-    program("suricata");
-};
-
 log {
-    source(s_all);
-    filter(f_suricata);
+    source(s_suricata_eve);
     destination(d_utmstack_suricata);
 };
 ```
 
-Valider et recharger :
+> ℹ️ La source `s_suricata_eve` lit `/var/log/suricata/eve.json` — elle est définie dans la configuration syslog-ng existante d'OPNsense. Si elle n'existe pas, ajoutez-la :
+>
+> ```
+> source s_suricata_eve {
+>     file("/var/log/suricata/eve.json"
+>         follow-freq(1)
+>         flags(no-parse)
+>     );
+> };
+> ```
+
+Valider et redémarrer :
 
 ```bash
-syslog-ng --syntax-only && service syslog-ng reload
+syslog-ng --syntax-only && service syslog-ng restart
+service syslog-ng status
 ```
 
-Vérifier la connexion établie :
+Vérifier la connexion :
 
 ```bash
-netstat -an | grep "10.100.1.16"
+netstat -an | grep "10.100.1.16" | grep ESTABLISHED
 # Attendu : tcp4 ... 10.100.1.254.XXXXX 10.100.1.16.7019 ESTABLISHED
 ```
 
+> ℹ️ La connexion vers le port 7019 est établie de façon **lazy** — uniquement lors de l'arrivée du premier événement Suricata.
+
 ---
 
-## Étape 5 — Hook de démarrage (timing reboot)
+## Étape 3 — Hook de démarrage (timing reboot)
 
-syslog-ng démarre avant que les agents soient joignables au boot. Créer `/usr/local/etc/rc.syshook.d/start/99-syslog-ng-restart` :
+syslog-ng démarre avant que l'agent UTMStack soit joignable au boot. Un hook rc.syshook force un restart après 60 secondes :
+
+```bash
+nano /usr/local/etc/rc.syshook.d/start/99-syslog-ng-restart
+```
 
 ```sh
 #!/bin/sh
@@ -197,7 +147,7 @@ chmod +x /usr/local/etc/rc.syshook.d/start/99-syslog-ng-restart
 **Test d'injection manuelle :**
 
 ```bash
-logger -p local5.info -t suricata '{"event_type":"alert","timestamp":"now","src_ip":"1.2.3.4"}'
+echo '{"event_type":"alert","timestamp":"2026-05-25T20:55:00","src_ip":"1.2.3.4","alert":{"signature":"TEST NATIVE SYSLOG","severity":1}}' >> /var/log/suricata/eve.json
 ```
 
 Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événement doit apparaître avec les champs parsés :
@@ -210,6 +160,7 @@ Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événe
 | `log.alert.severity` | 1 (High) à 3 (Low) |
 | `log.alert.category` | Catégorie MITRE |
 | `origin.ip` | IP source de l'attaque |
+| `origin.geolocation.country` | Pays (enrichi automatiquement) |
 | `target.ip` | IP cible |
 
 ---
@@ -217,12 +168,13 @@ Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événe
 ## Points de vigilance
 
 - **Suricata WAN uniquement** — activer l'IDS sur l'interface LAN génère du bruit sur du trafic interne légitime (WinRM, Kerberos, etc.)
+- **Source unique** — si OPNsense a déjà une source `file()` sur `eve.json` (ex: ntopng), réutilisez-la dans le `log {}` plutôt que d'en créer une nouvelle — syslog-ng interdit deux sources lisant le même fichier
 - **`suricata-native.conf`** survit aux reboots et aux mises à jour OPNsense
 - **Port 7014 TCP** doit rester ouvert sur gest-srv pour le pipeline CrowdSec (voir `03-crowdsec.md`)
 
 ---
 
-> ℹ️ *Testé sur OPNsense 26.1, UTMStack v11.2.8, agent Windows v11.1.4*
+> ℹ️ *Testé sur OPNsense 26.1, UTMStack v11.2.8, agent Windows v11.1.4, syslog-ng 4.x*
 
 ---
 
