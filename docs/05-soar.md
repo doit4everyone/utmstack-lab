@@ -117,7 +117,7 @@ ASN=$(fetch -qo - "https://ipapi.co/$IP/asn/" 2>/dev/null | tr -d '\n\r')
 if ! /usr/local/bin/cscli decisions list --ip "$IP" 2>/dev/null | grep -q "ban"; then
     /usr/local/bin/cscli decisions add --ip "$IP" --duration 24h --reason utmstack
     logger -p local5.alert -t crowdsec \
-      "CROWDSEC_BAN | ip=$IP | reason=utmstack | country=$COUNTRY | as=$ASN | type=ban | path=/ | ua=-"
+      "CROWDSEC_BAN {\"event_type\":\"ban\",\"ip\":\"$IP\",\"reason\":\"utmstack\",\"country\":\"$COUNTRY\",\"as\":\"$ASN\",\"type\":\"ban\"}"
     echo "Decision successfully added for $IP ($COUNTRY / $ASN)"
 else
     echo "IP $IP already banned, skipping"

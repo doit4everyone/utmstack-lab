@@ -151,7 +151,7 @@ logger -p local5.info -t suricata '{"event_type":"test","timestamp":"now"}'
 
 **Test pipeline CrowdSec :**
 ```bash
-logger -p local5.alert -t crowdsec "CROWDSEC_BAN | ip=1.2.3.4 | reason=test | country=CH | as=TEST | type=ban | path=/ | ua=test"
+logger -p local5.alert -t crowdsec 'CROWDSEC_BAN {"event_type":"ban","ip":"1.2.3.4","reason":"test","country":"CH","as":"AS0","type":"ban"}'
 # Vérifier dans UTMStack Log Explorer : raw CONTAINS CROWDSEC_BAN
 ```
 

@@ -155,6 +155,8 @@ Types attendus : `alert`, `http`, `anomaly`, `dns`, `flow`
 
 > ℹ️ La visualisation **Region map** (carte monde) n'est pas fonctionnelle dans UTMStack v11.2.8 — utiliser le Bar horizontal pays à la place.
 
+> ℹ️ Ce widget utilise `origin.geolocation.country.keyword` (nom complet : "United States") pour le Dashboard Suricata. Le widget "Top Pays — Alertes Suricata" dans le Dashboard CrowdSec utilise `origin.geolocation.countryCode.keyword` (code ISO : "US") pour une meilleure lisibilité côte à côte avec les bans CrowdSec.
+
 ---
 
 ### Assemblage Dashboard Suricata
@@ -178,13 +180,63 @@ Types attendus : `alert`, `http`, `anomaly`, `dns`, `flow`
 
 Les décisions CrowdSec arrivent dans l'index **`v11-log-syslog-*`**. Les données sont filtrées par la présence de `CROWDSEC_BAN` dans le champ `raw`.
 
-Format d'un événement dans `raw` :
+Format d'un événement dans `raw` (format JSON depuis la mise à jour de `soar_ban.sh`) :
 
 ```
-<169>May 25 16:45:53 ms.bsculier.ch crowdsec[22617]: CROWDSEC_BAN | ip=20.163.15.91 | reason=utmstack | country=US | as=AS8075 | type=ban | path=/ | ua=-
+<169>May 28 18:16:31 ms.bsculier.ch crowdsec[33276]: CROWDSEC_BAN {"event_type":"ban","ip":"45.67.246.120","reason":"utmstack","country":"ES","as":"214678","type":"ban"}
 ```
 
-> ℹ️ Le champ `country` est inclus dans le message `raw` mais n'est pas extrait comme champ structuré par UTMStack v11.2.8 — la visualisation Top Pays n'est pas disponible pour les données CrowdSec.
+#### Champ `crowdsec_country` — Ingest pipeline OpenSearch
+
+Le champ `country` dans le JSON est extrait automatiquement par un ingest pipeline OpenSearch et indexé comme champ structuré `crowdsec_country` :
+
+```bash
+# Création de l'ingest pipeline (à effectuer une seule fois)
+docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
+  -u 'admin:<password>' \
+  -X PUT "https://localhost:9200/_ingest/pipeline/crowdsec-country" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Extract country from CROWDSEC_BAN syslog",
+    "processors": [
+      {
+        "script": {
+          "lang": "painless",
+          "source": "if (ctx.raw != null && ctx.raw.contains(\"CROWDSEC_BAN\")) { def m = /country[=:\\\"]([A-Z]{2})/.matcher(ctx.raw); if (m.find()) { ctx.crowdsec_country = m.group(1); } }"
+        }
+      }
+    ]
+  }'
+
+# Application du pipeline à l'index du jour courant (remplacer la date)
+docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
+  -u 'admin:<password>' \
+  -X PUT "https://localhost:9200/v11-log-syslog-$(date +%Y-%m-%d)/_settings" \
+  -H "Content-Type: application/json" \
+  -d '{"index.default_pipeline": "crowdsec-country"}'
+
+# Template pour tous les futurs index v11-log-syslog-* (automatique dès le lendemain)
+docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
+  -u 'admin:<password>' \
+  -X PUT "https://localhost:9200/_index_template/utmstack-syslog-crowdsec" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "index_patterns": ["v11-log-syslog-*"],
+    "priority": 1,
+    "template": {
+      "settings": {
+        "index.default_pipeline": "crowdsec-country"
+      }
+    }
+  }'
+```
+
+> ℹ️ Le pipeline s'applique automatiquement aux nouveaux index `v11-log-syslog-*` via le template OpenSearch. Vérification : `curl ... "https://localhost:9200/v11-log-syslog-$(date +%Y-%m-%d)/_settings" | grep pipeline`
+
+| Champ | Contenu | Exemple |
+|---|---|---|
+| `raw` | Message syslog brut complet | `CROWDSEC_BAN {"event_type":"ban","ip":"45.67.246.120",...}` |
+| `crowdsec_country` | Code ISO pays extrait par le pipeline | `ES`, `US`, `MX` |
 
 ---
 
@@ -229,6 +281,40 @@ Format d'un événement dans `raw` :
 
 ---
 
+### Visualisation 4 — Top Pays — Bans CrowdSec (Bar horizontal)
+
+**New Visualization → Bar horizontal**
+
+- Source : `v11-log-syslog-*`
+- Filter : `raw` **contain** `CROWDSEC_BAN`
+- Buckets → Split axis :
+  - Aggregation : `Terms`
+  - Field : `crowdsec_country.keyword`
+  - Size : `10`
+  - Order : Descending
+- Save → `Top Pays — Bans CrowdSec`
+
+> ℹ️ Nécessite l'ingest pipeline `crowdsec-country` actif (voir section précédente). Le champ `crowdsec_country` n'est indexé que sur les événements arrivés **après** la mise en place du pipeline.
+
+---
+
+### Visualisation 5 — Top Pays — Alertes Suricata (Bar horizontal)
+
+**New Visualization → Bar horizontal**
+
+- Source : `v11-log-suricata-*`
+- Filter : `log.eventType` **contain** `alert`
+- Buckets → Split axis :
+  - Aggregation : `Terms`
+  - Field : `origin.geolocation.countryCode.keyword`
+  - Size : `10`
+  - Order : Descending
+- Save → `Top Pays — Alertes Suricata`
+
+> ℹ️ Ce widget est placé dans le **Dashboard CrowdSec** pour avoir une vue consolidée des menaces géographiques — bans vs alertes côte à côte.
+
+---
+
 ### Assemblage Dashboard CrowdSec
 
 **Dashboards → New Dashboard → Add Visualization** :
@@ -237,6 +323,7 @@ Format d'un événement dans `raw` :
 [ CrowdSec - Total Bans           ]
 [ CrowdSec - Timeline Bans                                             ]
 [ CrowdSec - Derniers Bans                                             ]
+[ Top Pays — Bans CrowdSec        ] [ Top Pays — Alertes Suricata     ]
 ```
 
 **Save dashboard → `Dashboard CrowdSec`**
@@ -252,7 +339,7 @@ logger -p local5.info -t suricata '{"event_type":"alert","timestamp":"now","src_
 
 **Test CrowdSec :**
 ```bash
-logger -p local5.alert -t crowdsec "CROWDSEC_BAN | ip=1.2.3.4 | reason=test | country=CH | as=AS0 | type=ban | path=/ | ua=test"
+logger -p local5.alert -t crowdsec 'CROWDSEC_BAN {"event_type":"ban","ip":"1.2.3.4","reason":"test","country":"CH","as":"AS0","type":"ban"}'
 ```
 
 Les événements apparaissent dans les dashboards dans les 30 secondes.
