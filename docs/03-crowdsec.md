@@ -63,6 +63,7 @@ Créer `/usr/local/bin/crowdsec-to-syslog.py` :
 nano /usr/local/bin/crowdsec-to-syslog.py
 ```
 
+{% raw %}
 ```python
 #!/usr/local/bin/python3
 import json
@@ -106,6 +107,7 @@ while True:
         syslog.syslog(syslog.LOG_ERR, f"crowdsec-to-syslog error: {e}")
     time.sleep(120)
 ```
+{% endraw %}
 
 ```bash
 chmod +x /usr/local/bin/crowdsec-to-syslog.py
