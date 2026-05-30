@@ -45,6 +45,8 @@ Ingest pipeline crowdsec-country → champ crowdsec_country
 
 > ℹ️ CrowdSec ne dispose pas d'un parseur natif dans UTMStack v11.2.8 — les décisions arrivent dans l'index syslog général et sont filtrées par la présence du tag `CROWDSEC_BAN` dans le champ `raw`. Un ingest pipeline OpenSearch (`crowdsec-country`) extrait ensuite le code pays comme champ structuré — voir `04-dashboards.md`.
 
+> ⚠️ **Quota Community** — La version Community de CrowdSec Central est limitée à **500 signalements/mois**. Sans déduplication, chaque alerte Suricata sur une IP déjà connue génère un signalement supplémentaire et épuise rapidement le quota. La vérification `cscli decisions list --ip` dans `soar_ban.sh` est critique pour préserver ce quota.
+
 ---
 
 ## Prérequis

@@ -66,6 +66,25 @@ TLS Error: TLS key negotiation failed to occur within 60 seconds
 TLS handshake failed
 ```
 
+### Renégociation TLS — tunnel site-to-site
+
+Après migration, le tunnel peut rester actif (ancienne session TLS en mémoire) mais la **renégociation périodique** (défaut : toutes les 3600 secondes) échoue silencieusement. Le tunnel tombe au prochain reboot ou expiration de session.
+
+**Symptôme :**
+```
+TLS key negotiation failed to occur within 60 seconds
+TLS handshake failed
+```
+Les erreurs apparaissent toutes les ~60 secondes dans les logs OPNsense alors que le tunnel semble actif.
+
+**Fix — désactiver la renégociation (site-to-site uniquement) :**
+
+Sur le **serveur** → **VPN → OpenVPN → Instances** → éditer → `Renegotiate time` → `0` → Save → Apply
+
+Sur le **client** → même procédure → `Durée de renégociation` → `0` → Sauvegarder → Apply
+
+> ℹ️ Mettre `0` des deux côtés est obligatoire — un seul côté ne suffit pas. La renégociation est utile pour les clients nomades mais inutile sur un lien site-to-site permanent.
+
 ---
 
 ## 3. Suricata / Intrusion Detection

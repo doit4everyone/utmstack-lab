@@ -280,6 +280,70 @@ cscli decisions list
 
 ---
 
+## Étape 6 — Auto-fermeture des alertes après traitement SOAR
+
+### Contexte
+
+Les alertes UTMStack sont stockées dans les index OpenSearch **`v11-alert-YYYY-MM-DD`** avec les statuts :
+
+| Valeur | Label | Signification |
+|---|---|---|
+| `2` | Open | Alerte non traitée |
+| `5` | Completed | Alerte traitée / fermée |
+
+Le SOAR traite les alertes `Suricata Network Anomaly Detected` et `Known Malicious IP Detected` automatiquement via CrowdSec. Le SOC AI les ferme ensuite via l'option **Change alert status after analysis**. Un cron sert de filet de sécurité quand le quota API SOC AI est épuisé.
+
+### Script de fermeture
+
+```bash
+cat > /usr/local/bin/utmstack-close-alerts.sh << 'EOF'
+#!/bin/bash
+docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
+  -u 'admin:<password>' \
+  -X POST "https://localhost:9200/v11-alert-*/_update_by_query" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {
+      "bool": {
+        "must": [
+          {"terms": {"name.keyword": ["Suricata Network Anomaly Detected", "Known Malicious IP Detected"]}},
+          {"term": {"status": 2}},
+          {"range": {"@timestamp": {"lt": "now-10m"}}}
+        ]
+      }
+    },
+    "script": {
+      "source": "ctx._source.status = 5; ctx._source.statusLabel = \"Completed\"; ctx._source.statusObservation = \"Auto-closed by SOAR cron after CrowdSec ban\"",
+      "lang": "painless"
+    }
+  }'
+EOF
+chmod +x /usr/local/bin/utmstack-close-alerts.sh
+```
+
+> ℹ️ Le filtre `now-10m` garantit que le SOAR a eu le temps de s'exécuter avant la fermeture.
+
+### Cron — toutes les 5 minutes
+
+```bash
+crontab -e
+```
+
+```
+*/5 * * * * /usr/local/bin/utmstack-close-alerts.sh >> /var/log/utmstack-close-alerts.log 2>&1
+```
+
+Vérification :
+
+```bash
+tail /var/log/utmstack-close-alerts.log
+# Résultat attendu : {"updated": X, "failures": []}
+```
+
+> ℹ️ `"updated": 0` est normal quand le SOC AI a déjà fermé les alertes — le cron est un filet de sécurité, pas le mécanisme principal.
+
+---
+
 ## Réduction des faux positifs — Règles built-in
 
 Les règles de corrélation built-in (icône 🚫 dans l'UI) ne sont pas modifiables via l'interface. Modification directe en base :
@@ -290,11 +354,17 @@ docker exec -it $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d ut
 
 ```sql
 -- Exemple : exclure les scripts MDE de la règle PowerShell Empire Detection
+-- Couvre Azure AD Connect (AADConnector.psm1) ET le Log4j scanner MDE (DataCollection)
 UPDATE utm_correlation_rules
 SET rule_definition_def = rule_definition_def || 
   E'\n&& !contains("log.data.Path", "Windows Defender Advanced Threat Protection")'
-WHERE rule_name = 'PowerShell Empire Detection';
+WHERE rule_name = 'PowerShell Empire Detection'
+AND rule_definition_def NOT LIKE '%Windows Defender Advanced Threat Protection%';
 ```
+
+**Scripts couverts par cette exclusion :**
+- `...\Extensions\AADConnector.psm1` — Azure AD Connect (gest-srv)
+- `...\DataCollection\*.ps1` — MDE Log4j scanner / NdrScanner (DC01-MAIN-SITE)
 
 Restart backend après modification :
 
