@@ -57,6 +57,7 @@ Toutes les procédures sont testées et validées en conditions réelles sur un 
 | [04 — Dashboards](docs/04-dashboards.md) | Visualisations Suricata & CrowdSec dans UTMStack |
 | [05 — SOAR & Automatisation](docs/05-soar.md) | Réponse automatique aux incidents via playbooks UTMStack ⚠️ *v0.1* |
 | [06 — SOC AI](docs/06-soc-ai.md) | Analyse automatique des alertes — Mistral AI, Gemini, création d'incidents |
+| [07 — Règles Suricata avancées](docs/07-custom-rules.md) | suricata-update, NF Rules networkforensic.dk, IPS drop mode |
 
 ---
 
@@ -87,6 +88,11 @@ Visualisations OpenSearch, index v11-log-suricata-*, champs géolocalisation, th
 
 Clé SSH SYSTEM, script soar_ban.sh OPNsense, déduplication, compatibilité Microsoft Defender for Endpoint.
 
+### 📋 Règles Suricata avancées
+[→ suricata-update & NF Rules networkforensic.dk](docs/07-custom-rules.md)
+
+suricata-update (ptrules, stamus/lateral, tgreen/hunting), règles NF Scanners en drop IPS, threat hunting, mise à jour automatique.
+
 ---
 
 ## 📅 Roadmap documentation
@@ -108,7 +114,7 @@ Clé SSH SYSTEM, script soar_ban.sh OPNsense, déduplication, compatibilité Mic
 | **SIEM** | UTMStack v11.2.8 Community Edition |
 | **Hôte** | HP ProDesk 400 G2 Mini — i7-6700 — 32 GB RAM |
 | **Hyperviseur** | VMware Workstation |
-| **Firewall / IDS** | OPNsense 26.1 + Suricata 7.x |
+| **Firewall / IDS** | OPNsense 26.1 + Suricata 8.0.4 |
 | **OS SIEM** | Ubuntu 24.04 LTS |
 | **Agents** | Windows Server 2022 — gest-srv (10.100.1.16), DC01 (10.100.1.1) |
 
@@ -116,7 +122,7 @@ Clé SSH SYSTEM, script soar_ban.sh OPNsense, déduplication, compatibilité Mic
 
 ## 🔩 Stack technique
 
-- **IDS** : Suricata 7.x sur OPNsense — règles Emerging Threats Open
+- **IDS** : Suricata 8.0.4 sur OPNsense — règles Emerging Threats Open
 - **HIDS** : CrowdSec + bouncer OPNsense — blocage temps réel
 - **SOAR** : UTMStack Incident Response + SSH → CrowdSec
 - **Logs** : syslog-ng → Agent UTMStack → OpenSearch
