@@ -289,6 +289,42 @@ service suricata status
 
 ---
 
+## Gestion des règles NF — CLI uniquement
+
+> ⚠️ Les règles NF ne sont **pas visibles dans l'UI OPNsense** (Services → Intrusion Detection → Rules). L'UI ne gère que les règles téléchargées via son propre système (onglet Download). Les règles NF sont chargées directement par Suricata via `installed_rules.yaml` — toute gestion passe par la CLI.
+
+```bash
+# Chercher une règle par SID
+grep "sid:5034006" /usr/local/etc/suricata/opnsense.rules/NF-Scanners.rules
+
+# Lister les règles par scanner
+grep "Censys" /usr/local/etc/suricata/opnsense.rules/NF-Scanners.rules
+grep "Shodan" /usr/local/etc/suricata/opnsense.rules/NF-Scanners.rules
+
+# Désactiver une règle spécifique (commenter)
+sed -i '' 's/^drop.*sid:5034006.*/#&/' /usr/local/etc/suricata/opnsense.rules/NF-Scanners.rules
+
+# Recharger Suricata après modification
+kill -USR2 `pgrep -x suricata | head -1`
+```
+
+---
+
+## Persistance — Problème connu
+
+OPNsense régénère le répertoire `opnsense.rules/` lors de chaque téléchargement de règles via l'UI (**Download → Apply**). Les fichiers NF sont alors supprimés. Le hook `98-soar-ban` ne restaure qu'au boot — pas lors d'un Download en cours d'utilisation.
+
+**Solution : cron de surveillance toutes les 30 minutes**
+
+```
+# /etc/cron.d/nf-rules-check
+*/30	*	*	*	*	root	test -f /usr/local/etc/suricata/opnsense.rules/NF-Scanners.rules || /usr/local/bin/update-nf-rules.sh >> /var/log/nf-rules-update.log 2>&1
+```
+
+Si `NF-Scanners.rules` est absent → `update-nf-rules.sh` est relancé automatiquement.
+
+---
+
 > ℹ️ *Testé sur OPNsense 26.1, Suricata 8.0.4, suricata-update 1.3.7*
 
 ---

@@ -352,9 +352,17 @@ Les règles de corrélation built-in (icône 🚫 dans l'UI) ne sont pas modifia
 docker exec -it $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack
 ```
 
+**Exclusions connues :**
+
 ```sql
--- Exemple : exclure les scripts MDE de la règle PowerShell Empire Detection
--- Couvre Azure AD Connect (AADConnector.psm1) ET le Log4j scanner MDE (DataCollection)
+-- Exclure Azure AD Connect (AADConnector.psm1) de PowerShell Empire Detection
+UPDATE utm_correlation_rules
+SET rule_definition_def = rule_definition_def ||
+  E'\n&& !contains("log.data.Path", "Microsoft Azure AD Sync")'
+WHERE rule_name = 'PowerShell Empire Detection'
+AND rule_definition_def NOT LIKE '%Microsoft Azure AD Sync%';
+
+-- Exclure MDE scripts (Log4j scanner, DataCollection) de PowerShell Empire Detection
 UPDATE utm_correlation_rules
 SET rule_definition_def = rule_definition_def || 
   E'\n&& !contains("log.data.Path", "Windows Defender Advanced Threat Protection")'
@@ -362,15 +370,32 @@ WHERE rule_name = 'PowerShell Empire Detection'
 AND rule_definition_def NOT LIKE '%Windows Defender Advanced Threat Protection%';
 ```
 
-**Scripts couverts par cette exclusion :**
-- `...\Extensions\AADConnector.psm1` — Azure AD Connect (gest-srv)
-- `...\DataCollection\*.ps1` — MDE Log4j scanner / NdrScanner (DC01-MAIN-SITE)
-
 Restart backend après modification :
 
 ```bash
 docker service update --force utmstack_backend
 ```
+
+### Script centralisé — utmstack-apply-exclusions.sh
+
+> ⚠️ Les modifications de `utm_correlation_rules` peuvent être perdues lors d'une mise à jour majeure UTMStack. Centraliser toutes les exclusions dans un script à relancer après chaque mise à jour.
+
+```bash
+# Déploiement
+scp utmstack-apply-exclusions.sh root@10.100.1.150:/usr/local/bin/
+chmod +x /usr/local/bin/utmstack-apply-exclusions.sh
+/usr/local/bin/utmstack-apply-exclusions.sh
+```
+
+Le script applique toutes les exclusions connues et vérifie leur présence. Ajouter un bloc pour chaque nouveau faux positif identifié.
+
+**Méthodes de gestion des faux positifs en v11.2.8 :**
+
+| Méthode | Portée | Persistance | Usage |
+|---|---|---|---|
+| `UPDATE utm_correlation_rules` | Permanente | Risque perte MàJ | Règles built-in — méthode principale |
+| Tag "False positive" dans l'UI | Par alerte | SOC AI en tient compte | Cas ponctuels |
+| Désactiver règle via UI | Complète | Persistant | Uniquement si règle entièrement inutile |
 
 ---
 
