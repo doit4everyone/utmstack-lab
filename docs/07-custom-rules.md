@@ -270,31 +270,22 @@ Contenu complet actuel du hook :
 
 ```sh
 #!/bin/sh
-# Hook de boot OPNsense — restauration fichiers custom Suricata + SOAR
-# Sauvegarde : /conf/98-soar-ban
-
-# 1. Restaurer les règles NF depuis /conf/
-cp /conf/NF-Scanners.rules /usr/local/etc/suricata/opnsense.rules/ 2>/dev/null
-cp /conf/NF-local.rules    /usr/local/etc/suricata/opnsense.rules/ 2>/dev/null
-cp /conf/NF-Suricata.rules /usr/local/etc/suricata/opnsense.rules/ 2>/dev/null
-
-# 2. Vérifier que les règles NF sont dans installed_rules.yaml
-grep -q "NF-Scanners" /usr/local/etc/suricata/installed_rules.yaml || \
-  echo " - NF-Scanners.rules" >> /usr/local/etc/suricata/installed_rules.yaml
-grep -q "NF-local"    /usr/local/etc/suricata/installed_rules.yaml || \
-  echo " - NF-local.rules"    >> /usr/local/etc/suricata/installed_rules.yaml
-grep -q "NF-Suricata" /usr/local/etc/suricata/installed_rules.yaml || \
-  echo " - NF-Suricata.rules" >> /usr/local/etc/suricata/installed_rules.yaml
-
-# 3. Vérifier que suricata.rules (suricata-update) est dans installed_rules.yaml
+cp /conf/soar_ban.sh /usr/local/bin/soar_ban.sh
+chmod +x /usr/local/bin/soar_ban.sh
+# Restaurer suricata-update si OPNsense a régénéré installed_rules.yaml
 grep -q "suricata\.rules" /usr/local/etc/suricata/installed_rules.yaml || \
   echo " - suricata.rules" >> /usr/local/etc/suricata/installed_rules.yaml
-
-# 4. Vérifier que threshold-file est référencé dans suricata.yaml
+# Restaurer les règles NF après mise à jour OPNsense
+cp /conf/NF-Scanners.rules /usr/local/etc/suricata/opnsense.rules/
+cp /conf/NF-local.rules    /usr/local/etc/suricata/opnsense.rules/
+cp /conf/NF-Suricata.rules /usr/local/etc/suricata/opnsense.rules/
+grep -q "NF-Scanners" /usr/local/etc/suricata/installed_rules.yaml || echo " - NF-Scanners.rules" >> /usr/local/etc/suricata/installed_rules.yaml
+grep -q "NF-local"    /usr/local/etc/suricata/installed_rules.yaml || echo " - NF-local.rules"    >> /usr/local/etc/suricata/installed_rules.yaml
+grep -q "NF-Suricata" /usr/local/etc/suricata/installed_rules.yaml || echo " - NF-Suricata.rules" >> /usr/local/etc/suricata/installed_rules.yaml
+# Vérifier que threshold-file est référencé dans suricata.yaml
 grep -q "threshold-file" /usr/local/etc/suricata/suricata.yaml || \
   sed -i '' 's|classification-file: /usr/local/etc/suricata/classification.config|classification-file: /usr/local/etc/suricata/classification.config\nthreshold-file: /usr/local/etc/suricata/threshold.config|' \
   /usr/local/etc/suricata/suricata.yaml
-
 exit 0
 ```
 
