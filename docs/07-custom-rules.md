@@ -252,35 +252,188 @@ chmod +x /usr/local/bin/update-nf-rules.sh
 0	4	*	*	1	root	/usr/local/bin/update-nf-rules.sh >> /var/log/nf-rules-update.log 2>&1
 ```
 
-### Persistance après mises à jour OPNsense
+### Persistance après mises à jour OPNsense — mécanisme syshook
+
+#### Comment fonctionne un syshook OPNsense
+
+OPNsense exécute au démarrage tous les scripts présents dans `/usr/local/etc/rc.syshook.d/start/` par ordre alphabétique. Ces scripts sont des hooks de boot personnalisés — l'équivalent d'un `rc.local` sous Linux. Le préfixe numérique (`98-`) détermine l'ordre d'exécution (après les services système).
+
+**Persistance du hook lui-même :** `/usr/local/etc/` survit aux mises à jour normales OPNsense (c'est une partition de données, pas le système de base). En revanche, une **réinstallation complète** ou une **migration vers une nouvelle VM** efface ce répertoire. La stratégie retenue : sauvegarder le hook dans `/conf/` (toujours persistant, inclus dans les backups OPNsense XML) et le redéployer manuellement si nécessaire.
+
+#### Création initiale du hook
+
+```bash
+nano /usr/local/etc/rc.syshook.d/start/98-soar-ban
+```
+
+Contenu complet actuel du hook :
+
+```sh
+#!/bin/sh
+# Hook de boot OPNsense — restauration fichiers custom Suricata + SOAR
+# Sauvegarde : /conf/98-soar-ban
+
+# 1. Restaurer les règles NF depuis /conf/
+cp /conf/NF-Scanners.rules /usr/local/etc/suricata/opnsense.rules/ 2>/dev/null
+cp /conf/NF-local.rules    /usr/local/etc/suricata/opnsense.rules/ 2>/dev/null
+cp /conf/NF-Suricata.rules /usr/local/etc/suricata/opnsense.rules/ 2>/dev/null
+
+# 2. Vérifier que les règles NF sont dans installed_rules.yaml
+grep -q "NF-Scanners" /usr/local/etc/suricata/installed_rules.yaml || \
+  echo " - NF-Scanners.rules" >> /usr/local/etc/suricata/installed_rules.yaml
+grep -q "NF-local"    /usr/local/etc/suricata/installed_rules.yaml || \
+  echo " - NF-local.rules"    >> /usr/local/etc/suricata/installed_rules.yaml
+grep -q "NF-Suricata" /usr/local/etc/suricata/installed_rules.yaml || \
+  echo " - NF-Suricata.rules" >> /usr/local/etc/suricata/installed_rules.yaml
+
+# 3. Vérifier que suricata.rules (suricata-update) est dans installed_rules.yaml
+grep -q "suricata\.rules" /usr/local/etc/suricata/installed_rules.yaml || \
+  echo " - suricata.rules" >> /usr/local/etc/suricata/installed_rules.yaml
+
+# 4. Vérifier que threshold-file est référencé dans suricata.yaml
+grep -q "threshold-file" /usr/local/etc/suricata/suricata.yaml || \
+  sed -i '' 's|classification-file: /usr/local/etc/suricata/classification.config|classification-file: /usr/local/etc/suricata/classification.config\nthreshold-file: /usr/local/etc/suricata/threshold.config|' \
+  /usr/local/etc/suricata/suricata.yaml
+
+exit 0
+```
+
+```bash
+chmod +x /usr/local/etc/rc.syshook.d/start/98-soar-ban
+```
+
+#### Sauvegarde dans /conf/
+
+```bash
+cp /usr/local/etc/rc.syshook.d/start/98-soar-ban /conf/98-soar-ban
+```
+
+`/conf/` est inclus dans les backups XML OPNsense (**System → Configuration → Backups**). En cas de réinstallation, restaurer le backup XML suffit à récupérer `/conf/98-soar-ban`, puis redéployer manuellement :
+
+```bash
+cp /conf/98-soar-ban /usr/local/etc/rc.syshook.d/start/98-soar-ban
+chmod +x /usr/local/etc/rc.syshook.d/start/98-soar-ban
+```
+
+#### Vérification
+
+```bash
+sh -n /usr/local/etc/rc.syshook.d/start/98-soar-ban  # syntaxe OK si aucune sortie
+sh /usr/local/etc/rc.syshook.d/start/98-soar-ban      # test d'exécution manuelle
+```
+
+> ℹ️ Le contenu complet du hook est centralisé dans la section **Partie 3 → Persistance après mises à jour OPNsense — mécanisme syshook** ci-dessous.
+
+---
+
+## Partie 3 — Réduction du bruit avec threshold.config
+
+### Contexte
+
+OPNsense ne configure pas `threshold.config` par défaut. Le fichier n'est pas référencé dans `suricata.yaml` généré automatiquement — Suricata l'ignore complètement même s'il existe sur disque.
+
+Sans ce mécanisme, certaines signatures légitimes mais très répétitives (Mirai botnet, wget injection par le même bot, anomalies TCP) génèrent des dizaines d'alertes par heure sans valeur ajoutée.
+
+> ⚠️ `threshold.config` se charge **uniquement au démarrage de Suricata** — un `kill -USR2` (rechargement des règles) ne le relit pas. Toute modification nécessite `service suricata restart`.
+
+### Création du fichier threshold.config
+
+```bash
+nano /usr/local/etc/suricata/threshold.config
+```
+
+Deux types d'entrées :
+
+**`suppress`** — supprime complètement les alertes d'un SID :
+```
+suppress gen_id 1, sig_id 2210008
+```
+
+**`threshold`** — limite à N alertes par source/heure :
+```
+threshold gen_id 1, sig_id 2610808, type threshold, track by_src, count 1, seconds 3600
+```
+
+### Suppressions et thresholds en place
+
+```
+# Bruit TCP/HTTP infrastructure — supprimés le 2026-06-03
+# SURICATA STREAM anomalies (TCP normal avec middleboxes/NAT)
+suppress gen_id 1, sig_id 2221010   # HTTP unable to match response
+suppress gen_id 1, sig_id 2210008   # STREAM 3way SYN resend
+suppress gen_id 1, sig_id 2210022   # STREAM anomalie
+suppress gen_id 1, sig_id 2210023   # STREAM anomalie
+suppress gen_id 1, sig_id 2210024   # STREAM anomalie
+suppress gen_id 1, sig_id 2210025   # STREAM anomalie
+suppress gen_id 1, sig_id 2210026   # STREAM anomalie
+suppress gen_id 1, sig_id 2210027   # STREAM anomalie
+suppress gen_id 1, sig_id 2210028   # STREAM anomalie
+suppress gen_id 1, sig_id 2210042   # STREAM ESTABLISHED SYN resend
+suppress gen_id 1, sig_id 2210043   # STREAM SYNACK wrong ack
+suppress gen_id 1, sig_id 2210044   # STREAM TIMEWAIT anomalie
+suppress gen_id 1, sig_id 2210045   # STREAM Packet invalid timestamp
+
+# Thresholds — 1 alerte par IP source par heure
+# TGI HUNT wget injection (Mirai botnet en boucle)
+threshold gen_id 1, sig_id 2610808, type threshold, track by_src, count 1, seconds 3600
+threshold gen_id 1, sig_id 2610850, type threshold, track by_src, count 1, seconds 3600
+```
+
+### Déclaration dans suricata.yaml
+
+OPNsense ne référence pas automatiquement `threshold.config`. Il faut ajouter la directive manuellement après la ligne `classification-file` :
+
+```bash
+sed -i '' 's|classification-file: /usr/local/etc/suricata/classification.config|classification-file: /usr/local/etc/suricata/classification.config\nthreshold-file: /usr/local/etc/suricata/threshold.config|' /usr/local/etc/suricata/suricata.yaml
+```
+
+Vérification :
+```bash
+grep "threshold-file\|classification-file" /usr/local/etc/suricata/suricata.yaml
+```
+
+Résultat attendu :
+```
+classification-file: /usr/local/etc/suricata/classification.config
+threshold-file: /usr/local/etc/suricata/threshold.config
+```
+
+Puis restart :
+```bash
+service suricata restart
+```
+
+### Persistance — OPNsense peut régénérer suricata.yaml
+
+OPNsense régénère `suricata.yaml` lors des mises à jour système ou d'une réinstallation du package Suricata — la directive `threshold-file` est alors perdue.
+
+**Solution : ajouter le contrôle dans le hook de boot `98-soar-ban`**
 
 Ajouter dans `/usr/local/etc/rc.syshook.d/start/98-soar-ban` :
 
 ```sh
-# Restaurer les règles NF
-cp /conf/NF-Scanners.rules /usr/local/etc/suricata/opnsense.rules/
-cp /conf/NF-local.rules    /usr/local/etc/suricata/opnsense.rules/
-cp /conf/NF-Suricata.rules /usr/local/etc/suricata/opnsense.rules/
-grep -q "NF-Scanners" /usr/local/etc/suricata/installed_rules.yaml || echo " - NF-Scanners.rules" >> /usr/local/etc/suricata/installed_rules.yaml
-grep -q "NF-local"    /usr/local/etc/suricata/installed_rules.yaml || echo " - NF-local.rules"    >> /usr/local/etc/suricata/installed_rules.yaml
-grep -q "NF-Suricata" /usr/local/etc/suricata/installed_rules.yaml || echo " - NF-Suricata.rules" >> /usr/local/etc/suricata/installed_rules.yaml
-
-# Restaurer suricata-update
-grep -q "suricata\.rules" /usr/local/etc/suricata/installed_rules.yaml || \
-  echo " - suricata.rules" >> /usr/local/etc/suricata/installed_rules.yaml
+# Vérifier que threshold.config est référencé dans suricata.yaml
+grep -q "threshold-file" /usr/local/etc/suricata/suricata.yaml || \
+  sed -i '' 's|classification-file: /usr/local/etc/suricata/classification.config|classification-file: /usr/local/etc/suricata/classification.config\nthreshold-file: /usr/local/etc/suricata/threshold.config|' \
+  /usr/local/etc/suricata/suricata.yaml
 ```
+
+Ce bloc vérifie la présence de `threshold-file` à chaque boot et la réinsère si manquante. `threshold.config` lui-même ne risque pas d'être effacé car il ne fait pas partie des fichiers gérés par OPNsense.
 
 ---
 
-## Vérification
+## Vérification globale
 
 ```bash
-# Règles chargées
+# Règles NF chargées
 grep -c "^drop"  /usr/local/etc/suricata/opnsense.rules/NF-Scanners.rules
 grep -c "^alert" /usr/local/etc/suricata/opnsense.rules/NF-local.rules
 grep -c "^drop"  /usr/local/etc/suricata/opnsense.rules/NF-Suricata.rules
 
-# Erreurs au chargement
+# threshold-file présent dans suricata.yaml
+grep "threshold-file" /usr/local/etc/suricata/suricata.yaml
+
+# Erreurs au chargement Suricata
 grep -i "error" /var/log/suricata/suricata_$(date +%Y%m%d).log | grep "NF-"
 
 # Suricata tourne
