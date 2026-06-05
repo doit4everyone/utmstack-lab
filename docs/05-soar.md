@@ -108,15 +108,15 @@ nano /usr/local/bin/soar_ban.sh
 #!/bin/sh
 IP=$1
 
-# Déduplication 48h — évite le cycle replay SOAR infini
-# Si l'IP a été bannie dans les 48 dernières heures, on skip même si le ban a expiré
-# Problème observé : UTMStack rejoue les vieux logs → SOAR re-fire → ban recréé → cycle infini
+# Déduplication 7 jours (168h) — évite le cycle replay SOAR infini
+# UTMStack rejoue les vieux logs périodiquement → SOAR re-fire → ban recréé
+# Solution : si l'IP a été bannie dans les 7 derniers jours, on skip
 RECENT_BANS="/conf/soar_recent_bans.txt"
 
 if [ -f "$RECENT_BANS" ]; then
-    CUTOFF=$(date -v-48H +%s 2>/dev/null)
+    CUTOFF=$(date -v-168H +%s 2>/dev/null)
     if [ -z "$CUTOFF" ]; then
-        CUTOFF=$(date -d '48 hours ago' +%s 2>/dev/null)
+        CUTOFF=$(date -d '168 hours ago' +%s 2>/dev/null)
     fi
     if [ -n "$CUTOFF" ]; then
         awk -v cutoff="$CUTOFF" '$1 > cutoff' "$RECENT_BANS" > /tmp/bans_clean.txt
@@ -125,7 +125,7 @@ if [ -f "$RECENT_BANS" ]; then
 fi
 
 if grep -q " $IP$" "$RECENT_BANS" 2>/dev/null; then
-    echo "IP $IP already banned within 48h, skipping"
+    echo "IP $IP already banned within 7 days, skipping"
     exit 0
 fi
 
@@ -143,11 +143,11 @@ if ! /usr/local/bin/cscli decisions list --ip "$IP" 2>/dev/null | grep -q "ban";
       "CROWDSEC_BAN {\"event_type\":\"ban\",\"ip\":\"$IP\",\"reason\":\"utmstack\",\"country\":\"$COUNTRY\",\"as\":\"$ASN\",\"type\":\"ban\"}"
     echo "Decision successfully added for $IP ($COUNTRY / $ASN)"
 else
-    echo "IP $IP already banned, skipping"
+    echo "IP $IP already banned in CrowdSec, skipping"
 fi
 ```
 
-> ℹ️ `/conf/soar_recent_bans.txt` est persistant (survit aux reboots OPNsense). Les entrées sont nettoyées automatiquement à chaque appel. Le cycle infini `ban 24h → expire → replay SOAR → re-ban` est brisé par cette déduplication 48h.
+> ℹ️ `/conf/soar_recent_bans.txt` est persistant (survit aux reboots OPNsense). Les entrées sont nettoyées automatiquement à chaque appel. La fenêtre de 7 jours (168h) couvre une semaine complète de replay potentiel d'UTMStack. Le ban CrowdSec lui-même reste 24h — seul le re-fire SOAR est bloqué pendant 7 jours.
 
 ```bash
 chmod +x /usr/local/bin/soar_ban.sh
@@ -413,11 +413,17 @@ nano /usr/local/bin/utmstack-pre-restart.sh
 #!/bin/bash
 # À lancer AVANT tout restart du backend UTMStack
 # Évite le replay SOAR des alertes historiques au redémarrage
-# Durée totale : ~6 minutes
+# Durée totale : ~8 minutes
+
+PSQL="docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack"
 
 echo "$(date) === utmstack-pre-restart.sh démarré ==="
 
-# 1. Fermer TOUTES les alertes ouvertes
+# 1. Désactiver les flows SOAR pendant la maintenance
+echo "$(date) — Désactivation des flows SOAR 5000 et 5001..."
+$PSQL -c "UPDATE utm_alert_response_rule SET rule_active = false WHERE id IN (5000, 5001);"
+
+# 2. Fermer TOUTES les alertes ouvertes
 echo "$(date) — Fermeture de toutes les alertes OPEN..."
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
   -u 'admin:<OPENSEARCH_PASSWORD>' \
@@ -435,15 +441,15 @@ echo ""
 echo "$(date) — Alertes fermées, attente 5s..."
 sleep 5
 
-# 2. Redémarrer le backend
+# 3. Redémarrer le backend
 echo "$(date) — Restart utmstack_backend..."
 docker service update --force utmstack_backend > /dev/null 2>&1
 echo "$(date) — Restart lancé, attente 5 minutes pour vidage de la queue..."
 
-# 3. Attendre que le backend traite sa queue d'événements
+# 4. Attendre que le backend traite sa queue d'événements
 sleep 300
 
-# 4. Deuxième fermeture — élimine les alertes générées depuis la queue post-restart
+# 5. Deuxième fermeture — élimine les alertes générées depuis la queue post-restart
 echo "$(date) — Deuxième fermeture des alertes post-queue..."
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
   -u 'admin:<OPENSEARCH_PASSWORD>' \
@@ -458,6 +464,15 @@ docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
   }'
 
 echo ""
+
+# 6. Réactiver les flows SOAR
+echo "$(date) — Réactivation des flows SOAR 5000 et 5001..."
+$PSQL -c "UPDATE utm_alert_response_rule SET rule_active = true WHERE id IN (5000, 5001);"
+
+# 7. Vérification état SOAR
+echo "$(date) — Vérification état SOAR..."
+$PSQL -c "SELECT id, rule_name, rule_active FROM utm_alert_response_rule WHERE id IN (5000, 5001);"
+
 echo "$(date) === Terminé ==="
 ```
 
