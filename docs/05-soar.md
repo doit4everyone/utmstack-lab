@@ -108,6 +108,27 @@ nano /usr/local/bin/soar_ban.sh
 #!/bin/sh
 IP=$1
 
+# Déduplication 48h — évite le cycle replay SOAR infini
+# Si l'IP a été bannie dans les 48 dernières heures, on skip même si le ban a expiré
+# Problème observé : UTMStack rejoue les vieux logs → SOAR re-fire → ban recréé → cycle infini
+RECENT_BANS="/conf/soar_recent_bans.txt"
+
+if [ -f "$RECENT_BANS" ]; then
+    CUTOFF=$(date -v-48H +%s 2>/dev/null)
+    if [ -z "$CUTOFF" ]; then
+        CUTOFF=$(date -d '48 hours ago' +%s 2>/dev/null)
+    fi
+    if [ -n "$CUTOFF" ]; then
+        awk -v cutoff="$CUTOFF" '$1 > cutoff' "$RECENT_BANS" > /tmp/bans_clean.txt
+        mv /tmp/bans_clean.txt "$RECENT_BANS"
+    fi
+fi
+
+if grep -q " $IP$" "$RECENT_BANS" 2>/dev/null; then
+    echo "IP $IP already banned within 48h, skipping"
+    exit 0
+fi
+
 # GeoIP lookup (ipapi.co - 1000 req/jour gratuit)
 COUNTRY=$(fetch -qo - "https://ipapi.co/$IP/country_code/" 2>/dev/null | tr -d '\n\r')
 ASN=$(fetch -qo - "https://ipapi.co/$IP/asn/" 2>/dev/null | tr -d '\n\r')
@@ -116,6 +137,8 @@ ASN=$(fetch -qo - "https://ipapi.co/$IP/asn/" 2>/dev/null | tr -d '\n\r')
 
 if ! /usr/local/bin/cscli decisions list --ip "$IP" 2>/dev/null | grep -q "ban"; then
     /usr/local/bin/cscli decisions add --ip "$IP" --duration 24h --reason utmstack
+    # Enregistrer dans la liste des bans récents
+    echo "$(date +%s) $IP" >> "$RECENT_BANS"
     logger -p local5.alert -t crowdsec \
       "CROWDSEC_BAN {\"event_type\":\"ban\",\"ip\":\"$IP\",\"reason\":\"utmstack\",\"country\":\"$COUNTRY\",\"as\":\"$ASN\",\"type\":\"ban\"}"
     echo "Decision successfully added for $IP ($COUNTRY / $ASN)"
@@ -123,6 +146,8 @@ else
     echo "IP $IP already banned, skipping"
 fi
 ```
+
+> ℹ️ `/conf/soar_recent_bans.txt` est persistant (survit aux reboots OPNsense). Les entrées sont nettoyées automatiquement à chaque appel. Le cycle infini `ban 24h → expire → replay SOAR → re-ban` est brisé par cette déduplication 48h.
 
 ```bash
 chmod +x /usr/local/bin/soar_ban.sh
@@ -467,6 +492,20 @@ sh -c 'for i in 1 2 3 4 5; do date +"%H:%M:%S"; cscli decisions list | grep -c u
 ```
 
 > ℹ️ Si la deuxième fermeture retourne `updated > 0`, augmenter le `sleep 300` à `sleep 600` — la queue d'événements est plus longue que prévu.
+
+### Problème résiduel — Cycle de replay infini
+
+Même avec le double-close, un cycle infini peut persister :
+
+```
+Vieux log (J-2) → UTMStack génère alerte → SOAR → ban 24h
+→ Ban expire → UTMStack rejoue le même log → SOAR → nouveau ban 24h
+→ Cycle infini
+```
+
+La cause : UTMStack continue de traiter sa queue d'événements anciens en arrière-plan. Le cron `now-2h` ne suffit pas car le SOAR fire en quelques secondes, bien avant l'intervention du cron.
+
+**Solution : déduplication 48h dans `soar_ban.sh`** — voir Étape 2.
 
 ---
 
