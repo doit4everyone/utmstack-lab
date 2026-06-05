@@ -291,25 +291,53 @@ Les alertes UTMStack sont stockées dans les index OpenSearch **`v11-alert-YYYY-
 | `2` | Open | Alerte non traitée |
 | `5` | Completed | Alerte traitée / fermée |
 
-Le SOAR traite les alertes `Suricata Network Anomaly Detected` et `Known Malicious IP Detected` automatiquement via CrowdSec. Le SOC AI les ferme ensuite via l'option **Change alert status after analysis**. Un cron sert de filet de sécurité quand le quota API SOC AI est épuisé.
+Le SOAR traite les alertes automatiquement via CrowdSec. Le SOC AI les ferme ensuite. Un cron sert de filet de sécurité quand le quota API SOC AI est épuisé.
 
-### Script de fermeture
+> ⚠️ **Problème critique — Replay SOAR au redémarrage backend**
+>
+> Au redémarrage du backend UTMStack (`docker service update --force utmstack_backend`), toutes les alertes encore en statut `OPEN` sont rejouées par le SOAR. Cela provoque :
+> - Des milliers d'exécutions SOAR en quelques secondes (22 000+ pages d'audit observées)
+> - Des bans CrowdSec recréés pour des événements vieux de plusieurs jours
+> - Des IPs bannies sans log Suricata correspondant dans UTMStack
+>
+> **Solution : toujours utiliser `utmstack-pre-restart.sh` avant tout restart backend.**
+
+### Script de fermeture automatique — utmstack-close-alerts.sh
+
+Ferme toutes les alertes Suricata de plus de 2 heures. Cron toutes les 5 minutes.
 
 ```bash
-cat > /usr/local/bin/utmstack-close-alerts.sh << 'EOF'
+nano /usr/local/bin/utmstack-close-alerts.sh
+```
+
+```bash
 #!/bin/bash
+# Fermeture automatique des alertes UTMStack — évite le replay SOAR au redémarrage
+# Cron : */5 * * * * root /usr/local/bin/utmstack-close-alerts.sh >> /var/log/utmstack-close-alerts.log 2>&1
+
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
-  -u 'admin:<password>' \
+  -u 'admin:s2X9K_t8!W0eF=ux' \
   -X POST "https://localhost:9200/v11-alert-*/_update_by_query" \
   -H "Content-Type: application/json" \
   -d '{
     "query": {
       "bool": {
         "must": [
-          {"terms": {"name.keyword": ["Suricata Network Anomaly Detected", "Known Malicious IP Detected"]}},
           {"term": {"status": 2}},
-          {"range": {"@timestamp": {"lt": "now-10m"}}}
-        ]
+          {"range": {"@timestamp": {"lt": "now-2h"}}}
+        ],
+        "should": [
+          {"terms": {"name.keyword": [
+            "Suricata Network Anomaly Detected",
+            "Known Malicious IP Detected",
+            "High level Suricata alert",
+            "Medium level Suricata alert",
+            "Malicious JA3 SSL Fingerprint Detected",
+            "Cobalt Strike Malleable C2 Profile"
+          ]}},
+          {"term": {"dataType.keyword": "suricata"}}
+        ],
+        "minimum_should_match": 1
       }
     },
     "script": {
@@ -317,30 +345,100 @@ docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
       "lang": "painless"
     }
   }'
-EOF
+```
+
+```bash
 chmod +x /usr/local/bin/utmstack-close-alerts.sh
 ```
 
-> ℹ️ Le filtre `now-10m` garantit que le SOAR a eu le temps de s'exécuter avant la fermeture.
+> ℹ️ `now-2h` laisse 2 heures pour investigation manuelle avant fermeture automatique. `dataType.keyword: suricata` couvre automatiquement tous les futurs types d'alertes Suricata sans maintenir une liste.
 
 ### Cron — toutes les 5 minutes
 
 ```bash
-crontab -e
+nano /etc/cron.d/utmstack-close-alerts
 ```
 
 ```
-*/5 * * * * /usr/local/bin/utmstack-close-alerts.sh >> /var/log/utmstack-close-alerts.log 2>&1
+*/5 * * * * root /usr/local/bin/utmstack-close-alerts.sh >> /var/log/utmstack-close-alerts.log 2>&1
 ```
 
 Vérification :
 
 ```bash
 tail /var/log/utmstack-close-alerts.log
-# Résultat attendu : {"updated": X, "failures": []}
+# {"updated": X, "failures": []}
 ```
 
-> ℹ️ `"updated": 0` est normal quand le SOC AI a déjà fermé les alertes — le cron est un filet de sécurité, pas le mécanisme principal.
+> ℹ️ `"updated": 0` est normal quand le SOC AI a déjà fermé les alertes.
+
+### Script de pré-restart — utmstack-pre-restart.sh
+
+> ⚠️ **Ce script remplace `docker service update --force utmstack_backend` dans toutes les procédures de maintenance.**
+
+Ferme **toutes** les alertes OPEN (sans filtre de temps ni de type) puis redémarre le backend.
+
+```bash
+nano /usr/local/bin/utmstack-pre-restart.sh
+```
+
+```bash
+#!/bin/bash
+# À lancer AVANT tout restart du backend UTMStack
+# Évite le replay SOAR des alertes historiques au redémarrage
+
+echo "$(date) === utmstack-pre-restart.sh démarré ==="
+
+echo "$(date) — Fermeture de toutes les alertes OPEN..."
+docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
+  -u 'admin:s2X9K_t8!W0eF=ux' \
+  -X POST "https://localhost:9200/v11-alert-*/_update_by_query" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {
+      "term": {"status": 2}
+    },
+    "script": {
+      "source": "ctx._source.status = 5; ctx._source.statusLabel = \"Completed\"; ctx._source.statusObservation = \"Pre-restart close — prevent SOAR replay\"",
+      "lang": "painless"
+    }
+  }'
+
+echo ""
+echo "$(date) — Alertes fermées, attente 5s..."
+sleep 5
+
+echo "$(date) — Restart utmstack_backend..."
+docker service update --force utmstack_backend > /dev/null 2>&1
+echo "$(date) — Restart lancé (30-60s pour stabilisation)"
+echo "$(date) === Terminé ==="
+```
+
+```bash
+chmod +x /usr/local/bin/utmstack-pre-restart.sh
+```
+
+**Test de validation :**
+
+```bash
+# Compter les alertes OPEN avant
+docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
+  -u 'admin:s2X9K_t8!W0eF=ux' \
+  -X GET "https://localhost:9200/v11-alert-*/_count" \
+  -H "Content-Type: application/json" \
+  -d '{"query": {"term": {"status": 2}}}'
+
+# Lancer le script
+/usr/local/bin/utmstack-pre-restart.sh
+
+# Vérifier après restart — doit retourner 0
+docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
+  -u 'admin:s2X9K_t8!W0eF=ux' \
+  -X GET "https://localhost:9200/v11-alert-*/_count" \
+  -H "Content-Type: application/json" \
+  -d '{"query": {"term": {"status": 2}}}'
+# → {"count":0}
+```
 
 ---
 
