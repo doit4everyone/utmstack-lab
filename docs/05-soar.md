@@ -316,7 +316,7 @@ nano /usr/local/bin/utmstack-close-alerts.sh
 # Cron : */5 * * * * root /usr/local/bin/utmstack-close-alerts.sh >> /var/log/utmstack-close-alerts.log 2>&1
 
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
-  -u 'admin:s2X9K_t8!W0eF=ux' \
+  -u 'admin:<OPENSEARCH_PASSWORD>' \
   -X POST "https://localhost:9200/v11-alert-*/_update_by_query" \
   -H "Content-Type: application/json" \
   -d '{
@@ -395,7 +395,7 @@ echo "$(date) === utmstack-pre-restart.sh démarré ==="
 # 1. Fermer TOUTES les alertes ouvertes
 echo "$(date) — Fermeture de toutes les alertes OPEN..."
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
-  -u 'admin:s2X9K_t8!W0eF=ux' \
+  -u 'admin:<OPENSEARCH_PASSWORD>' \
   -X POST "https://localhost:9200/v11-alert-*/_update_by_query" \
   -H "Content-Type: application/json" \
   -d '{
@@ -421,7 +421,7 @@ sleep 300
 # 4. Deuxième fermeture — élimine les alertes générées depuis la queue post-restart
 echo "$(date) — Deuxième fermeture des alertes post-queue..."
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
-  -u 'admin:s2X9K_t8!W0eF=ux' \
+  -u 'admin:<OPENSEARCH_PASSWORD>' \
   -X POST "https://localhost:9200/v11-alert-*/_update_by_query" \
   -H "Content-Type: application/json" \
   -d '{
@@ -445,7 +445,7 @@ chmod +x /usr/local/bin/utmstack-pre-restart.sh
 ```bash
 # Compter les alertes OPEN avant
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
-  -u 'admin:s2X9K_t8!W0eF=ux' \
+  -u 'admin:<OPENSEARCH_PASSWORD>' \
   -X GET "https://localhost:9200/v11-alert-*/_count" \
   -H "Content-Type: application/json" \
   -d '{"query": {"term": {"status": 2}}}'
@@ -455,7 +455,7 @@ docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
 
 # Vérifier après — doit retourner 0
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
-  -u 'admin:s2X9K_t8!W0eF=ux' \
+  -u 'admin:<OPENSEARCH_PASSWORD>' \
   -X GET "https://localhost:9200/v11-alert-*/_count" \
   -H "Content-Type: application/json" \
   -d '{"query": {"term": {"status": 2}}}'
