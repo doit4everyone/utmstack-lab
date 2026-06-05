@@ -376,7 +376,9 @@ tail /var/log/utmstack-close-alerts.log
 
 > ⚠️ **Ce script remplace `docker service update --force utmstack_backend` dans toutes les procédures de maintenance.**
 
-Ferme **toutes** les alertes OPEN (sans filtre de temps ni de type) puis redémarre le backend.
+Au redémarrage du backend, UTMStack traite sa **queue d'événements** et génère de nouvelles alertes à partir de logs anciens — même si toutes les alertes ont été fermées avant le restart. Le SOAR fire alors sur ces nouvelles alertes et crée des bans CrowdSec pour des événements vieux de plusieurs jours.
+
+**Solution : double fermeture** — avant et après le restart, avec 5 minutes d'attente pour que la queue soit vidée.
 
 ```bash
 nano /usr/local/bin/utmstack-pre-restart.sh
@@ -386,18 +388,18 @@ nano /usr/local/bin/utmstack-pre-restart.sh
 #!/bin/bash
 # À lancer AVANT tout restart du backend UTMStack
 # Évite le replay SOAR des alertes historiques au redémarrage
+# Durée totale : ~6 minutes
 
 echo "$(date) === utmstack-pre-restart.sh démarré ==="
 
+# 1. Fermer TOUTES les alertes ouvertes
 echo "$(date) — Fermeture de toutes les alertes OPEN..."
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
   -u 'admin:s2X9K_t8!W0eF=ux' \
   -X POST "https://localhost:9200/v11-alert-*/_update_by_query" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": {
-      "term": {"status": 2}
-    },
+    "query": {"term": {"status": 2}},
     "script": {
       "source": "ctx._source.status = 5; ctx._source.statusLabel = \"Completed\"; ctx._source.statusObservation = \"Pre-restart close — prevent SOAR replay\"",
       "lang": "painless"
@@ -408,9 +410,29 @@ echo ""
 echo "$(date) — Alertes fermées, attente 5s..."
 sleep 5
 
+# 2. Redémarrer le backend
 echo "$(date) — Restart utmstack_backend..."
 docker service update --force utmstack_backend > /dev/null 2>&1
-echo "$(date) — Restart lancé (30-60s pour stabilisation)"
+echo "$(date) — Restart lancé, attente 5 minutes pour vidage de la queue..."
+
+# 3. Attendre que le backend traite sa queue d'événements
+sleep 300
+
+# 4. Deuxième fermeture — élimine les alertes générées depuis la queue post-restart
+echo "$(date) — Deuxième fermeture des alertes post-queue..."
+docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
+  -u 'admin:s2X9K_t8!W0eF=ux' \
+  -X POST "https://localhost:9200/v11-alert-*/_update_by_query" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {"term": {"status": 2}},
+    "script": {
+      "source": "ctx._source.status = 5; ctx._source.statusLabel = \"Completed\"; ctx._source.statusObservation = \"Post-restart queue flush\"",
+      "lang": "painless"
+    }
+  }'
+
+echo ""
 echo "$(date) === Terminé ==="
 ```
 
@@ -428,17 +450,23 @@ docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
   -H "Content-Type: application/json" \
   -d '{"query": {"term": {"status": 2}}}'
 
-# Lancer le script
+# Lancer le script (~6 minutes)
 /usr/local/bin/utmstack-pre-restart.sh
 
-# Vérifier après restart — doit retourner 0
+# Vérifier après — doit retourner 0
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
   -u 'admin:s2X9K_t8!W0eF=ux' \
   -X GET "https://localhost:9200/v11-alert-*/_count" \
   -H "Content-Type: application/json" \
   -d '{"query": {"term": {"status": 2}}}'
-# → {"count":0}
+# → {"count":0, "updated":0} ← queue vide après 5 minutes
+
+# Surveiller les bans CrowdSec pendant 5 minutes (FreeBSD)
+sh -c 'for i in 1 2 3 4 5; do date +"%H:%M:%S"; cscli decisions list | grep -c utmstack; sleep 60; done'
+# → Chiffre stable ou en baisse = replay neutralisé ✅
 ```
+
+> ℹ️ Si la deuxième fermeture retourne `updated > 0`, augmenter le `sleep 300` à `sleep 600` — la queue d'événements est plus longue que prévu.
 
 ---
 
