@@ -327,7 +327,27 @@ Le SOAR traite les alertes automatiquement via CrowdSec. Le SOC AI les ferme ens
 >
 > **Solution : toujours utiliser `utmstack-pre-restart.sh` avant tout restart backend.**
 
-### Script de fermeture automatique — utmstack-close-alerts.sh
+### Prérequis — Récupérer le mot de passe OpenSearch
+
+Les scripts de cette section utilisent `admin:<OPENSEARCH_PASSWORD>` pour interroger OpenSearch. Ce mot de passe est généré à l'installation d'UTMStack et stocké dans le compose :
+
+```bash
+grep "OPENSEARCH_INITIAL_ADMIN_PASSWORD\|s2X9\|opensearch.*pass" /opt/utmstack/compose.yml | head -3
+```
+
+Ou depuis les variables d'environnement du conteneur :
+
+```bash
+docker exec $(docker ps -q -f name=utmstack_node1) env | grep -i "OPENSEARCH\|PASSWORD" | head -5
+```
+
+Remplacer `<OPENSEARCH_PASSWORD>` par la valeur trouvée dans tous les scripts ci-dessous avant déploiement.
+
+> ⚠️ Ne pas committer ce mot de passe dans GitHub — utiliser `<OPENSEARCH_PASSWORD>` comme placeholder dans la documentation publique.
+
+---
+
+### Script de fermeture automatique
 
 Ferme toutes les alertes Suricata de plus de 2 heures. Cron toutes les 5 minutes.
 
@@ -508,19 +528,41 @@ sh -c 'for i in 1 2 3 4 5; do date +"%H:%M:%S"; cscli decisions list | grep -c u
 
 > ℹ️ Si la deuxième fermeture retourne `updated > 0`, augmenter le `sleep 300` à `sleep 600` — la queue d'événements est plus longue que prévu.
 
-### Problème résiduel — Cycle de replay infini
+### Cause racine identifiée — PENDING SOAR actions
 
-Même avec le double-close, un cycle infini peut persister :
+> ⚠️ **Cause réelle du replay massif** : les entrées `PENDING` dans `utm_alert_response_rule_execution`.
 
+Quand le SOAR fire et envoie une commande à l'agent Windows (gest-srv), l'agent exécute `soar_ban.bat` mais **ne retourne jamais de résultat** à UTMStack. L'entrée reste `PENDING` indéfiniment. UTMStack retente périodiquement toutes les actions `PENDING` en batch → vagues de milliers d'exécutions toutes les quelques heures.
+
+**Diagnostic :**
+```bash
+docker exec -it $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
+"SELECT execution_status, COUNT(*) FROM utm_alert_response_rule_execution GROUP BY execution_status;"
 ```
-Vieux log (J-2) → UTMStack génère alerte → SOAR → ban 24h
-→ Ban expire → UTMStack rejoue le même log → SOAR → nouveau ban 24h
-→ Cycle infini
+
+Si `PENDING > 0` → c'est la cause des vagues de bans.
+
+**Purge manuelle :**
+```bash
+docker exec -it $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
+"UPDATE utm_alert_response_rule_execution 
+SET execution_status = 'COMPLETED', command_result = 'cleared-pending'
+WHERE execution_status = 'PENDING';"
 ```
 
-La cause : UTMStack continue de traiter sa queue d'événements anciens en arrière-plan. Le cron `now-2h` ne suffit pas car le SOAR fire en quelques secondes, bien avant l'intervention du cron.
+**La purge automatique toutes les 5 minutes** est intégrée dans `utmstack-close-alerts.sh`.
 
-**Solution : déduplication 48h dans `soar_ban.sh`** — voir Étape 2.
+---
+
+> ⚠️ **Cause réelle confirmée** : le cycle infini de bans est causé par les PENDING qui s'accumulent et se rejouent en batch, **pas** par le replay des alertes ouvertes. La purge automatique des PENDING dans `utmstack-close-alerts.sh` résout le problème définitivement.
+
+**3 niveaux de protection contre le replay (défense en profondeur) :**
+
+| Niveau | Mécanisme | Rôle |
+|---|---|---|
+| **1 — Purge PENDING** | Cron 5min dans `utmstack-close-alerts.sh` | Corrige la cause racine — empêche les retries en batch |
+| **2 — Timestamp event > 2h** | Dans `soar_ban.sh` | Bloque les bans si UTMStack crée une nouvelle alerte depuis un vieux log |
+| **3 — Déduplication IP 7 jours** | Dans `soar_ban.sh` via `/conf/soar_recent_bans.txt` | Filet de sécurité si timestamp indisponible ou mal parsé |
 
 ---
 
