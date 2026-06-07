@@ -566,6 +566,36 @@ WHERE execution_status = 'PENDING';"
 
 ---
 
+### Variables SOAR disponibles — v11.2.8
+
+Variables confirmées par analyse du code source (`utm_alert_response_rule.sql` extrait de `utmstack.war`) :
+
+| Variable | Description |
+|---|---|
+| `$(adversary.ip)` | IP de l'attaquant |
+| `$(adversary.user)` | Utilisateur attaquant |
+| `$(adversary.geolocation.countryCode)` | Pays |
+| `$(adversary.geolocation.asn)` | ASN |
+| `$(target.user)` | Utilisateur cible |
+| `$(target.process)` | Processus cible |
+| `$(target.file)` | Fichier cible |
+| `$(origin.ip)` | IP d'origine |
+| `$(log.message)` | Message du log brut |
+| `$(timestamp)` | Timestamp de l'événement original Suricata |
+
+> ⚠️ **L'alert ID n'est pas exposé comme variable SOAR** — ni `$(id)`, `$(alertId)`, `$(alert_id)`, ni `$(uuid)` ne fonctionnent. Confirmé par analyse du bytecode Java et du code source. Non documenté sur le GitHub UTMStack. La fermeture des alertes est gérée par le cron `utmstack-close-alerts.sh`.
+
+### Commande SOAR finale — rule_cmd
+
+```bash
+docker exec -it $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
+"UPDATE utm_alert_response_rule 
+SET rule_cmd = 'soar_ban.bat \$(adversary.ip) \$(adversary.geolocation.countryCode) \$(adversary.geolocation.asn) \$(timestamp)'
+WHERE id IN (5000, 5001);"
+```
+
+---
+
 ## Réduction des faux positifs — Règles built-in
 
 Les règles de corrélation built-in (icône 🚫 dans l'UI) ne sont pas modifiables via l'interface. Modification directe en base :
