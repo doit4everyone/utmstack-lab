@@ -120,6 +120,19 @@ ALERT_ID=$5
 echo "$(date) START: IP=$IP COUNTRY=$COUNTRY ASN=$ASN TS=$EVENT_TIMESTAMP" >> "$LOG"
 
 # -------------------------------------------------------
+# 0. Protection IPs internes
+# -------------------------------------------------------
+# Après ajout de 192.168.1.0/24 à HOME_NET, UTMStack peut voir
+# l'IP WAN OPNsense comme adversary dans certaines alertes (flow inversé).
+case "$IP" in
+    192.168.1.*|10.100.1.*|10.100.2.*|127.0.0.1)
+        echo "$(date) SKIP: $IP is internal, not banning" >> "$LOG"
+        echo "OK: $IP (internal)"
+        exit 0
+        ;;
+esac
+
+# -------------------------------------------------------
 # 1. Détection de replay par timestamp de l'événement
 # -------------------------------------------------------
 # Les timestamps SOAR sont en UTC (suffixe Z) — TZ=UTC obligatoire

@@ -29,6 +29,40 @@ lang: fr
 
 ---
 
+## ⚠️ Prérequis critique — HOME_NET doit inclure le réseau WAN
+
+Par défaut, OPNsense configure `HOME_NET` avec uniquement le réseau LAN. Si Suricata monitore l'interface WAN (em1), **toutes les règles `-> $HOME_NET` sont aveugles** sur le trafic WAN — les scanners, les attaques et les sondes ne sont jamais détectés.
+
+**Symptôme :** les règles NF-Scanners (Shodan, Censys, BinaryEdge) ne déclenchent aucune alerte malgré un trafic de scan visible dans les logs.
+
+**Fix :** OPNsense GUI → **Services → Intrusion Detection → Administration → Settings → Home Networks** → ajouter le réseau WAN :
+
+```
+10.100.1.0/24, 192.168.1.0/24
+```
+
+Vérification :
+```bash
+grep "HOME_NET" /usr/local/etc/suricata/suricata.yaml | head -1
+# → HOME_NET: "[10.100.1.0/24,192.168.1.0/24]"
+```
+
+**Résultat après correction** — en 24h, 139 scans bloqués par les règles NF qui étaient précédemment invisibles :
+
+| Scanner | Hits bloqués | SID |
+|---|---|---|
+| Stretchoid | 40 | 5034xxx |
+| BinaryEdge 1 | 36 | 5034101 |
+| BinaryEdge 2 | 36 | 5034104 |
+| Visionheight | 17 | 5034xxx |
+| ShadowServer | 10 | 5034xxx |
+| SYN scans divers | 12 | 9000200 |
+| Dshield blocklist | 23 | 2402000 |
+
+> ℹ️ **Visibilité UTMStack** — Les événements `event_type: alert` avec `action: blocked` remontent dans UTMStack et peuvent déclencher les corrélations. Les événements `event_type: drop` ne remontent pas — c'est le comportement normal du pipeline syslog.
+
+---
+
 ## Stratégie et sources retenues
 
 OPNsense gère nativement ET Open et Abuse.ch via **Services → Intrusion Detection → Administration → Download**. Ces sources couvrent l'essentiel. Pour aller plus loin sans compromettre la conformité nLPD, trois sources complémentaires ont été retenues :
@@ -270,6 +304,7 @@ Contenu complet actuel du hook :
 
 ```sh
 #!/bin/sh
+# Hook de boot OPNsense — restaure configurations SOAR + Suricata
 cp /conf/soar_ban.sh /usr/local/bin/soar_ban.sh
 chmod +x /usr/local/bin/soar_ban.sh
 # Restaurer suricata-update si OPNsense a régénéré installed_rules.yaml
@@ -282,10 +317,11 @@ cp /conf/NF-Suricata.rules /usr/local/etc/suricata/opnsense.rules/
 grep -q "NF-Scanners" /usr/local/etc/suricata/installed_rules.yaml || echo " - NF-Scanners.rules" >> /usr/local/etc/suricata/installed_rules.yaml
 grep -q "NF-local"    /usr/local/etc/suricata/installed_rules.yaml || echo " - NF-local.rules"    >> /usr/local/etc/suricata/installed_rules.yaml
 grep -q "NF-Suricata" /usr/local/etc/suricata/installed_rules.yaml || echo " - NF-Suricata.rules" >> /usr/local/etc/suricata/installed_rules.yaml
-# Vérifier que threshold-file est référencé dans suricata.yaml
+# Restaurer suricata.yaml si threshold-file absent
 grep -q "threshold-file" /usr/local/etc/suricata/suricata.yaml || \
-  sed -i '' 's|classification-file: /usr/local/etc/suricata/classification.config|classification-file: /usr/local/etc/suricata/classification.config\nthreshold-file: /usr/local/etc/suricata/threshold.config|' \
-  /usr/local/etc/suricata/suricata.yaml
+  cp /conf/suricata.yaml /usr/local/etc/suricata/suricata.yaml
+# Restaurer cron Spamhaus DROP
+cp /conf/suricata-drop-fix /etc/cron.d/suricata-drop-fix
 exit 0
 ```
 
@@ -368,28 +404,59 @@ suppress gen_id 1, sig_id 2210045   # STREAM Packet invalid timestamp
 # TGI HUNT wget injection (Mirai botnet en boucle)
 threshold gen_id 1, sig_id 2610808, type threshold, track by_src, count 1, seconds 3600
 threshold gen_id 1, sig_id 2610850, type threshold, track by_src, count 1, seconds 3600
+
+# Faux positif — OPNsense External IP lookup (ipify.org)
+suppress gen_id 1, sig_id 2047703, track by_src, ip 192.168.1.203
 ```
+
+> ⚠️ **`suppress` ne fonctionne PAS sur les règles `drop`** — testé avec SID 7000005 (NGROK JA3). Le suppress empêche l'`alert` mais le `drop` continue de fire. Pour les règles `drop`, modifier la source de la règle directement (voir section NF-Suricata ci-dessous).
+
+| Type de règle | suppress/threshold | Modification directe |
+|---|---|---|
+| `alert` | ✅ fonctionne | pas nécessaire |
+| `drop` | ❌ ne fonctionne pas | ✅ modifier la règle |
+
+### Faux positif NGROK JA3 — CrowdSec CAPI (règle drop)
+
+CrowdSec (écrit en Go) utilise un fingerprint JA3 identique à NGROK (aussi en Go). La règle NF SID 7000005 (`drop`) bloque les connexions CrowdSec CAPI sortantes d'OPNsense.
+
+**Le `suppress` dans threshold.config ne fonctionne pas** sur cette règle `drop`. Fix : modifier la règle directement dans `NF-Suricata.rules` pour exclure l'IP WAN d'OPNsense :
+
+```
+# Avant (bloque tout $HOME_NET, y compris OPNsense)
+drop tls $HOME_NET 1024: -> $EXTERNAL_NET 443 (msg:"NF - NGROK Tunnels - JA3 match"; ...
+
+# Après (exclut OPNsense WAN)
+drop tls [$HOME_NET,!192.168.1.203] 1024: -> $EXTERNAL_NET 443 (msg:"NF - NGROK Tunnels - JA3 match"; ...
+```
+
+Cette modification est automatiquement réappliquée par `update-nf-rules.sh` après chaque mise à jour des règles NF (voir section Partie 2).
 
 ### Déclaration dans suricata.yaml
 
-OPNsense ne référence pas automatiquement `threshold.config`. Il faut ajouter la directive manuellement après la ligne `classification-file` :
+OPNsense ne référence pas automatiquement `threshold.config`. Il faut ajouter la directive manuellement :
 
 ```bash
-sed -i '' 's|classification-file: /usr/local/etc/suricata/classification.config|classification-file: /usr/local/etc/suricata/classification.config\nthreshold-file: /usr/local/etc/suricata/threshold.config|' /usr/local/etc/suricata/suricata.yaml
+nano /usr/local/etc/suricata/suricata.yaml
 ```
+
+Ajouter `threshold-file` juste après `default-rule-path` :
+
+```yaml
+default-rule-path: /usr/local/etc/suricata/opnsense.rules
+threshold-file: /usr/local/etc/suricata/threshold.config
+rule-files:
+  - suricata.rules
+```
+
+> ⚠️ **Ne pas utiliser sed** pour cette modification — la syntaxe `\n` et les chemins avec `/` sont problématiques sur FreeBSD/csh.
 
 Vérification :
 ```bash
-grep "threshold-file\|classification-file" /usr/local/etc/suricata/suricata.yaml
+grep "threshold-file" /usr/local/etc/suricata/suricata.yaml
 ```
 
-Résultat attendu :
-```
-classification-file: /usr/local/etc/suricata/classification.config
-threshold-file: /usr/local/etc/suricata/threshold.config
-```
-
-Puis restart :
+Puis restart (obligatoire — `kill -USR2` ne recharge pas threshold.config) :
 ```bash
 service suricata restart
 ```
@@ -410,6 +477,66 @@ grep -q "threshold-file" /usr/local/etc/suricata/suricata.yaml || \
 ```
 
 Ce bloc vérifie la présence de `threshold-file` à chaque boot et la réinsère si manquante. `threshold.config` lui-même ne risque pas d'être effacé car il ne fait pas partie des fichiers gérés par OPNsense.
+
+### Persistance suricata.yaml — approche cp
+
+OPNsense régénère `suricata.yaml` régulièrement et supprime la directive `threshold-file`. L'approche la plus fiable est de sauvegarder le fichier complet :
+
+```bash
+# Après avoir configuré threshold-file manuellement
+cp /usr/local/etc/suricata/suricata.yaml /conf/suricata.yaml
+```
+
+Dans le hook `98-soar-ban` :
+
+```sh
+# Restaurer suricata.yaml si threshold-file absent
+grep -q "threshold-file" /usr/local/etc/suricata/suricata.yaml || \
+  cp /conf/suricata.yaml /usr/local/etc/suricata/suricata.yaml
+```
+
+> ⚠️ Si tu modifies des réglages Suricata via l'interface OPNsense, pense à refaire `cp /usr/local/etc/suricata/suricata.yaml /conf/suricata.yaml` pour mettre à jour le backup.
+
+---
+
+## Partie 4 — Spamhaus DROP en mode drop
+
+### Problème
+
+Les règles ET DROP (Spamhaus, Dshield) sont en mode `alert` par défaut. Les IPs les plus dangereuses d'Internet passent le firewall — elles sont détectées mais **pas bloquées**.
+
+### Fix — sed + rechargement à chaud
+
+```bash
+sed -i '' 's/^alert/drop/' /usr/local/etc/suricata/opnsense.rules/drop.rules
+kill -USR2 `pgrep -x suricata`
+
+# Vérifier
+grep -c "^drop" /usr/local/etc/suricata/opnsense.rules/drop.rules
+grep -c "^alert" /usr/local/etc/suricata/opnsense.rules/drop.rules
+```
+
+### Persistance — cron quotidien
+
+Le download nocturne des règles (00:00) régénère `drop.rules` en mode `alert`. Un cron à 00:30 corrige automatiquement :
+
+```bash
+nano /etc/cron.d/suricata-drop-fix
+```
+
+```
+30 0 * * * root sed -i '' 's/^alert/drop/' /usr/local/etc/suricata/opnsense.rules/drop.rules && kill -USR2 `pgrep -x suricata`
+```
+
+```bash
+cp /etc/cron.d/suricata-drop-fix /conf/suricata-drop-fix
+```
+
+Dans le hook `98-soar-ban`, ajouter :
+
+```sh
+cp /conf/suricata-drop-fix /etc/cron.d/suricata-drop-fix
+```
 
 ---
 
@@ -469,7 +596,7 @@ Si `NF-Scanners.rules` est absent → `update-nf-rules.sh` est relancé automati
 
 ---
 
-> ℹ️ *Testé sur OPNsense 26.1, Suricata 8.0.4, suricata-update 1.3.7*
+> ℹ️ *Testé sur OPNsense 26.1, Suricata 8.0.4 / 8.0.5, suricata-update 1.3.7*
 
 ---
 
