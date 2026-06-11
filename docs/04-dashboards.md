@@ -315,7 +315,77 @@ docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
 
 ---
 
-### Assemblage Dashboard CrowdSec
+### Visualisation 6 — Drops IPS (Metric)
+
+**New Visualization → Metric**
+
+- Source : `v11-log-suricata-*`
+- Filter : `log.eventType` is `drop`
+- Aggregation : `Count`
+- Custom label : `Drops IPS`
+- Save → `Suricata - Drops IPS`
+
+> ℹ️ Les événements `drop` sont les paquets bloqués silencieusement par Suricata en mode IPS. Ils ne génèrent pas d'alerte UTMStack — uniquement comptabilisables via ce widget.
+
+---
+
+### Visualisation 7 — Alerts bloquées (Metric)
+
+**New Visualization → Metric**
+
+- Source : `v11-log-suricata-*`
+- Filter : `log.alert.action` is `blocked`
+- Aggregation : `Count`
+- Custom label : `Blocked`
+- Save → `Suricata - Blocked`
+
+---
+
+### Visualisation 8 — Alerts permises (Metric)
+
+**New Visualization → Metric**
+
+- Source : `v11-log-suricata-*`
+- Filter : `log.alert.action` is `allowed`
+- Aggregation : `Count`
+- Custom label : `Allowed`
+- Save → `Suricata - Allowed`
+
+> ℹ️ `Allowed > Blocked` signifie qu'il reste des règles en mode `alert` à passer en `drop` (Spamhaus résiduel, CINS, ETN Aggressive).
+
+---
+
+### Visualisation 9 — Top 10 signatures bloquées (Bar horizontal)
+
+**New Visualization → Bar horizontal**
+
+- Source : `v11-log-suricata-*`
+- Filter : `log.alert.action` is `blocked`
+- Buckets → Split axis :
+  - Aggregation : `Terms`
+  - Field : `log.alert.signature.keyword`
+  - Size : `10`
+  - Order : Descending
+- Save → `Top 10 blocked Suricata`
+
+---
+
+### Assemblage Dashboard Suricata — vue complète
+
+```
+[ Drops IPS      ] [ Blocked        ] [ Allowed        ]
+[ Top 10 blocked Suricata                               ]
+[ Total Alertes  ] [ Types événements                  ]
+[ Top Signatures ] [ Top Pays                          ]
+[ Threat Map                                           ]
+```
+
+**Résultats observés (24h) :**
+- Drops IPS : ~1 200 (BinaryEdge, Stretchoid, ShadowServer, Onyphe...)
+- Blocked : ~1 600 (Dshield, Spamhaus DROP, NF-Scanners)
+- Allowed : ~1 600 (CINS, ETN Aggressive, règles alert → candidats pour drop)
+
+---
 
 **Dashboards → New Dashboard → Add Visualization** :
 
