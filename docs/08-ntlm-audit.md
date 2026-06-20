@@ -1,10 +1,31 @@
 ---
-layout: default
-title: "08 — Audit NTLM & Migration Kerberos"
+title: "Audit NTLM & Migration Kerberos | DoIt4Everyone"
 description: "Audit complet de l'authentification NTLM via UTMStack SIEM — WEF, GPO/Intune, dashboard, roadmap de migration NTLM → Kerberos selon la roadmap Microsoft."
+lang: fr
 ---
+<style>
+  header, footer { display: none !important; }
+  .wrapper {
+    max-width: 900px !important;
+    margin: 0 auto !important;
+    float: none !important;
+    position: relative !important;
+    padding: 40px 20px !important;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+    font-size: 1.1em !important;
+  }
+  section {
+    width: 100% !important;
+    float: none !important;
+    margin: 0 !important;
+  }
+  h1, h2 { text-align: center; }
+  table { width: 100%; display: table; margin: 20px 0; }
+</style>
 
-# 08 — Audit NTLM & Migration Kerberos
+# Audit NTLM & Migration Kerberos
+
+> [← Retour à l'index](../)
 
 > **Contexte Microsoft :** Windows désactivera NTLM par défaut dans la prochaine version majeure de Windows Server. La Phase 1 consiste à cartographier toutes les dépendances NTLM avant de les éliminer. Ce guide documente comment UTMStack couvre cette Phase 1, puis prépare les Phases 2 et 3.
 
@@ -589,3 +610,11 @@ Les scripts sont disponibles dans le repository du projet :
 | [`Deploy-WEF-NTLM-Intune.ps1`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/Deploy-WEF-NTLM-Intune.ps1) | Endpoints Intune | Script idempotent, XML embarqué Base64 |
 | [`Detect-WEF-NTLM.ps1`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/Detect-WEF-NTLM.ps1) | Endpoints Intune | Script de détection pour Remediation |
 | [`ntlm-subscription.xml`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/ntlm-subscription.xml) | Source XML | Référence — embarqué dans le script Intune |
+
+---
+
+> ℹ️ *Testé sur Windows Server 2025, Windows 11 24H2, UTMStack v11.2.8, Intune (juin 2026)*
+
+---
+
+[← Custom Rules](07-custom-rules.md) | [Retour à l'index →](../)
