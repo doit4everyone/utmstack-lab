@@ -89,11 +89,11 @@ Disponibles depuis Windows Server 2008 R2. Elles se trouvent dans :
 
 | Stratégie | Cible | Valeur recommandée |
 |---|---|---|
-| Audit NTLM authentication in this domain | **DC uniquement** | Enable all |
-| Audit Incoming NTLM Traffic | Tous ordinateurs | Enable auditing for all accounts |
-| Outgoing NTLM traffic to remote servers | Tous ordinateurs | Audit all |
+| Sécurité réseau : Restreindre NTLM : Auditer l'authentification NTLM dans ce domaine | **DC uniquement** | Activer tout |
+| Sécurité réseau : Restreindre NTLM : Auditer le trafic NTLM entrant | Tous ordinateurs (DC compris) | Activer l'audit pour tous les comptes |
+| Sécurité réseau : Restreindre NTLM : Trafic NTLM sortant vers des serveurs distants | Tous ordinateurs (DC compris) | Auditer tout |
 
-> **Important :** "Audit NTLM authentication in this domain" se configure **uniquement sur les DC** via une GPO liée à l'OU Domain Controllers. Les deux autres stratégies se configurent sur **tous les ordinateurs** via une GPO du domaine.
+> **Important :** « Auditer l'authentification NTLM dans ce domaine » se configure **uniquement sur les DC** via une GPO liée à l'OU Domain Controllers (elle n'a aucun effet sur les autres machines). Les deux autres stratégies (trafic entrant et sortant) se configurent sur **tous les ordinateurs, DC compris** — via une GPO liée au domaine entier. Exclure les DC de ces deux stratégies ferait perdre la visibilité sur le trafic NTLM le plus critique (loopback RPC, passthrough).
 
 #### Nouvelles stratégies 24H2 / Server 2025 — Génèrent les événements NTLM/Operational (4020-4025)
 
@@ -177,7 +177,7 @@ Lien     : DC=lab,DC=local
            (racine du domaine, ou toute OU englobant DC + serveurs + postes clients ciblés)
 ```
 
-> Si l'OU `Domain Controllers` est utilisée pour activer "Audit NTLM authentication in this domain" (stratégie spécifique aux DC, voir Phase 1), la GPO de **déploiement WEF** elle-même doit rester liée au niveau du domaine — sous peine de n'auditer qu'une partie du parc.
+> Si l'OU `Domain Controllers` est utilisée pour activer « Auditer l'authentification NTLM dans ce domaine » (stratégie spécifique aux DC, voir Phase 1), la GPO de **déploiement WEF** elle-même doit rester liée au niveau du domaine — sous peine de n'auditer qu'une partie du parc.
 
 > **Sur un grand parc :** pousser WEF sur plusieurs centaines de postes d'un coup peut générer un volume d'événements significatif — chaque navigation SMB, chaque connexion imprimante réseau, chaque service legacy compte. Pour un déploiement en production, mieux vaut cibler une GPO par vagues successives (un groupe pilote, puis OU par OU) plutôt que lier directement au domaine entier, afin de valider le volume et l'impact sur `ForwardedEvents` avant généralisation. Pour un lab de quelques machines, cette précaution n'est pas nécessaire.
 
@@ -428,9 +428,9 @@ Microsoft documente trois stratégies de blocage avec une granularité croissant
 
 | # | Stratégie | Cible | Effet |
 |---|---|---|---|
-| 1 | Outgoing NTLM traffic to remote servers | Client | Bloque le NTLM sortant initié par cette machine |
-| 2 | Incoming NTLM traffic | Serveur membre | Bloque le NTLM entrant reçu par cette machine |
-| 3 | NTLM authentication in this domain | DC uniquement | Bloque le NTLM passthrough validé par le DC |
+| 1 | Trafic NTLM sortant vers des serveurs distants | Client | Bloque le NTLM sortant initié par cette machine |
+| 2 | Trafic NTLM entrant | Serveur membre | Bloque le NTLM entrant reçu par cette machine |
+| 3 | Authentification NTLM dans ce domaine | DC uniquement | Bloque le NTLM passthrough validé par le DC |
 
 À chaque étape : passer d'abord par **Audit** complet, attendre une période d'observation suffisante (au minimum 2 semaines), corriger toutes les remontées, puis passer à **Deny**.
 
@@ -541,14 +541,14 @@ Cette approche conserve la protection des ports RPC contre les scans tout en per
 Une fois Phase 2 complète et tests validés :
 
 ```
-Network security: Restrict NTLM: Outgoing NTLM traffic to remote servers
-  → Deny all (avec liste d'exceptions configurée)
+Sécurité réseau : Restreindre NTLM : Trafic NTLM sortant vers des serveurs distants
+  → Refuser tout (avec liste d'exceptions configurée)
 
-Network security: Restrict NTLM: Incoming NTLM traffic
-  → Deny all domain accounts (autorise local accounts pour DR)
+Sécurité réseau : Restreindre NTLM : Trafic NTLM entrant
+  → Refuser tous les comptes de domaine (autorise local accounts pour DR)
 
-Network security: Restrict NTLM: NTLM authentication in this domain
-  → Deny for domain accounts to domain servers
+Sécurité réseau : Restreindre NTLM : Authentification NTLM dans ce domaine
+  → Refuser pour les comptes de domaine aux serveurs de domaine
 ```
 
 ---
