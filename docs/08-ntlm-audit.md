@@ -64,7 +64,7 @@ Références Microsoft :
 
 #### Journaux NTLM/Operational (Windows 11 24H2 / Server 2025 — nécessite WEF)
 
-Activés par défaut sur 24H2/Server 2025 via les stratégies « Journalisation améliorée NTLM » (Modèles d'administration → Système → NTLM) et « Journaux NTLM améliorés à l'échelle du domaine » (Modèles d'administration → Système → Netlogon).
+À activer via GPO : « Journalisation NTLM améliorée » (Modèles d'administration → Système → NTLM) et « Journaliser les journaux NTLM étendus à l'échelle du domaine » (Modèles d'administration → Système → Net Logon).
 
 Chaque type d'événement existe en deux variantes : **Information** (NTLMv2 normal) et **Warning** (NTLMv1 ou dégradation de sécurité).
 
@@ -107,10 +107,10 @@ Elles incluent aussi un niveau d'avertissement spécifique pour détecter NTLMv1
 
 | Stratégie | Localisation GPO | Cible | Couvre |
 |---|---|---|---|
-| **Journalisation améliorée NTLM** | `Modèles d'administration → Système → NTLM` | Clients + Serveurs | Events 4020-4023 |
-| **Journaux NTLM améliorés à l'échelle du domaine** | `Modèles d'administration → Système → Netlogon` | DC uniquement | Events 4024-4025 |
+| **Journalisation NTLM améliorée** | `Modèles d'administration → Système → NTLM` | Clients + Serveurs | Events 4020-4023 |
+| **Journaliser les journaux NTLM étendus à l'échelle du domaine** | `Modèles d'administration → Système → Net Logon` | DC uniquement | Events 4024-4025 |
 
-> **Bonne nouvelle :** ces deux stratégies sont **activées par défaut** sur Windows 11 24H2 et Windows Server 2025. Il suffit de vérifier qu'aucune GPO ne les ait désactivées.
+> ⚠️ Ces deux stratégies ne sont **pas activées par défaut** — elles doivent être activées manuellement via GPO. Sans elles, le canal `Microsoft-Windows-NTLM/Operational` reste vide même sur Windows 11 24H2 / Server 2025.
 
 #### Niveaux d'événements (nouvelles stratégies)
 
