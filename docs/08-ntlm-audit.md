@@ -165,12 +165,21 @@ Les deux variantes partagent le même comportement (idempotence, gestion ACL, co
 └── ntlm-subscription.xml
 ```
 
-**2. Créer une GPO ciblant l'OU Domain Controllers**
+**2. Créer une GPO ciblant l'ensemble du domaine**
+
+Le script doit s'exécuter sur **toutes les machines** — DC, serveurs membres, et postes clients. Les Event IDs 4020-4023 (client/serveur) se génèrent sur n'importe quelle machine 24H2/Server 2025, y compris les postes de travail ; seuls 4024-4025 sont spécifiques au rôle DC.
+
+Limiter le déploiement aux seuls serveurs ferait perdre la visibilité côté postes clients — c'est souvent là que se trouvent les cas les plus utiles pour la Phase 2 : applications métier qui forcent NTLM, accès par IP, vieux logiciels qui ne négocient pas Kerberos.
 
 ```
 GPO Name : SEC - WEF NTLM Operational Logging (GPO)
-Lien     : OU=Domain Controllers,DC=lab,DC=local
+Lien     : DC=lab,DC=local
+           (racine du domaine, ou toute OU englobant DC + serveurs + postes clients ciblés)
 ```
+
+> Si l'OU `Domain Controllers` est utilisée pour activer "Audit NTLM authentication in this domain" (stratégie spécifique aux DC, voir Phase 1), la GPO de **déploiement WEF** elle-même doit rester liée au niveau du domaine — sous peine de n'auditer qu'une partie du parc.
+
+> **Sur un grand parc :** pousser WEF sur plusieurs centaines de postes d'un coup peut générer un volume d'événements significatif — chaque navigation SMB, chaque connexion imprimante réseau, chaque service legacy compte. Pour un déploiement en production, mieux vaut cibler une GPO par vagues successives (un groupe pilote, puis OU par OU) plutôt que lier directement au domaine entier, afin de valider le volume et l'impact sur `ForwardedEvents` avant généralisation. Pour un lab de quelques machines, cette précaution n'est pas nécessaire.
 
 **3. Activer les services via GPO**
 
