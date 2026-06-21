@@ -333,6 +333,48 @@ Le Reason ID indique pourquoi NTLM a été utilisé plutôt que Kerberos. C'est 
 
 ---
 
+## Cas d'étude terrain : le paradoxe de la réplication RPC inter-DC (Event 4021)
+
+Lors de l'analyse des journaux `Microsoft-Windows-NTLM/Operational` sur un contrôleur de domaine Windows Server 2025, il est fréquent de voir apparaître des alertes de niveau **Warning** (Event ID 4021) générées par le processus `lsass` à destination d'un autre DC du parc.
+
+### Payload SIEM observé (UTMStack)
+
+| Champ | Valeur |
+|---|---|
+| Event ID | **4021** (Warning — client NTLM sortant) |
+| Process | `lsass` (LSA Subsystem) |
+| Username | `DC01$` (compte machine du contrôleur de domaine) |
+| Target | `RPC/10.100.2.1` (DC distant, adressé par IP) |
+| NtlmUsageId | **10** |
+| NtlmUsageReason | `The target name contains an IP address.` |
+| NtlmVersion | NTLMv2 |
+| DNS | Forward et reverse DNS fonctionnels — le FQDN est résolvable |
+
+### Explication architecturale
+
+Ce comportement, bien que surprenant, est **normal et par design** dans toutes les versions de Windows, y compris Server 2025. Certaines fonctions internes de réplication Active Directory (KCC, topologie RPC) initient des appels inter-serveurs en passant une adresse IP brute comme argument au lieu d'un FQDN.
+
+Kerberos étant structurellement incapable de générer un ticket de service (TGS) basé sur une adresse IP — le format `RPC/10.100.2.1` ne correspond à aucun SPN valide dans l'annuaire — la couche de sécurité SSPI Windows applique un comportement hérité : elle dégrade silencieusement le protocole et effectue un **fallback automatique vers NTLMv2**.
+
+Ce comportement est confirmé par Microsoft :
+
+> « By default Windows will not attempt Kerberos authentication for a host if the hostname is an IP address. It will fall back to other enabled authentication protocols like NTLM. » — [Microsoft Learn, Configuring Kerberos for IP Address](https://learn.microsoft.com/en-us/windows-server/security/kerberos/configuring-kerberos-over-ip)
+
+### Pourquoi ce cas est critique pour la migration
+
+- **Toute entreprise multi-sites** avec des DC dans des sites AD distincts est concernée
+- Le DNS fonctionne parfaitement — ce n'est pas un problème de résolution
+- Ce trafic NTLM était **totalement invisible** avant les Event IDs 4020-4025 introduits avec Server 2025 / Windows 11 24H2
+- La désactivation brute de NTLM sans préparation **casserait la réplication AD**
+
+### Impact pour la Phase 3 (Désactivation)
+
+Ce cas démontre pourquoi la désactivation de NTLM est impossible sans l'introduction par Microsoft de **IAKerb** (Phase 2, prévu second semestre 2026). IAKerb permettra à Kerberos de fonctionner avec des cibles identifiées par IP. En attendant, ces flux RPC d'infrastructure intra-domaine doivent être explicitement identifiés et ajoutés à la liste des exceptions.
+
+> ⚠️ À ce jour (juin 2026), aucune documentation officielle francophone ne documente ce cas précis. Les administrateurs qui activent les GPO d'audit NTLM et découvrent ces événements peuvent les confondre avec une attaque par relais NTLM, alors qu'il s'agit du bruit de fond normal de l'infrastructure AD.
+
+---
+
 ## Phase 2 — Remédiation (préparation Kerberos)
 
 > **Objectif :** réduire l'usage NTLM jusqu'à un minimum résiduel sans casser la production. Cette phase peut durer plusieurs mois selon la complexité de l'environnement.
