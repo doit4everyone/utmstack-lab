@@ -27,7 +27,7 @@ lang: fr
 
 > [← Retour à l'index](../)
 
-> **Contexte Microsoft :** Windows désactivera NTLM par défaut dans la prochaine version majeure de Windows Server. La Phase 1 consiste à cartographier toutes les dépendances NTLM avant de les éliminer. Ce guide documente comment UTMStack couvre cette Phase 1, puis prépare les Phases 2 et 3.
+> **Contexte Microsoft :** Microsoft désactivera NTLM par défaut dans la prochaine version majeure de Windows Server. La Phase 1 consiste à cartographier toutes les dépendances NTLM avant de les éliminer. Ce guide documente comment UTMStack couvre cette Phase 1, puis prépare les Phases 2 et 3.
 
 ---
 
@@ -150,7 +150,7 @@ Microsoft-Windows-NTLM/Operational  (local)
 
 | Variante | Cible | Source XML | Mode de déploiement |
 |---|---|---|---|
-| [`Deploy-WEF-NTLM-GPO.ps1`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/Deploy-WEF-NTLM-GPO.ps1) | Machines jointes au domaine (DC, serveurs membres) | SYSVOL (`\\lab.local\SYSVOL\...`) | GPO Scheduled Task |
+| [`Deploy-WEF-NTLM-GPO.ps1`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/Deploy-WEF-NTLM-GPO.ps1) | Machines jointes au domaine (DC, serveurs membres, postes) | SYSVOL (`\\lab.local\SYSVOL\...`) | GPO Script de démarrage |
 | [`Deploy-WEF-NTLM-Intune.ps1`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/Deploy-WEF-NTLM-Intune.ps1) | Endpoints Intune (AAD-joined, Hybrid) | XML embarqué Base64 | Intune Remediations |
 
 Les deux variantes partagent le même comportement (idempotence, gestion ACL, configuration WinRM, agrandissement ForwardedEvents). Seule la source du XML diffère, ce qui permet à chaque variante de fonctionner dans son contexte sans dépendance externe.
@@ -205,19 +205,21 @@ Configuration ordinateur → Stratégies → Modèles d'administration
   Valeur : Server=http://<FQDN_MACHINE>:5985/wsman/SubscriptionManager/WEC
 ```
 
-Le script de déploiement gère cette étape automatiquement via `$env:COMPUTERNAME.$env:USERDNSDOMAIN`, ce qui permet à une seule GPO de couvrir tout le parc sans FQDN fixe.
+Le script de déploiement gère cette étape automatiquement via WMI (`$env:COMPUTERNAME` + `(Get-WmiObject Win32_ComputerSystem).Domain`), ce qui permet à une seule GPO de couvrir tout le parc sans FQDN fixe. La variable `$env:USERDNSDOMAIN` ne fonctionne pas au boot (vide sans session utilisateur).
 
-**5. Déployer le script via Tâche planifiée GPO**
+**5. Déployer le script via Script de démarrage GPO**
+
+Les scripts de démarrage sont plus fiables que les tâches planifiées GPO Preferences — ils tournent en tant que SYSTEM à chaque boot, sans configuration de compte ni problème de création.
 
 ```
-Configuration ordinateur → Préférences → Paramètres du Panneau de configuration
-→ Tâches planifiées → Nouvelle tâche planifiée
-  Nom       : Deploy-WEF-NTLM-GPO
-  Exécuter  : SYSTEM
-  Déclencheur : Au démarrage + répéter toutes les heures
-  Action    : PowerShell.exe -ExecutionPolicy Bypass
-              -File \\lab.local\SYSVOL\lab.local\scripts\Deploy-WEF-NTLM-GPO.ps1
+Configuration ordinateur → Paramètres Windows
+→ Scripts (démarrage/arrêt) → Démarrage
+→ Onglet "Scripts PowerShell" → Ajouter
+  Script : \\lab.local\SYSVOL\lab.local\scripts\Deploy-WEF-NTLM-GPO.ps1
+  Ordre : Exécuter les scripts Windows PowerShell en dernier
 ```
+
+> Le script intègre une boucle d'attente SYSVOL (jusqu'à 5 minutes) et construit le FQDN dynamiquement via WMI — il fonctionne au boot sans session utilisateur connectée.
 
 #### Méthode 2 — Déploiement Intune (environnements cloud / hybrides)
 
@@ -620,7 +622,7 @@ Le SIEM UTMStack joue un rôle central dans les trois phases : cartographie en P
 | Agent UTMStack v11.2.8 ne collecte pas NTLM/Operational nativement | Events 4021–4025 / 8001–8004 absents | WEF → ForwardedEvents |
 | Canal NTLM/Operational disponible uniquement sur Win 11 24H2 / Server 2025 | Machines plus anciennes non couvertes | Couverture partielle via Security log (4624/4625/4776) |
 | Canal ForwardedEvents désactivé par défaut sur Server 2025 | Souscription WEF active mais aucun événement reçu (erreur 3ae9) | `wevtutil sl ForwardedEvents /e:true` (intégré dans le script) |
-| `localhost` ne fonctionne pas comme Subscription Manager | Forwarder WinRM refuse la connexion (erreur 2150859027) | Utiliser le FQDN dynamique `$env:COMPUTERNAME.$env:USERDNSDOMAIN` |
+| `localhost` ne fonctionne pas comme Subscription Manager | Forwarder WinRM refuse la connexion (erreur 2150859027) | Utiliser le FQDN dynamique via WMI `(Get-WmiObject Win32_ComputerSystem).Domain` |
 | SYSVOL inaccessible par chemin local sur Server 2025 | Lien symbolique DFS apparaît vide | Toujours utiliser le chemin UNC `\\domaine\SYSVOL\...` |
 | WEF nécessite WinRM actif localement | Surface d'attaque légèrement élargie | Self-subscription locale uniquement — pas d'exposition réseau inter-machines |
 | Intune Remediations nécessite licence appropriée | Coût supplémentaire | Platform Scripts (exécution unique) si licence absente |
