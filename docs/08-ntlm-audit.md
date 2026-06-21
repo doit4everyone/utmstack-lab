@@ -159,6 +159,8 @@ Les deux variantes partagent le même comportement (idempotence, gestion ACL, co
 
 **1. Placer les fichiers en SYSVOL**
 
+> ⚠️ **Windows Server 2025 :** le chemin local `C:\Windows\SYSVOL\sysvol\<domaine>\` utilise un lien symbolique DFS qui peut apparaître vide dans l'explorateur ou via `dir`. Toujours utiliser le **chemin UNC** pour accéder au SYSVOL : `\\<domaine>\SYSVOL\<domaine>\scripts\`
+
 ```
 \\lab.local\SYSVOL\lab.local\scripts\
 ├── Deploy-WEF-NTLM-GPO.ps1
@@ -184,22 +186,37 @@ Lien     : DC=lab,DC=local
 **3. Activer les services via GPO**
 
 ```
-Computer Configuration → Policies → Windows Settings
-→ Security Settings → System Services
-  → Windows Event Collector : Automatic
-  → Windows Remote Management : Automatic
+Configuration ordinateur → Stratégies → Paramètres Windows
+→ Paramètres de sécurité → Services système
+  → Collecteur d'événements de Windows : Automatique
+  → Gestion à distance de Windows (Gestion WSM) : Automatique
 ```
 
-**4. Déployer le script via Scheduled Task GPO**
+**4. Configurer le Gestionnaire d'abonnements cible**
+
+Cette étape est indispensable — sans elle, la souscription WEF existe mais aucune machine ne sait qu'elle doit y envoyer des événements. Dans une self-subscription locale, chaque machine s'envoie les événements à elle-même.
+
+> ⚠️ `localhost` ne fonctionne pas comme cible — le forwarder WinRM exige un vrai nom résolvable. Utiliser le FQDN de la machine.
 
 ```
-Computer Configuration → Preferences → Control Panel Settings
-→ Scheduled Tasks → New Scheduled Task
-  Name    : Deploy-WEF-NTLM-GPO
-  Run As  : SYSTEM
-  Trigger : At startup + repeat every 1 hour
-  Action  : PowerShell.exe -ExecutionPolicy Bypass
-            -File \\lab.local\SYSVOL\lab.local\scripts\Deploy-WEF-NTLM-GPO.ps1
+Configuration ordinateur → Stratégies → Modèles d'administration
+→ Composants Windows → Transfert d'événements
+→ Configurer le Gestionnaire d'abonnements cible : Activé
+  Valeur : Server=http://<FQDN_MACHINE>:5985/wsman/SubscriptionManager/WEC
+```
+
+Le script de déploiement gère cette étape automatiquement via `$env:COMPUTERNAME.$env:USERDNSDOMAIN`, ce qui permet à une seule GPO de couvrir tout le parc sans FQDN fixe.
+
+**5. Déployer le script via Tâche planifiée GPO**
+
+```
+Configuration ordinateur → Préférences → Paramètres du Panneau de configuration
+→ Tâches planifiées → Nouvelle tâche planifiée
+  Nom       : Deploy-WEF-NTLM-GPO
+  Exécuter  : SYSTEM
+  Déclencheur : Au démarrage + répéter toutes les heures
+  Action    : PowerShell.exe -ExecutionPolicy Bypass
+              -File \\lab.local\SYSVOL\lab.local\scripts\Deploy-WEF-NTLM-GPO.ps1
 ```
 
 #### Méthode 2 — Déploiement Intune (environnements cloud / hybrides)
@@ -602,6 +619,9 @@ Le SIEM UTMStack joue un rôle central dans les trois phases : cartographie en P
 |---|---|---|
 | Agent UTMStack v11.2.8 ne collecte pas NTLM/Operational nativement | Events 4021–4025 / 8001–8004 absents | WEF → ForwardedEvents |
 | Canal NTLM/Operational disponible uniquement sur Win 11 24H2 / Server 2025 | Machines plus anciennes non couvertes | Couverture partielle via Security log (4624/4625/4776) |
+| Canal ForwardedEvents désactivé par défaut sur Server 2025 | Souscription WEF active mais aucun événement reçu (erreur 3ae9) | `wevtutil sl ForwardedEvents /e:true` (intégré dans le script) |
+| `localhost` ne fonctionne pas comme Subscription Manager | Forwarder WinRM refuse la connexion (erreur 2150859027) | Utiliser le FQDN dynamique `$env:COMPUTERNAME.$env:USERDNSDOMAIN` |
+| SYSVOL inaccessible par chemin local sur Server 2025 | Lien symbolique DFS apparaît vide | Toujours utiliser le chemin UNC `\\domaine\SYSVOL\...` |
 | WEF nécessite WinRM actif localement | Surface d'attaque légèrement élargie | Self-subscription locale uniquement — pas d'exposition réseau inter-machines |
 | Intune Remediations nécessite licence appropriée | Coût supplémentaire | Platform Scripts (exécution unique) si licence absente |
 | Loopback RPC EPM casse avec blocage NTLM entrant sans préparation | Risque incident sur DC | Désactiver politiques RPC concernées avant blocage |
