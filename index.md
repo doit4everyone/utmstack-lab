@@ -97,7 +97,7 @@ suricata-update (ptrules, stamus/lateral, tgreen/hunting), règles NF Scanners e
 ### 🔐 Audit NTLM & Migration Kerberos
 [→ Phase 1 complète : audit, WEF, scripts, dashboard](docs/08-ntlm-audit.md)
 
-Déploiement de l'audit NTLM via Windows Event Forwarding (WEF) en self-subscription locale. Scripts prêts à l'emploi pour GPO et Intune, corrections terrain Server 2025, cas d'étude réplication AD inter-sites utilisant NTLM par design. Première documentation francophone de ce comportement. [Scripts sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts).
+Déploiement de l'audit NTLM via Windows Event Forwarding (WEF) en self-subscription locale. Scripts prêts à l'emploi pour GPO et Intune, corrections terrain Server 2025, cas d'étude réplication AD inter-sites utilisant NTLM par design. [Scripts sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts).
 
 ---
 
