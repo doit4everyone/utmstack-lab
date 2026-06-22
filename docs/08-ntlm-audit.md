@@ -288,33 +288,34 @@ log.channel = ForwardedEvents
 log.eventCode = 4021
 ```
 
-### Dashboard NTLM — Widgets recommandés
+### Dashboard NTLM — Widgets validés en lab
 
-| Widget | Type | Filtre | Objectif |
+Construit et testé dans UTMStack avec les champs réels confirmés (`log.providerName: Microsoft-Windows-NTLM` sur `v11-log-wineventlog-*`) :
+
+| Widget | Type | Champ / Filtre | Résultat observé |
 |---|---|---|---|
-| Total NTLM | Metric | eventCode=4624 + AuthPkg=NTLM | Volume global |
-| NTLMv1 détecté | Metric | LmPackageName=NTLM V1 | Criticité — à éliminer en priorité |
-| Échecs NTLM | Metric | eventCode=4625 + AuthPkg=NTLM | Brute force / mauvaises configs |
-| Top machines sources | Bar horizontal | Terms origin.host | Qui utilise NTLM |
-| Top comptes | Bar horizontal | Terms target.user | Quels comptes |
-| NTLMv1 vs NTLMv2 | Donut | Terms LmPackageName | Répartition versions |
-| Timeline | Line | eventCode=4624 + AuthPkg=NTLM | Évolution dans le temps |
-| Top IPs sources | Bar horizontal | Terms origin.ip | D'où vient le trafic NTLM |
+| Total Authentifications | Metric | Count, filtre `log.providerName: Microsoft-Windows-NTLM` | 9 événements / 7 jours |
+| NTLMv1 détecté | Metric | `log.data.NtlmVersion: NTLMv1` | **0** — aucune dépendance legacy |
+| Échecs NTLM | Metric | `log.data.Status` (ou `StatusMsg`) `is not 0` | 1 (test simulé) |
+| Top machines | Bar horizontal | Terms `log.computer.keyword` | DC01-MAIN-SITE, DC01-RM |
+| Top comptes | Bar horizontal | Terms `log.data.Username.keyword` | Comptes machine ($) et utilisateurs |
+| Versions NTLM | Pie/Donut | Terms `log.data.NtlmVersion.keyword` | 100% NTLMv2 |
+
+> Le widget Table avec buckets Terms en cascade (Machine → Compte → Event ID → Version → Raison) s'est révélé peu fiable dans cette version d'UTMStack — le champ `Size` des sub-buckets ne se met pas à jour correctement et les lignes se mélangent. Pour le détail événement par événement, privilégier une recherche sauvegardée dans Log Explorer plutôt qu'une Table de dashboard.
 
 ### Observations en lab
 
-Événements capturés sur DC01-MAIN-SITE (Windows Server 2025) après activation des GPO :
+Événements capturés sur DC01-MAIN-SITE et DC01-RM (Windows Server 2025) après activation du pipeline WEF :
 
-| Observation | Event ID | Reason ID | Niveau |
+| Observation | Event ID | NtlmUsageId | Niveau |
 |---|---|---|---|
-| `lsass` initie NTLM anonyme vers LDAP (target name manquant) | 4021 | 5 | ⚠️ NTLMv1 — à corriger |
-| `backgroundTaskHost` appelle NTLM directement | 4021 | 1 | Dépendance applicative |
-| `DC01-MAIN-SITE$` s'authentifie en NTLM via RPC vers DC01-RM | 4023 | 10 | Loopback RPC EPM — voir Phase 3 |
-| PC admin (MDM-BLAISE-871) → SYSVOL via IP → NTLM v2 | 4022/4624 | 7 | Normal — accès par IP |
+| `DC01-MAIN-SITE$` s'authentifie en NTLM via RPC vers DC01-RM (réplication AD) | 4021 | 10 | Normal — voir cas d'étude ci-dessus |
+| PC admin (MDM-BLAISE-871) → SYSVOL via IP → NTLM v2 | 4022 | — | Normal — accès par IP |
+| Test simulé `fakeuser` → échec d'authentification | 4022 | — | Test — à surveiller si récurrent en prod |
 
 #### Référence — Reason ID côté client (événements 4020/4021)
 
-Le Reason ID indique pourquoi NTLM a été utilisé plutôt que Kerberos. C'est l'information clé pour la remédiation Phase 2 :
+Le `NtlmUsageReason` indique pourquoi NTLM a été utilisé plutôt que Kerberos. C'est l'information clé pour la remédiation Phase 2 :
 
 | ID | Description | Action de remédiation |
 |---|---|---|
@@ -328,7 +329,7 @@ Le Reason ID indique pourquoi NTLM a été utilisé plutôt que Kerberos. C'est 
 | 7 | Nom cible contient une adresse IP | Remplacer IP par FQDN |
 | 8 | Nom cible dupliqué dans Active Directory | `setspn -X` pour identifier le doublon |
 | 9 | Aucune ligne de vue avec un DC | Problème réseau / firewall vers le DC |
-| 10 | NTLM appelé via interface loopback | Loopback RPC — voir Phase 3 |
+| 10 | NTLM appelé via interface loopback ou réplication AD par IP | Voir cas d'étude réplication AD ci-dessus, et Phase 3 |
 | 11 | NTLM appelé avec session null | Authentification anonyme — auditer le service |
 
 ---
@@ -370,6 +371,19 @@ Ce comportement est confirmé par Microsoft :
 ### Impact pour la Phase 3 (Désactivation)
 
 Ce cas démontre pourquoi la désactivation de NTLM est impossible sans l'introduction par Microsoft de **IAKerb** (Phase 2, prévu second semestre 2026). IAKerb permettra à Kerberos de fonctionner avec des cibles identifiées par IP. En attendant, ces flux RPC d'infrastructure intra-domaine doivent être explicitement identifiés et ajoutés à la liste des exceptions.
+
+### Précision terrain — réplication manuelle vs automatique
+
+Observation supplémentaire en lab : forcer une réplication manuelle via `repadmin /replicate <DC_destination> <DC_source> <DN_partition>` **ne génère aucun event NTLM**, alors que la réplication automatique déclenchée par le KCC (Knowledge Consistency Checker) en génère systématiquement.
+
+```
+repadmin /replicate DC01-MAIN-SITE DC01-RM DC=lab,DC=local
+→ Aucun event 4021 généré
+```
+
+Raison : `repadmin` résout le DC source/destination par son **nom DNS** passé en argument → Kerberos fonctionne normalement. Le KCC, lui, déclenche la réplication automatiquement via la topologie de sites AD, qui adresse les partenaires de réplication **par IP** (configuration de sous-réseau du site) — c'est précisément ce chemin qui force le fallback NTLM.
+
+Conséquence pratique : le NTLM observé ne vient pas de "la réplication AD" en général, mais spécifiquement du **chemin de réplication automatique géré par le KCC**. Un déclenchement manuel via `repadmin` contourne ce chemin et n'est donc pas représentatif du trafic réel — pour auditer fidèlement le bruit NTLM de réplication, il faut observer les cycles automatiques (toutes les 180 minutes par défaut) ou des événements qui déclenchent une réplication urgente (création d'utilisateur, modification de mot de passe, etc.), pas des réplications forcées manuellement.
 
 > ⚠️ À ce jour (juin 2026), aucune documentation officielle francophone ne documente ce cas précis. Les administrateurs qui activent les GPO d'audit NTLM et découvrent ces événements peuvent les confondre avec une attaque par relais NTLM, alors qu'il s'agit du bruit de fond normal de l'infrastructure AD.
 
