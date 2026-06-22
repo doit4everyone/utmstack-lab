@@ -1,6 +1,6 @@
 ---
 title: "UTMStack Lab — Guide et Procédures de déploiement | DoIt4Everyone"
-description: "UTMStack v11.2.8 Community Edition — Procédures de déploiement pour lab PME Suisse : installation VMware, Suricata, CrowdSec, SOAR automatisé, OPNsense."
+description: "UTMStack v11.2.8 Community Edition — Procédures de déploiement pour lab PME Suisse : installation VMware, Suricata, CrowdSec, SOAR automatisé, OPNsense, audit NTLM & migration Kerberos."
 lang: fr
 permalink: /
 ---
@@ -39,7 +39,7 @@ permalink: /
 
 ## 📖 À propos
 
-Ce site documente le déploiement complet d'un lab **UTMStack v11.2.8 Community Edition** dans un environnement de lab simulant une infrastructure PME, incluant l'intégration Suricata IDS, CrowdSec, et l'automatisation SOAR pour la réponse automatique aux incidents.
+Ce site documente le déploiement complet d'un lab **UTMStack v11.2.8 Community Edition** dans un environnement simulant une infrastructure PME, incluant l'intégration Suricata IDS, CrowdSec, l'automatisation SOAR pour la réponse automatique aux incidents, et l'audit NTLM en préparation de la migration vers Kerberos (roadmap Microsoft 2025-2027).
 
 Toutes les procédures sont testées et validées en conditions réelles sur un HP ProDesk 400 G2 Mini sous VMware Workstation, avec OPNsense comme firewall/IDS.
 
@@ -58,6 +58,7 @@ Toutes les procédures sont testées et validées en conditions réelles sur un 
 | [05 — SOAR & Automatisation](docs/05-soar.md) | Réponse automatique aux incidents via playbooks UTMStack ⚠️ *v0.1* |
 | [06 — SOC AI](docs/06-soc-ai.md) | Analyse automatique des alertes — Mistral AI, Gemini, création d'incidents |
 | [07 — Règles Suricata avancées](docs/07-custom-rules.md) | suricata-update, NF Rules networkforensic.dk, IPS drop mode |
+| [08 — Audit NTLM & Migration Kerberos](docs/08-ntlm-audit.md) | 🆕 WEF, GPO, Intune, dashboard SIEM, roadmap Phase 1→3 — Server 2025 |
 
 ---
 
@@ -93,6 +94,11 @@ Clé SSH SYSTEM, script soar_ban.sh OPNsense, déduplication, compatibilité Mic
 
 suricata-update (ptrules, stamus/lateral, tgreen/hunting), règles NF Scanners en drop IPS, threat hunting, mise à jour automatique.
 
+### 🔐 Audit NTLM & Migration Kerberos
+[→ Phase 1 complète : audit, WEF, scripts, dashboard](docs/08-ntlm-audit.md)
+
+Déploiement de l'audit NTLM via Windows Event Forwarding (WEF) en self-subscription locale. Scripts prêts à l'emploi pour GPO et Intune, corrections terrain Server 2025, cas d'étude réplication AD inter-sites utilisant NTLM par design. Première documentation francophone de ce comportement. [Scripts sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts).
+
 ---
 
 ## 📅 Roadmap documentation
@@ -114,18 +120,20 @@ suricata-update (ptrules, stamus/lateral, tgreen/hunting), règles NF Scanners e
 | **SIEM** | UTMStack v11.2.8 Community Edition |
 | **Hôte** | HP ProDesk 400 G2 Mini — i7-6700 — 32 GB RAM |
 | **Hyperviseur** | VMware Workstation |
-| **Firewall / IDS** | OPNsense 26.1 + Suricata 8.0.4 |
+| **Firewall / IDS** | OPNsense 26.1 + Suricata 8.0.5 |
 | **OS SIEM** | Ubuntu 24.04 LTS |
-| **Agents** | Windows Server 2022 — gest-srv (10.100.1.16), DC01 (10.100.1.1) |
+| **Active Directory** | Windows Server 2025 — Topologie multi-sites (2 DC, 2 sites AD) |
+| **Agents** | DC01-MAIN-SITE (10.100.1.1), DC01-RM (10.100.2.1), gest-srv (10.100.1.16), MDM-BLAISE-871 (Win 11 24H2) |
 
 ---
 
 ## 🔩 Stack technique
 
-- **IDS** : Suricata 8.0.4 sur OPNsense — règles Emerging Threats Open
+- **IDS** : Suricata 8.0.5 sur OPNsense — règles Emerging Threats Open + NF Rules
 - **HIDS** : CrowdSec + bouncer OPNsense — blocage temps réel
 - **SOAR** : UTMStack Incident Response + SSH → CrowdSec
 - **Logs** : syslog-ng → Agent UTMStack → OpenSearch
+- **WEF** : Windows Event Forwarding — collecte NTLM/Operational → ForwardedEvents
 - **SOC AI** : Mistral AI — analyse d'alertes assistée
 
 ---
@@ -135,6 +143,7 @@ suricata-update (ptrules, stamus/lateral, tgreen/hunting), règles NF Scanners e
 | Document | Description |
 |----------|-------------|
 | [Checklist Migration OPNsense 26.1](docs/06-migration-checklist.md) | Points de vigilance post-migration OPNsense 25.7 → 26.1 |
+| [Scripts WEF NTLM (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts) | Deploy-WEF-NTLM-GPO.ps1, Intune, Detect, ntlm-subscription.xml |
 
 ---
 
