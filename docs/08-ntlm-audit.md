@@ -503,6 +503,12 @@ SQLSRV-*
 NAS-MAIN
 ```
 
+> **Cas concret observé en lab :** l'event 8001 (audit du blocage sortant) fournit directement le texte de remédiation Microsoft pour chaque cible NTLM détectée :
+>
+> *« If you want only the target server RPC/10.100.2.1 to accept NTLM authentication requests from this computer, set the security policy Network Security: Restrict NTLM: Outgoing NTLM traffic to remote servers to Deny all, and then set the security policy Network Security: Restrict NTLM: Add remote server exceptions and list the target server RPC/10.100.2.1 as an exception to use NTLM authentication. »*
+>
+> Pour le cas de réplication AD documenté plus haut, la cible exacte à ajouter en exception serait `RPC/10.100.2.1` (ou le nom NetBIOS du DC distant selon le format accepté). Voir le test de validation ci-dessous : dans cette topologie, l'exception s'est révélée **non nécessaire** après reboot des DC, le canal RPC ayant été renégocié sans dépendance NTLM.
+
 ---
 
 ## Phase 3 — Désactivation NTLM
