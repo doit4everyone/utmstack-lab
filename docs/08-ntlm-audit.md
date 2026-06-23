@@ -1,5 +1,5 @@
 ---
-title: "Audit NTLM & Migration Kerberos | DoIt4Everyone"
+title: "Audit NTLM & Migration NTLM vers Kerberos | DoIt4Everyone"
 description: "Audit complet de l'authentification NTLM via UTMStack SIEM — WEF, GPO/Intune, dashboard, roadmap de migration NTLM → Kerberos selon la roadmap Microsoft."
 lang: fr
 ---
