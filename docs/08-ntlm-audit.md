@@ -361,31 +361,43 @@ Ce comportement est confirmé par Microsoft :
 
 > « By default Windows will not attempt Kerberos authentication for a host if the hostname is an IP address. It will fall back to other enabled authentication protocols like NTLM. » — [Microsoft Learn, Configuring Kerberos for IP Address](https://learn.microsoft.com/en-us/windows-server/security/kerberos/configuring-kerberos-over-ip)
 
-### Pourquoi ce cas est critique pour la migration
+### Pourquoi ce cas est notable pour la migration
 
-- **Toute entreprise multi-sites** avec des DC dans des sites AD distincts est concernée
+- **Toute entreprise multi-sites** avec des DC dans des sites AD distincts peut être concernée
 - Le DNS fonctionne parfaitement — ce n'est pas un problème de résolution
 - Ce trafic NTLM était **totalement invisible** avant les Event IDs 4020-4025 introduits avec Server 2025 / Windows 11 24H2
-- La désactivation brute de NTLM sans préparation **casserait la réplication AD**
+- Voir le test de validation ci-dessous : ce comportement s'est révélé **opportuniste plutôt que bloquant** dans les conditions testées — la désactivation de NTLM n'a pas cassé la réplication après reboot des DC
 
 ### Impact pour la Phase 3 (Désactivation)
 
-Ce cas démontre pourquoi la désactivation de NTLM est impossible sans l'introduction par Microsoft de **IAKerb** (Phase 2, prévu second semestre 2026). IAKerb permettra à Kerberos de fonctionner avec des cibles identifiées par IP. En attendant, ces flux RPC d'infrastructure intra-domaine doivent être explicitement identifiés et ajoutés à la liste des exceptions.
+Ce comportement de fallback illustre l'un des cas que Microsoft cite pour justifier l'introduction d'**IAKerb** (Phase 2, prévu second semestre 2026), qui permettra à Kerberos de fonctionner avec des cibles identifiées par IP. Le test de validation ci-dessous montre cependant que ce fallback n'est pas nécessairement une dépendance bloquante dans toutes les conditions — voir l'analyse détaillée plus bas avant de conclure à un risque de casse en Phase 3.
 
 ### Précision terrain — réplication manuelle vs automatique
 
-Observation supplémentaire en lab : forcer une réplication manuelle via `repadmin /replicate <DC_destination> <DC_source> <DN_partition>` **ne génère aucun event NTLM**, alors que la réplication automatique déclenchée par le KCC (Knowledge Consistency Checker) en génère systématiquement.
+Observation supplémentaire en lab : forcer une réplication manuelle via `repadmin /replicate <DC_destination> <DC_source> <DN_partition>` **ne génère aucun event NTLM**, alors que l'event 4021 documenté plus haut a été observé lors d'une réplication automatique déclenchée par le KCC (Knowledge Consistency Checker).
 
 ```
 repadmin /replicate DC01-MAIN-SITE DC01-RM DC=lab,DC=local
 → Aucun event 4021 généré
 ```
 
-Raison : `repadmin` résout le DC source/destination par son **nom DNS** passé en argument → Kerberos fonctionne normalement. Le KCC, lui, déclenche la réplication automatiquement via la topologie de sites AD, qui adresse les partenaires de réplication **par IP** (configuration de sous-réseau du site) — c'est précisément ce chemin qui force le fallback NTLM.
+Raison : `repadmin` résout le DC source/destination par son **nom DNS** passé en argument → Kerberos fonctionne normalement. Le KCC, lui, déclenche la réplication automatiquement via la topologie de sites AD, qui adresse les partenaires de réplication **par IP** (configuration de sous-réseau du site) — c'est ce chemin qui a produit le fallback NTLM observé et documenté ci-dessus.
 
-Conséquence pratique : le NTLM observé ne vient pas de "la réplication AD" en général, mais spécifiquement du **chemin de réplication automatique géré par le KCC**. Un déclenchement manuel via `repadmin` contourne ce chemin et n'est donc pas représentatif du trafic réel — pour auditer fidèlement le bruit NTLM de réplication, il faut observer les cycles automatiques (toutes les 180 minutes par défaut) ou des événements qui déclenchent une réplication urgente (création d'utilisateur, modification de mot de passe, etc.), pas des réplications forcées manuellement.
+### Test de validation — le blocage NTLM casse-t-il vraiment la réplication ?
 
-> ⚠️ À ce jour (juin 2026), aucune documentation officielle francophone ne documente ce cas précis. Les administrateurs qui activent les GPO d'audit NTLM et découvrent ces événements peuvent les confondre avec une attaque par relais NTLM, alors qu'il s'agit du bruit de fond normal de l'infrastructure AD.
+Pour vérifier si ce fallback NTLM est une **dépendance bloquante** (la réplication s'arrêterait sans NTLM) ou un comportement **opportuniste** (NTLM est utilisé quand disponible, mais pas requis), le blocage complet de NTLM a été testé en lab, dans les deux sens, avec reboot des deux DC pour repartir sur un état de session RPC vierge :
+
+| Test | Configuration | Résultat |
+|---|---|---|
+| NTLM sortant refusé (les deux DC) | `Sécurité réseau : Restreindre NTLM : Trafic NTLM sortant vers des serveurs distants` → Refuser tout, GPO appliquée sur les deux DC, reboot | Réplication intacte (`dcdiag /test:Replications` : succès) |
+| NTLM entrant refusé (DC01-RM) | `Sécurité réseau : Restreindre NTLM : Auditer le trafic NTLM entrant` → Refuser tout, reboot | Réplication intacte, SYSVOL/NETLOGON disponibles |
+| Événements NTLM post-reboot | — | **Aucun** généré, même après création forcée d'un utilisateur et déclenchement manuel du KCC (`repadmin /kcc`) |
+
+**Conclusion du test :** dans cette topologie (DNS fonctionnel des deux côtés, deux sites AD, deux DC), le blocage complet de NTLM — sortant et entrant — **n'a pas cassé la réplication**. Après un redémarrage à froid des deux DC avec les deux politiques de refus actives, aucun nouvel événement NTLM/Operational n'a été généré, ce qui suggère que la réplication a négocié son canal RPC entièrement via Kerberos dès l'établissement de la connexion.
+
+Ce résultat **nuance** l'observation initiale : l'event 4021 documenté plus haut est réel et reproductible dans certaines conditions (probablement liées à l'état de la session RPC au moment de l'observation — cache de connexion établi avant l'activation des stratégies d'audit, ou opération RPC ponctuelle), mais il ne représente pas une dépendance NTLM systématique et bloquante de la réplication AD régulière. Le NTLM observé semble **opportuniste plutôt que requis** : utilisé quand le contexte s'y prête, mais contournable une fois le canal RPC renégocié à froid.
+
+> ⚠️ À ce jour (juin 2026), aucune documentation officielle francophone ne documente ce cas précis ni cette nuance. Les administrateurs qui activent les GPO d'audit NTLM et découvrent l'event 4021/Reason ID 10 peuvent le confondre avec une dépendance bloquante — en pratique, son caractère bloquant ou opportuniste semble dépendre de l'état de la session RPC au moment de l'observation, et mérite d'être testé dans chaque environnement avant de conclure à une dépendance de production.
 
 ---
 
