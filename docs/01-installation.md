@@ -1,6 +1,6 @@
 ---
 title: "Installation UTMStack v11 sous VMware Workstation | DoIt4Everyone"
-description: "Guide complet installation UTMStack v11.2.8 Community Edition sous VMware Workstation. Configuration VM, bug DHCP, optimisations post-install pour lab PME Suisse."
+description: "Guide complet installation UTMStack v11.2.8 Community Edition sous VMware Workstation. Configuration VM, bug DHCP, RAM minimum réelle pour l'auto-updater, optimisations post-install pour lab PME Suisse."
 ---
 <style>
   header, footer { display: none !important; }
@@ -26,6 +26,8 @@ description: "Guide complet installation UTMStack v11.2.8 Community Edition sous
 
 > [← Retour à l'index](../)
 
+> ⚠️ **Mise à jour critique (29 juin 2026) :** un incident terrain a révélé que la RAM recommandée à l'étape 6.7 (10 GB) bloque silencieusement le service d'auto-mise à jour d'UTMStack, créant une boucle d'échec invisible pendant des semaines. Voir la nouvelle section [10. RAM minimum réelle](#10-ram-minimum-réelle--la-leçon-du-29-juin-2026) avant d'appliquer l'étape 6.7.
+
 ## 📋 Table des matières
 
 1. [Paramètres de la machine virtuelle](#1-paramètres-de-la-machine-virtuelle)
@@ -42,6 +44,7 @@ description: "Guide complet installation UTMStack v11.2.8 Community Edition sous
 7. [Ports importants](#7-ports-importants-v1128)
 8. [Snapshots recommandés](#8-snapshots-recommandés)
 9. [Credentials](#9-credentials)
+10. [RAM minimum réelle — la leçon du 29 juin 2026](#10-ram-minimum-réelle--la-leçon-du-29-juin-2026)
 
 ---
 
@@ -274,6 +277,8 @@ docker service ls   # Vérifier 1/1
 
 ### 6.7 Réduction RAM VM à 10 GB (lab uniquement)
 
+> ⚠️ **Voir impérativement la [section 10](#10-ram-minimum-réelle--la-leçon-du-29-juin-2026) avant d'appliquer cette étape.** 10 GB suffit au fonctionnement quotidien mais bloque silencieusement le service d'auto-mise à jour d'UTMStack.
+
 - Power Off la VM UTMStack
 - VM → Settings → Memory → **10240 MB**
 - Power On — tous les services remontent automatiquement
@@ -307,6 +312,7 @@ New-NetFirewallRule -DisplayName "UTMStack Syslog TCP 7014" -Direction Inbound -
 |-----------------|--------|
 | UTMStack-v11.2.8-clean-install | Après installation + optimisations, avant agents |
 | UTMStack-v11.2.8-operational | Après connexion de tous les agents et validation syslog |
+| UTMStack-before-update | Avant chaque mise à jour manuelle de version (voir section 10) |
 
 > ⚠️ Ne jamais restaurer un backup PostgreSQL d'une version antérieure dans une installation v11.2.8.
 
@@ -324,6 +330,72 @@ New-NetFirewallRule -DisplayName "UTMStack Syslog TCP 7014" -Direction Inbound -
 | Admin interface | `https://<IP>:9090` |
 
 > ⚠️ Le mot de passe admin est généré automatiquement et affiché **une seule fois** à la fin de l'installation. Le noter immédiatement.
+
+---
+
+## 10. RAM minimum réelle — la leçon du 29 juin 2026
+
+### Ce que disait ce guide jusqu'ici
+
+L'étape 6.7 recommandait de réduire la VM à **10 GB** après l'installation initiale, pour économiser des ressources sur un lab où UTMStack partage l'hôte avec d'autres VMs. Cette recommandation **reste valable pour le fonctionnement quotidien**, mais elle cache un piège sérieux découvert après plusieurs semaines d'exploitation continue.
+
+### Le piège — `UTMStackComponentsUpdater`
+
+UTMStack embarque un service systemd, **`UTMStackComponentsUpdater`**, qui tourne en arrière-plan en permanence et vérifie périodiquement s'il existe une nouvelle version sur GitHub. S'il en trouve une, il tente automatiquement de télécharger les nouvelles images Docker et de redéployer la stack — **sans aucune notification ni demande de confirmation.**
+
+Le problème : ce processus de mise à jour a besoin de faire tourner temporairement les **anciens et les nouveaux conteneurs en parallèle** pendant la transition, ce qui exige nettement plus de RAM que le fonctionnement normal.
+
+Sur une VM réduite à 10 GB (conformément à l'étape 6.7), ce service échoue avec :
+
+```
+error balancing memory: insufficient memory: Available 9913MB < Total Minimum Required 11150MB. (System requires 12150MB)
+```
+
+### La conséquence — une boucle d'échec silencieuse de plusieurs semaines
+
+Sans limite de tentatives, systemd relance ce service **toutes les 2 minutes, indéfiniment**, dès qu'une mise à jour est disponible. Sur un lab resté allumé 3 semaines sans interruption, ça représente plus de **14 500 tentatives échouées** — entièrement invisibles dans l'interface UTMStack, et qui ne produisent aucune alerte.
+
+> ⚠️ **Risque concret observé en lab :** si une opération de maintenance manuelle (redémarrage de service, `docker stack deploy`) intervient pile au moment où ce cycle d'échec de l'updater tente sa propre opération de redéploiement, les deux processus entrent en collision sur le réseau overlay Docker Swarm. Résultat observé : DNS interne instable (`server misbehaving`), table de routage IPVS désynchronisée (`no destination available` affiché en boucle sur la console), et services applicatifs (notamment `agentmanager`, responsable du SOAR) qui crashent en boucle sans lien apparent avec la cause réelle. Le diagnostic de cet incident a nécessité une journée complète, alors que la cause racine était une simple limite de RAM insuffisante pour un service qu'on ne savait même pas actif.
+
+### Ce qu'il faut retenir
+
+| Recommandation | Étape 6.7 (obsolète) | Validé terrain |
+|---|---|---|
+| RAM en fonctionnement courant | 10 GB | 10 GB *(reste valable)* |
+| RAM minimum pour que l'auto-updater réussisse | Non documenté | **12 GB minimum (12150 MB exactement)** |
+| RAM recommandée si l'auto-updater reste actif | Non documenté | **16 GB** (marge de sécurité pour la transition ancien/nouveau conteneurs) |
+
+### Deux stratégies possibles
+
+**Stratégie A — Garder le mode économique (10 GB), désactiver l'auto-updater**
+
+Recommandé si tu préfères gérer les mises à jour manuellement, à un moment choisi :
+
+```bash
+systemctl stop UTMStackComponentsUpdater
+systemctl disable UTMStackComponentsUpdater
+```
+
+Pour mettre à jour manuellement quand tu le décides : remonter temporairement la VM à 16 GB, puis lancer l'installeur existant :
+
+```bash
+/opt/utmstack/installer --install
+```
+
+L'installeur détecte l'installation existante et propose la mise à jour. Une fois terminée et le système stabilisé, redescendre la VM à 10 GB (étape 6.7).
+
+**Stratégie B — Allouer durablement 16 GB à la VM**
+
+Recommandé si l'hôte dispose de la RAM nécessaire pour les autres VMs du lab en plus de celle-ci. Laisse l'auto-updater fonctionner normalement en arrière-plan, sans intervention.
+
+### Vérifier l'état du service avant de décider
+
+```bash
+systemctl status UTMStackComponentsUpdater --no-pager
+journalctl -u UTMStackComponentsUpdater --no-pager | tail -20
+```
+
+Si tu vois un `restart counter` élevé (plusieurs centaines ou milliers) accompagné de `error balancing memory`, c'est le signe que ce piège est déjà actif sur ton installation — applique l'une des deux stratégies ci-dessus avant qu'une opération de maintenance ne déclenche le même type d'incident.
 
 ---
 
