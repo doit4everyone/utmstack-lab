@@ -238,6 +238,84 @@ Tout vrai scan furtif visant le réseau LAN (reconnaissance interne réelle) res
 
 ---
 
+## Fix 4 — Règle 525 « Port Scan Detection »
+
+### Diagnostic
+
+```
+rule_definition_def:
+(
+  (equals("log.eventType", "alert") &&
+   contains("log.alert.signature", ["scan", "SCAN", "portscan"])) ||
+  (equals("protocol", "TCP") &&
+   equals("log.tcp.flags", "S") &&
+   equals("log.flow.state", "new") &&
+   lessThan("log.flow.duration", 1)) ||
+  (equals("protocol", "TCP") &&
+   oneOf("log.tcp.flags", ["", "F", "FPU"])) ||
+  (equals("log.eventType", "anomaly") &&
+   contains("log.anomaly.event", "scan"))
+)
+```
+
+Règle large (4 branches OR). Volume : 241 docs sur 1 mois, **100% sur `target.ip = 192.168.1.203`** (WAN), répartition 151 `blocked` / 90 `allowed`. Même pattern que la règle 876 : le trafic déjà bloqué visant le WAN ne mérite pas de triage manuel.
+
+> ℹ️ Pour ce type de règle comportementale (scan furtif basé sur le timing des paquets), **ne pas passer Suricata en `drop`** — des services légitimes (Google, Azure, CDN) déclenchent régulièrement ces patterns sans intention malveillante. Si une IP est réellement malveillante, elle apparaîtra aussi dans les listes Dshield/CINS/Spamhaus déjà en `drop`. La couche comportementale reste en `alert` comme observateur, pas comme bloqueur.
+
+### Fix appliqué
+
+```sql
+UPDATE utm_correlation_rules
+SET rule_definition_def = $$(
+  (
+    (equals("log.eventType", "alert") &&
+     contains("log.alert.signature", ["scan", "SCAN", "portscan"])) ||
+    (equals("protocol", "TCP") &&
+     equals("log.tcp.flags", "S") &&
+     equals("log.flow.state", "new") &&
+     lessThan("log.flow.duration", 1)) ||
+    (equals("protocol", "TCP") &&
+     oneOf("log.tcp.flags", ["", "F", "FPU"])) ||
+    (equals("log.eventType", "anomaly") &&
+     contains("log.anomaly.event", "scan"))
+  ) &&
+  !(equals("target.ip", "192.168.1.203") &&
+    equals("log.alert.action", "blocked"))
+)$$
+WHERE id = 525;
+```
+
+---
+
+## Fix 5 — Règle 1436 « Windows: Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) »
+
+### Diagnostic
+
+Règle endpoint (event Windows 4104 = PowerShell ScriptBlock Logging), 3 occurrences sur 1 mois. Toutes issues du même chemin :
+```
+C:\ProgramData\Microsoft\Windows Defender Advanced Threat Protection\DataCollection\...\36dc1ba5-....ps1
+```
+
+**Fausse alerte** : c'est le **scanner Log4Shell/CVE-2021-44228** intégré à Microsoft Defender for Endpoint, exécuté en tâche de fond par MDE lui-même. Le script contient `Invoke-WebRequestWithRootCaVerification` (contient le mot-clé `Invoke-WebRequest`) et `FromBase64String` (décodage légitime de certificats) — combinaison matchant la deuxième branche regex de détection sans qu'il s'agisse d'une vraie tentative de contournement AMSI.
+
+Ce cas illustre une source de bruit d'une nature différente des précédents : **pas du bruit réseau périmétrique, mais un faux positif endpoint généré par l'outil de sécurité Microsoft lui-même**. Signal à retenir pour tout déploiement SIEM avec MDE : les agents de sécurité endpoint (MDE, CrowdStrike Falcon, etc.) génèrent régulièrement des scripts PowerShell qui peuvent déclencher des règles AMSI/obfuscation — une exclusion par chemin d'exécution est préférable à une désactivation de la règle.
+
+### Fix appliqué
+
+Exclusion ciblée sur le chemin MDE, sans toucher aux deux branches de détection (actives pour tout autre processus) :
+
+```sql
+UPDATE utm_correlation_rules
+SET rule_definition_def = $$equals("log.eventCode", "4104") &&
+(regexMatch("log.eventDataScriptBlockText", "(?i)(amsiutils|amsiinitfailed|amsiscanbuffer|virtualalloc|writeprocessmemory|getdelegateforfunctionpointer|invoke-mimikatz|invoke-shellcode|invoke-dllinjection|createremotethread)") ||
+(regexMatch("log.eventDataScriptBlockText", "(?i)(downloadstring|downloadfile|downloaddata|invoke-webrequest|net.webclient|start-bitstransfer)") &&
+regexMatch("log.eventDataScriptBlockText", "(?i)(iex|invoke-expression|-enc |-encodedcommand|-w hidden|-windowstyle hidden|frombase64string)"))) &&
+!contains("log.data.Path", "Windows Defender Advanced Threat Protection")$$
+WHERE id = 1436;
+```
+
+---
+
 ## Méthode d'application — pattern réutilisable
 
 Pour éviter les problèmes d'échappement de guillemets imbriqués (`$$...$$`, guillemets doubles dans `equals("...")`) à travers `docker exec -c`, le SQL est écrit dans un fichier, copié dans le conteneur, puis exécuté via `-f` :
@@ -308,21 +386,21 @@ Rétention fixe à **30 jours** sur les index `v11-alert-*` (template partagé a
 
 ## ⚠️ Checklist post-update UTMStack
 
-Les règles modifiées (530, 875, 876) ont `system_owner = true` : elles sont fournies par UTMStack, pas créées par l'utilisateur. La persistance du fix à travers une montée de version d'UTMStack n'a pas encore pu être confirmée empiriquement (pattern courant sur ce type de table dans un produit versionné : réécriture/re-seed des définitions built-in à chaque update). À noter : `UTMStackComponentsUpdater` a fait passer ce lab de v11.2.10 à v11.2.11 automatiquement, en tâche de fond, sans action manuelle ni notification — confirmé via l'image des conteneurs `event-processor-*` (`docker service ps ... --no-trunc`).
+Les règles modifiées (530, 875, 876, 525, 1436) ont `system_owner = true` : elles sont fournies par UTMStack, pas créées par l'utilisateur. La persistance du fix à travers une montée de version d'UTMStack n'a pas encore pu être confirmée empiriquement (pattern courant sur ce type de table dans un produit versionné : réécriture/re-seed des définitions built-in à chaque update). À noter : `UTMStackComponentsUpdater` a fait passer ce lab de v11.2.10 à v11.2.11 automatiquement, en tâche de fond, sans action manuelle ni notification — confirmé via l'image des conteneurs `event-processor-*` (`docker service ps ... --no-trunc`).
 
 **Procédure de vérification à exécuter après chaque update UTMStack**, en complément de la vérification de version déjà en place (`curl api.github.com/repos/utmstack/UTMStack/releases/tags/vX.X.X`) :
 
 1. **Vérifier les définitions de règles** :
    ```bash
    docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
-   "SELECT id, rule_name, rule_definition_def FROM utm_correlation_rules WHERE id IN (530,875,876);" \
+   "SELECT id, rule_name, rule_definition_def FROM utm_correlation_rules WHERE id IN (530,875,876,525,1436);" \
    > /root/post-update-check-$(date +%Y%m%d).txt
 
    diff /root/post-update-check-$(date +%Y%m%d).txt /root/verify-875-876.txt
    ```
-   Si le `diff` montre un écart, relancer les fichiers `update-rule530.sql`, `update-rule875.sql`, `update-rule876.sql` déjà préparés (voir section méthode d'application ci-dessus). Conserver ces trois fichiers dans un emplacement durable (ex: `/root/utmstack-fixes/`) plutôt que dans `/tmp`.
+   Si le `diff` montre un écart, relancer les fichiers `update-rule530.sql`, `update-rule875.sql`, `update-rule876.sql`, `update-rule525.sql`, `update-rule1436.sql` déjà préparés (conservés dans `/root/`).
 
-2. **Redémarrer les services de corrélation systématiquement après tout update**, même si le `diff` ne montre aucun écart — un update remplace de toute façon les conteneurs `event-processor-worker`/`event-processor-manager`, ce qui revient à un rechargement à froid des règles. Cette étape est donc generalement déjà couverte par l'update lui-même, mais à vérifier explicitement (voir section précédente) si les fixes ne semblent pas effectifs après coup.
+2. **Redémarrer les services de corrélation systématiquement après tout update**, même si le `diff` ne montre aucun écart — un update remplace de toute façon les conteneurs `event-processor-worker`/`event-processor-manager`, ce qui revient à un rechargement à froid des règles. Cette étape est donc généralement déjà couverte par l'update lui-même, mais à vérifier explicitement (voir section précédente) si les fixes ne semblent pas effectifs après coup.
 
 ---
 
