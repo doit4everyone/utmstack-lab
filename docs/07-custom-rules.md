@@ -501,6 +501,11 @@ grep -q "threshold-file" /usr/local/etc/suricata/suricata.yaml || \
 
 ## Partie 4 — Spamhaus DROP en mode drop
 
+> ℹ️ **Vérification 2026-06-30** — Contrôle de l'état réel, avec une nuance importante entre les deux flux regroupés sous ce titre :
+>
+> - **Spamhaus** (règles `ET DROP Spamhaus...`, dans `drop.rules`) : 0 ligne `alert` restante ce matin-là. Ce résultat ne prouve **pas** une livraison native en `drop` par ET — il confirme que le mécanisme ci-dessous, déployé depuis le 2026-06-10/11 (cron `suricata-drop-fix`, 00:30 quotidien), fonctionne correctement : le téléchargement nocturne OPNsense (00:00) régénère `drop.rules` en `alert`, et le cron de 00:30 reconvertit avant toute vérification matinale. La procédure ci-dessous reste donc nécessaire et active pour Spamhaus.
+> - **Dshield** (règles `ET DROP Dshield...`, sid 2402000+) : vit en réalité dans un fichier séparé, **`dshield.rules`**, non couvert par le cron `suricata-drop-fix` (qui ne cible que `drop.rules`). Vérifié déjà en `drop ip [...]` directement à la source, sans aucune action de notre part. Pour ce flux précis, la livraison native en `drop` par ET est confirmée — aucune action requise.
+
 ### Problème
 
 Les règles ET DROP (Spamhaus, Dshield) sont en mode `alert` par défaut. Les IPs les plus dangereuses d'Internet passent le firewall — elles sont détectées mais **pas bloquées**.
@@ -537,6 +542,99 @@ Dans le hook `98-soar-ban`, ajouter :
 ```sh
 cp /conf/suricata-drop-fix /etc/cron.d/suricata-drop-fix
 ```
+
+---
+
+## Partie 5 — CINS Active Threat Intelligence en mode drop
+
+### Problème
+
+Contrairement à Spamhaus et Dshield (Partie 4, nativement en `drop`), le flux **ET CINS Active Threat Intelligence** (`ciarmy.rules` — CINS Army, liste de réputation IP) est livré par Emerging Threats en mode `alert`. Les IP listées comme malveillantes par CINS traversent donc le firewall sans être bloquées :
+
+```
+log.alert.action: allowed
+log.alert.metadata.tag: CINS
+log.alert.signature: "ET CINS Active Threat Intelligence Poor Reputation IP group X"
+```
+
+Volume mesuré : **299 règles** au format `alert ip [...] any -> $HOME_NET any` dans `ciarmy.rules`, organisées en groupes (`group 1` à `group N`).
+
+### Fix — sed ciblé + rechargement à chaud
+
+À la différence de la Partie 4 (transformation globale de `drop.rules`), le `sed` cible spécifiquement le format `alert ip` propre à `ciarmy.rules`, pour éviter tout effet de bord sur d'autres syntaxes de règles potentiellement présentes dans le même fichier :
+
+```bash
+cp /usr/local/etc/suricata/opnsense.rules/ciarmy.rules /conf/ciarmy.rules.backup-`date +%Y%m%d`
+```
+
+> ⚠️ Utiliser des **backticks**, pas `$()` — csh (shell par défaut OPNsense) ne supporte pas la substitution de commande au format bash et renvoie `Illegal variable name.`
+
+```bash
+nano /usr/local/bin/ciarmy-drop-fix.sh
+```
+
+```sh
+#!/bin/sh
+sed -i '' 's/^alert ip/drop ip/' /usr/local/etc/suricata/opnsense.rules/ciarmy.rules
+kill -USR2 `pgrep -x suricata`
+```
+
+```bash
+chmod +x /usr/local/bin/ciarmy-drop-fix.sh
+sh /usr/local/bin/ciarmy-drop-fix.sh
+
+# Vérifier
+grep -c "^drop ip"  /usr/local/etc/suricata/opnsense.rules/ciarmy.rules   # → 299
+grep -c "^alert ip" /usr/local/etc/suricata/opnsense.rules/ciarmy.rules   # → 0
+```
+
+Confirmation du rechargement (chercher dans le log Suricata courant — `latest.log`, pas un fichier daté) :
+
+```bash
+tail -50 /var/log/suricata/latest.log | grep -i "reload complete"
+# → [Notice] -- rule reload complete
+```
+
+### Persistance — cron quotidien
+
+`ciarmy.rules` étant un flux ET re-téléchargé périodiquement (révision quasi quotidienne), toute modification manuelle est écrasée au prochain refresh sans automatisation :
+
+```bash
+nano /etc/cron.d/ciarmy-drop-fix
+```
+
+```
+30 0 * * * root /usr/local/bin/ciarmy-drop-fix.sh
+```
+
+```bash
+cp /usr/local/bin/ciarmy-drop-fix.sh /conf/ciarmy-drop-fix.sh
+cp /etc/cron.d/ciarmy-drop-fix /conf/ciarmy-drop-fix
+```
+
+Dans le hook `98-soar-ban`, ajouter :
+
+```sh
+cp /conf/ciarmy-drop-fix.sh /usr/local/bin/ciarmy-drop-fix.sh && chmod +x /usr/local/bin/ciarmy-drop-fix.sh
+cp /conf/ciarmy-drop-fix /etc/cron.d/ciarmy-drop-fix
+```
+
+### Pourquoi 299 règles individuelles plutôt qu'une transformation via l'UI
+
+OPNsense permet de basculer une règle individuelle Alert/Drop via Services → Intrusion Detection → Administration → Rules, mais sans action groupée par fichier source. Avec 299 règles à traiter, le `sed` reste la seule approche réaliste — l'UI étant réservée à des ajustements ponctuels sur une poignée de règles.
+
+### Validation en conditions réelles
+
+Confirmation côté Log Explorer UTMStack — une IP CINS bloquée par Suricata (`action: blocked`) déclenche ensuite le flow SOAR `Suricata Network Anomaly Detected`, qui ban automatiquement l'IP via CrowdSec :
+
+```bash
+cscli decisions list | grep "<ip>"
+# → reason=utmstack, decisions: ban:1
+```
+
+Boucle complète vérifiée de bout en bout : CINS détecté → bloqué par Suricata → remonté UTMStack → SOAR → ban CrowdSec.
+
+Une fois bloqué côté Suricata, le trafic CINS bascule de `action: allowed` à `action: blocked` — il devient alors éligible aux exclusions de bruit posées côté règles de corrélation UTMStack, voir [annexe — Réduction du bruit, règles de corrélation UTMStack](correlation-rules-tuning.md).
 
 ---
 
@@ -600,4 +698,4 @@ Si `NF-Scanners.rules` est absent → `update-nf-rules.sh` est relancé automati
 
 ---
 
-[← SOAR & Automatisation](05-soar.md) | [→ SOC AI](06-soc-ai.md)
+[← SOAR & Automatisation](05-soar.md) | [→ SOC AI](06-soc-ai.md) | [Annexe — Réduction du bruit, corrélation UTMStack →](correlation-rules-tuning.md)
