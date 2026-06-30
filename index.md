@@ -143,6 +143,7 @@ Déploiement de l'audit NTLM via Windows Event Forwarding (WEF) en self-subscrip
 | Document | Description |
 |----------|-------------|
 | [Checklist Migration OPNsense 26.1](docs/06-migration-checklist.md) | Points de vigilance post-migration OPNsense 25.7 → 26.1 |
+| [Réduction du bruit — Règles de corrélation UTMStack](docs/correlation-rules-tuning.md) | Alert fatigue, diagnostic OpenSearch/PostgreSQL, fixes règles 530/875/876, checklist post-update |
 | [Scripts WEF NTLM (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts) | Deploy-WEF-NTLM-GPO.ps1, Intune, Detect, ntlm-subscription.xml |
 
 ---
