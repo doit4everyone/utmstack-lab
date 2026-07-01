@@ -384,23 +384,167 @@ Rétention fixe à **30 jours** sur les index `v11-alert-*` (template partagé a
 
 ---
 
-## ⚠️ Checklist post-update UTMStack
+## ⚠️ Comportement confirmé — réinitialisation des règles au redémarrage
 
-Les règles modifiées (530, 875, 876, 525, 1436) ont `system_owner = true` : elles sont fournies par UTMStack, pas créées par l'utilisateur. La persistance du fix à travers une montée de version d'UTMStack n'a pas encore pu être confirmée empiriquement (pattern courant sur ce type de table dans un produit versionné : réécriture/re-seed des définitions built-in à chaque update). À noter : `UTMStackComponentsUpdater` a fait passer ce lab de v11.2.10 à v11.2.11 automatiquement, en tâche de fond, sans action manuelle ni notification — confirmé via l'image des conteneurs `event-processor-*` (`docker service ps ... --no-trunc`).
+**Constaté empiriquement le 2026-07-01** après un reboot d'UTMStack : les règles `system_owner=true` sont **réinitialisées à leur définition d'origine** au démarrage. Les fixes 530, 525, 875 et 876 ont tous été écrasés. La règle 1436 (PowerShell MDE) a survécu à ce reboot — comportement non encore expliqué, à surveiller.
 
-**Procédure de vérification à exécuter après chaque update UTMStack**, en complément de la vérification de version déjà en place (`curl api.github.com/repos/utmstack/UTMStack/releases/tags/vX.X.X`) :
+Ce n'est plus une hypothèse : **tout reboot ou update UTMStack nécessite une réapplication des fixes**.
 
-1. **Vérifier les définitions de règles** :
-   ```bash
-   docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
-   "SELECT id, rule_name, rule_definition_def FROM utm_correlation_rules WHERE id IN (530,875,876,525,1436);" \
-   > /root/post-update-check-$(date +%Y%m%d).txt
+---
 
-   diff /root/post-update-check-$(date +%Y%m%d).txt /root/verify-875-876.txt
-   ```
-   Si le `diff` montre un écart, relancer les fichiers `update-rule530.sql`, `update-rule875.sql`, `update-rule876.sql`, `update-rule525.sql`, `update-rule1436.sql` déjà préparés (conservés dans `/root/`).
+## Automatisation — service systemd de réapplication au démarrage
 
-2. **Redémarrer les services de corrélation systématiquement après tout update**, même si le `diff` ne montre aucun écart — un update remplace de toute façon les conteneurs `event-processor-worker`/`event-processor-manager`, ce qui revient à un rechargement à froid des règles. Cette étape est donc généralement déjà couverte par l'update lui-même, mais à vérifier explicitement (voir section précédente) si les fixes ne semblent pas effectifs après coup.
+Plutôt que de réappliquer manuellement après chaque reboot (procédure décrite dans la section précédente), un service systemd gère la réapplication automatiquement.
+
+### Fichiers SQL à conserver dans `/root/utmstack-fixes/`
+
+```bash
+mkdir -p /root/utmstack-fixes
+cp /root/update-rule530.sql /root/utmstack-fixes/
+cp /root/update-rule875.sql /root/utmstack-fixes/
+cp /root/update-rule876.sql /root/utmstack-fixes/
+cp /root/update-rule525.sql /root/utmstack-fixes/
+cp /root/update-rule1436.sql /root/utmstack-fixes/
+```
+
+### Script `/usr/local/bin/utmstack-fix-rules.sh`
+
+```bash
+#!/bin/bash
+# Réapplication automatique des fixes de règles de corrélation UTMStack
+# Comportement confirmé : UTMStack réinitialise utm_correlation_rules
+# au démarrage pour les règles system_owner=true (530, 525, 875, 876)
+
+LOG="/var/log/utmstack-fix-rules.log"
+echo "$(date) — Démarrage réapplication des fixes de règles" >> $LOG
+
+# Attendre que PostgreSQL soit prêt (timeout 300s)
+TIMEOUT=300
+ELAPSED=0
+POSTGRES_ID=""
+
+while true; do
+  POSTGRES_ID=$(docker ps -q -f name=utmstack_postgres)
+  if [ -n "$POSTGRES_ID" ]; then
+    docker exec $POSTGRES_ID psql -U postgres -d utmstack -c "SELECT 1" > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+      break
+    fi
+  fi
+  sleep 5
+  ELAPSED=$((ELAPSED + 5))
+  if [ $ELAPSED -ge $TIMEOUT ]; then
+    echo "$(date) — ERREUR : timeout attente PostgreSQL après ${TIMEOUT}s" >> $LOG
+    exit 1
+  fi
+done
+
+echo "$(date) — PostgreSQL prêt après ${ELAPSED}s" >> $LOG
+
+# Réappliquer les fixes
+for sql in update-rule530.sql update-rule875.sql update-rule876.sql update-rule525.sql update-rule1436.sql; do
+  if [ -f "/root/utmstack-fixes/$sql" ]; then
+    docker cp /root/utmstack-fixes/$sql $POSTGRES_ID:/tmp/$sql
+    docker exec -i $POSTGRES_ID psql -U postgres -d utmstack -f /tmp/$sql >> $LOG 2>&1
+    echo "$(date) — Fix appliqué : $sql" >> $LOG
+  else
+    echo "$(date) — ERREUR : fichier manquant /root/utmstack-fixes/$sql" >> $LOG
+  fi
+done
+
+# Attendre 120s que Docker Swarm et les event-processor soient stables
+echo "$(date) — Attente 120s avant redémarrage des event-processor" >> $LOG
+sleep 120
+
+echo "$(date) — Redémarrage event-processor-worker" >> $LOG
+docker service update --force utmstack_event-processor-worker >> $LOG 2>&1
+
+echo "$(date) — Attente 30s avant redémarrage event-processor-manager" >> $LOG
+sleep 30
+
+echo "$(date) — Redémarrage event-processor-manager" >> $LOG
+docker service update --force utmstack_event-processor-manager >> $LOG 2>&1
+
+echo "$(date) — Terminé — fixes de règles appliqués avec succès" >> $LOG
+```
+
+```bash
+chmod +x /usr/local/bin/utmstack-fix-rules.sh
+```
+
+### Service systemd `/etc/systemd/system/utmstack-fix-rules.service`
+
+```ini
+[Unit]
+Description=UTMStack — Réapplication des fixes de règles de corrélation
+After=docker.service
+Requires=docker.service
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/utmstack-fix-rules.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable utmstack-fix-rules.service
+```
+
+### Vérification
+
+```bash
+systemctl status utmstack-fix-rules.service
+# Attendu : enabled + active (exited) + status=0/SUCCESS
+
+tail -50 /var/log/utmstack-fix-rules.log
+```
+
+### Timings observés (post-reboot, 2026-07-01)
+
+- PostgreSQL prêt : immédiat si UTMStack était déjà stable, jusqu'à ~60s après un cold boot
+- 4 `UPDATE 1` en séquence : ~1 seconde
+- Attente 120s : laisse Docker Swarm stabiliser tous les services
+- Redémarrage worker : ~20s pour converger
+- Attente 30s
+- Redémarrage manager : ~20s pour converger
+- **Durée totale : ~3 minutes**
+
+> ℹ️ Le service est `oneshot` — il s'exécute une fois au démarrage puis reste en état `active (exited)`. C'est le comportement attendu, pas une erreur.
+
+---
+
+## ⚠️ Checklist post-reboot / post-update UTMStack
+
+**Comportement confirmé empiriquement le 2026-07-01** : un reboot UTMStack réinitialise les règles `system_owner=true` à leur définition d'origine. Les fixes 530, 525, 875 et 876 ont tous été écrasés. La règle 1436 a survécu à ce reboot — comportement non encore expliqué, incluse dans l'automatisation par précaution.
+
+**Depuis le 2026-07-01**, le service `utmstack-fix-rules` gère automatiquement la réapplication au démarrage — voir section précédente. La vérification manuelle ci-dessous reste utile après un update majeur ou en cas de doute :
+
+```bash
+# Vérifier l'état du service après chaque reboot
+systemctl status utmstack-fix-rules.service
+# Attendu : enabled + active (exited) + status=0/SUCCESS
+
+# Consulter le log d'exécution
+tail -50 /var/log/utmstack-fix-rules.log
+
+# Vérification manuelle des définitions si doute
+docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
+"SELECT id, rule_name FROM utm_correlation_rules WHERE id IN (530,875,876,525,1436);"
+```
+
+Si un fix est manquant, forcer une réexécution du service :
+
+```bash
+systemctl start utmstack-fix-rules.service
+tail -f /var/log/utmstack-fix-rules.log
+```
 
 ---
 
