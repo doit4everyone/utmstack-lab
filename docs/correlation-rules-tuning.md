@@ -191,6 +191,8 @@ WHERE id = 876;
 
 **Résultat attendu** : ~54% de réduction sur cette règle, sans toucher au trafic `allowed`.
 
+> ⚠️ **Cette version du fix a été complétée par la suite** — voir [Fix 6](#fix-6--règle-876-v2--medium-level-suricata-alert--deuxième-itération) plus bas pour un second profil de bruit découvert sur cette même règle. Si tu construis ton fichier `update-rule876.sql` pour la première fois, utilise directement la version complète du Fix 6, pas celle-ci.
+
 ---
 
 ## Fix 3 — Règle 875 « High level Suricata alert »
@@ -287,7 +289,7 @@ WHERE id = 525;
 
 ---
 
-## Fix 5 — Règle 1436 « Windows: Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) »
+## Fix 5 — Règle 1424 « Windows: Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) »
 
 ### Diagnostic
 
@@ -311,7 +313,42 @@ SET rule_definition_def = $$equals("log.eventCode", "4104") &&
 (regexMatch("log.eventDataScriptBlockText", "(?i)(downloadstring|downloadfile|downloaddata|invoke-webrequest|net.webclient|start-bitstransfer)") &&
 regexMatch("log.eventDataScriptBlockText", "(?i)(iex|invoke-expression|-enc |-encodedcommand|-w hidden|-windowstyle hidden|frombase64string)"))) &&
 !contains("log.data.Path", "Windows Defender Advanced Threat Protection")$$
-WHERE id = 1436;
+WHERE id = 1424;
+```
+
+> ⚠️ **ID corrigé** — ce fix visait initialement l'ID 1436, qui après un revert de snapshot pointait vers une règle différente ("GCP Firewall Rule Created"). La vraie règle PowerShell vit sous l'ID **1424** en v11.2.11. Voir la section [Les ID de règles ne sont pas stables entre versions](#-les-id-de-règles-ne-sont-pas-stables-entre-versions-utmstack) pour la méthode de recherche utilisée pour la retrouver.
+
+---
+
+## Fix 6 — Règle 876 v2 « Medium level Suricata alert » — deuxième itération
+
+### Diagnostic
+
+Après la mise en place du fix 2 (WAN + `action=blocked`), un nouveau profil de bruit est apparu sur la même règle : le trafic **sortant** légitime d'OPNsense lui-même (mise à jour des définitions Microsoft Defender via *Delivery Optimization*) déclenchait toujours la règle, puisqu'il n'est pas bloqué (`action: allowed`) et ne correspond donc pas à l'exclusion existante.
+
+```
+lastEvent.log.alert.signature_id: 2021076
+signature: "ET HUNTING SUSPICIOUS Dotted Quad Host MZ Response"
+http.http_user_agent: "Microsoft-Delivery-Optimization/10.1" / "10.0"
+target.ip: 192.168.1.203 (100% des 36 occurrences)
+```
+
+La signature détecte un exécutable Windows (en-tête "MZ") téléchargé depuis un hôte désigné par IP brute plutôt qu'un nom de domaine — un pattern généralement associé à du C2 évitant le DNS. Mais Microsoft Delivery Optimization (le CDN interne de Windows Update) utilise couramment des IP directes pour ses téléchargements, sans lien avec une activité malveillante. Confirmé : 100% des occurrences ont ce User-Agent précis, 100% ciblent le WAN local (donc c'est bien OPNsense qui télécharge, pas une machine tierce qui le contacte).
+
+### Fix appliqué
+
+Ajout d'une exclusion supplémentaire sur le User-Agent, en plus (pas en remplacement) de l'exclusion WAN+blocked du fix 2 :
+
+```sql
+UPDATE utm_correlation_rules
+SET rule_definition_def = $$(
+  equals("log.eventType", "alert") &&
+  equals("severity", "medium") &&
+  !(equals("target.ip", "192.168.1.203") &&
+    equals("log.alert.action", "blocked")) &&
+  !contains("log.http.http_user_agent", "Microsoft-Delivery-Optimization")
+)$$
+WHERE id = 876;
 ```
 
 ---
@@ -404,8 +441,107 @@ cp /root/update-rule530.sql /root/utmstack-fixes/
 cp /root/update-rule875.sql /root/utmstack-fixes/
 cp /root/update-rule876.sql /root/utmstack-fixes/
 cp /root/update-rule525.sql /root/utmstack-fixes/
-cp /root/update-rule1436.sql /root/utmstack-fixes/
+cp /root/update-rule1424.sql /root/utmstack-fixes/
 ```
+
+> ℹ️ **Pour un lecteur qui reconstruit ces fichiers depuis zéro** : voici le contenu final et à jour de chacun des 5 fichiers, prêt à copier-coller directement (`nano /root/update-rule<id>.sql`, coller, sauvegarder). Ce sont les mêmes contenus que dans les sections Fix 1 à 6 plus haut — regroupés ici pour éviter d'avoir à les rechercher un par un.
+
+<details>
+<summary><strong>update-rule530.sql</strong> (Fix 1 — Tunneling Detection)</summary>
+
+```sql
+UPDATE utm_correlation_rules
+SET rule_definition_def = $$(
+  (equals("log.eventType", "alert") &&
+   (contains("log.alert.signature", "SSH") &&
+    !equals("target.port", 22))) ||
+  (equals("log.appProto", "ssh") &&
+   !equals("target.port", 22)) ||
+  (equals("protocol", "TCP") &&
+   equals("target.port", 443) &&
+   !equals("log.appProto", "tls") &&
+   !equals("target.ip", "192.168.1.203")) ||
+  (equals("log.eventType", "alert") &&
+   contains("log.alert.signature", "tunnel")) ||
+  (equals("target.port", 53) &&
+   equals("protocol", "TCP") &&
+   greaterThan("log.flow.bytes_toserver", 5000))
+)$$
+WHERE id = 530;
+```
+</details>
+
+<details>
+<summary><strong>update-rule875.sql</strong> (Fix 3 — High level Suricata alert)</summary>
+
+```sql
+UPDATE utm_correlation_rules
+SET rule_definition_def = $$(
+  equals("log.eventType", "alert") &&
+  equals("severity", "high") &&
+  !(equals("target.ip", "192.168.1.203") &&
+    contains("log.alert.signature", "stealth"))
+)$$
+WHERE id = 875;
+```
+</details>
+
+<details>
+<summary><strong>update-rule876.sql</strong> (Fix 6 — version finale, remplace le Fix 2)</summary>
+
+```sql
+UPDATE utm_correlation_rules
+SET rule_definition_def = $$(
+  equals("log.eventType", "alert") &&
+  equals("severity", "medium") &&
+  !(equals("target.ip", "192.168.1.203") &&
+    equals("log.alert.action", "blocked")) &&
+  !contains("log.http.http_user_agent", "Microsoft-Delivery-Optimization")
+)$$
+WHERE id = 876;
+```
+</details>
+
+<details>
+<summary><strong>update-rule525.sql</strong> (Fix 4 — Port Scan Detection)</summary>
+
+```sql
+UPDATE utm_correlation_rules
+SET rule_definition_def = $$(
+  (
+    (equals("log.eventType", "alert") &&
+     contains("log.alert.signature", ["scan", "SCAN", "portscan"])) ||
+    (equals("protocol", "TCP") &&
+     equals("log.tcp.flags", "S") &&
+     equals("log.flow.state", "new") &&
+     lessThan("log.flow.duration", 1)) ||
+    (equals("protocol", "TCP") &&
+     oneOf("log.tcp.flags", ["", "F", "FPU"])) ||
+    (equals("log.eventType", "anomaly") &&
+     contains("log.anomaly.event", "scan"))
+  ) &&
+  !(equals("target.ip", "192.168.1.203") &&
+    equals("log.alert.action", "blocked"))
+)$$
+WHERE id = 525;
+```
+</details>
+
+<details>
+<summary><strong>update-rule1424.sql</strong> (Fix 5 — PowerShell / MDE, ID vérifié au 2026-07-02)</summary>
+
+```sql
+UPDATE utm_correlation_rules
+SET rule_definition_def = $$equals("log.eventCode", "4104") &&
+(regexMatch("log.eventDataScriptBlockText", "(?i)(amsiutils|amsiinitfailed|amsiscanbuffer|virtualalloc|writeprocessmemory|getdelegateforfunctionpointer|invoke-mimikatz|invoke-shellcode|invoke-dllinjection|createremotethread)") ||
+(regexMatch("log.eventDataScriptBlockText", "(?i)(downloadstring|downloadfile|downloaddata|invoke-webrequest|net.webclient|start-bitstransfer)") &&
+regexMatch("log.eventDataScriptBlockText", "(?i)(iex|invoke-expression|-enc |-encodedcommand|-w hidden|-windowstyle hidden|frombase64string)"))) &&
+!contains("log.data.Path", "Windows Defender Advanced Threat Protection")$$
+WHERE id = 1424;
+```
+
+> ⚠️ Avant d'appliquer ce fichier sur une instance différente de ce lab (ou après tout revert de snapshot), vérifier que l'ID 1424 correspond bien à cette règle — voir la section [Les ID de règles ne sont pas stables entre versions](#-les-id-de-règles-ne-sont-pas-stables-entre-versions-utmstack).
+</details>
 
 ### Script `/usr/local/bin/utmstack-fix-rules.sh`
 
@@ -442,7 +578,7 @@ done
 echo "$(date) — PostgreSQL prêt après ${ELAPSED}s" >> $LOG
 
 # Réappliquer les fixes
-for sql in update-rule530.sql update-rule875.sql update-rule876.sql update-rule525.sql update-rule1436.sql; do
+for sql in update-rule530.sql update-rule875.sql update-rule876.sql update-rule525.sql update-rule1424.sql; do
   if [ -f "/root/utmstack-fixes/$sql" ]; then
     docker cp /root/utmstack-fixes/$sql $POSTGRES_ID:/tmp/$sql
     docker exec -i $POSTGRES_ID psql -U postgres -d utmstack -f /tmp/$sql >> $LOG 2>&1
@@ -520,11 +656,70 @@ tail -50 /var/log/utmstack-fix-rules.log
 
 ---
 
+## ⚠️ Les ID de règles ne sont pas stables entre versions UTMStack
+
+**Incident du 2026-07-01/02** : après un revert vers un snapshot antérieur (v11.2.8) puis une remise à jour vers v11.2.11, le fix prévu pour l'ID **1436** ("Windows: Suspicious PowerShell...") s'est retrouvé appliqué à une règle totalement différente — **"GCP Firewall Rule Created — Open Ingress"**. Entre les versions, UTMStack avait réattribué cet ID à une autre règle ; la vraie règle PowerShell vivait désormais sous l'ID **1424**.
+
+Un script qui réapplique un fix par `UPDATE ... WHERE id = X` **sans vérifier au préalable que `X` correspond toujours au bon `rule_name`** peut donc silencieusement corrompre une règle sans rapport. C'est arrivé une fois dans ce lab — voir plus bas la procédure de retour en arrière pour ce cas précis.
+
+### Méthode de recherche — retrouver une règle après un changement d'ID
+
+Ne jamais appliquer un `UPDATE ... WHERE id = X` sur une règle `system_owner=true` sans avoir d'abord confirmé son identité. La méthode utilisée dans ce lab, à chaque fois qu'un ID semblait suspect :
+
+**Étape 1 — Chercher par nom plutôt que par ID.** Le `rule_name` est plus stable que l'`id` entre versions (mais pas garanti à 100% non plus — vérifier aussi le contenu si un doute persiste) :
+
+```bash
+docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
+"SELECT id, rule_name FROM utm_correlation_rules WHERE rule_name ILIKE '%PowerShell%';"
+```
+
+Si plusieurs résultats correspondent (cas réel rencontré : 4 règles contenant "PowerShell"), identifier la bonne par son `rule_category` et par un extrait de sa `rule_definition_def` :
+
+```bash
+docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -x -c \
+"SELECT id, rule_name, rule_category, rule_definition_def FROM utm_correlation_rules WHERE id IN (1424,1140,1362,1341);"
+```
+
+**Étape 2 — Avant d'appliquer un `UPDATE`, toujours vérifier ce qu'il y a déjà à cet ID.** Une simple lecture avant écriture aurait évité l'incident du 1436 :
+
+```bash
+docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -x -c \
+"SELECT id, rule_name, rule_definition_def FROM utm_correlation_rules WHERE id = 1436;"
+```
+
+Si le `rule_name` retourné ne correspond pas à ce qu'on s'apprête à modifier, **s'arrêter** — l'ID a bougé, il faut relancer l'étape 1.
+
+**Étape 3 — Si une règle a été écrasée par erreur**, deux options selon la disponibilité de sa vraie définition d'origine :
+- Si elle est retrouvable (recherche externe, autre instance, contact communautaire UTMStack) : la restaurer avec un `UPDATE` normal.
+- Si elle est introuvable et que la règle ne s'applique pas à l'environnement actuel (ex : règle cloud GCP dans un lab sans source GCP configurée) : la désactiver proprement plutôt que la laisser dans un état incohérent :
+  ```bash
+  docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
+  "UPDATE utm_correlation_rules SET rule_active = false WHERE id = <id>;"
+  ```
+  C'est réversible et explicite — préférable à une règle active dont le nom et la logique ne correspondent plus.
+
+### Conséquence pour le script d'automatisation
+
+Le script `utmstack-fix-rules.sh` (section précédente) applique ses `UPDATE` par ID, sans cette vérification de nom — c'est un choix assumé pour la vitesse d'exécution automatique au démarrage, mais **le fichier SQL de chaque fix doit être revalidé manuellement (étape 1 et 2 ci-dessus) après tout revert de snapshot vers une version différente**, avant de laisser le service tourner en confiance. Un revert n'est pas un reboot ordinaire — c'est le seul scénario où ce lab a rencontré une dérive d'ID.
+
+**État actuel des IDs vérifiés dans ce lab (v11.2.11, au 2026-07-02) :**
+
+| Règle | ID | rule_name |
+|---|---|---|
+| Tunneling Detection | 530 | Tunneling Detection |
+| High level Suricata alert | 875 | High level Suricata alert |
+| Medium level Suricata alert | 876 | Medium level Suricata alert |
+| Port Scan Detection | 525 | Port Scan Detection |
+| Windows Suspicious PowerShell | **1424** *(anciennement 1436)* | Windows: Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) |
+| GCP Firewall Rule Created | 1436 | GCP Firewall Rule Created — Open Ingress *(désactivée, `rule_active = false` — définition d'origine non restaurée après collision d'ID)* |
+
+---
+
 ## ⚠️ Checklist post-reboot / post-update UTMStack
 
-**Comportement confirmé empiriquement le 2026-07-01** : un reboot UTMStack réinitialise les règles `system_owner=true` à leur définition d'origine. Les fixes 530, 525, 875 et 876 ont tous été écrasés. La règle 1436 a survécu à ce reboot — comportement non encore expliqué, incluse dans l'automatisation par précaution.
+**Comportement confirmé empiriquement le 2026-07-01** : un reboot UTMStack réinitialise les règles `system_owner=true` à leur définition d'origine. Les fixes 530, 525, 875 et 876 ont tous été écrasés. La règle 1424 (PowerShell) a survécu à ce reboot précis — comportement non systématique, à ne pas présumer.
 
-**Depuis le 2026-07-01**, le service `utmstack-fix-rules` gère automatiquement la réapplication au démarrage — voir section précédente. La vérification manuelle ci-dessous reste utile après un update majeur ou en cas de doute :
+**Depuis le 2026-07-01**, le service `utmstack-fix-rules` gère automatiquement la réapplication au démarrage — voir section précédente. La vérification manuelle ci-dessous reste utile après un update majeur, un revert de snapshot, ou en cas de doute :
 
 ```bash
 # Vérifier l'état du service après chaque reboot
@@ -534,9 +729,9 @@ systemctl status utmstack-fix-rules.service
 # Consulter le log d'exécution
 tail -50 /var/log/utmstack-fix-rules.log
 
-# Vérification manuelle des définitions si doute
+# Vérification manuelle des définitions si doute — par nom, pas seulement par ID
 docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
-"SELECT id, rule_name FROM utm_correlation_rules WHERE id IN (530,875,876,525,1436);"
+"SELECT id, rule_name FROM utm_correlation_rules WHERE id IN (530,875,876,525,1424);"
 ```
 
 Si un fix est manquant, forcer une réexécution du service :
