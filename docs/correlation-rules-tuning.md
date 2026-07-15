@@ -1,6 +1,6 @@
 ---
 title: "Réduction du bruit — Règles de corrélation UTMStack | DoIt4Everyone"
-description: "Alert fatigue sur UTMStack v11 : diagnostic OpenSearch/PostgreSQL, fixes des règles de corrélation 530/875/876, redémarrage des services de corrélation, checklist post-update."
+description: "Alert fatigue sur UTMStack v11 : diagnostic OpenSearch/PostgreSQL, 7 fixes de règles de corrélation (530/875/876/525/521/1424), dérive d'ID entre versions, automatisation double (boot + cron horaire), checklist post-update."
 lang: fr
 ---
 <style>
@@ -353,6 +353,44 @@ WHERE id = 876;
 
 ---
 
+## Fix 7 — Règle 521 « Malicious File Download Detection »
+
+### Diagnostic
+
+Un ban CrowdSec erroné a alerté sur ce faux positif le 15 juillet 2026 : l'IP `74.161.173.129` (infrastructure CDN Fastly utilisée par Microsoft) s'est retrouvée bannie suite à une alerte UTMStack sur du trafic Windows Update/Defender parfaitement légitime.
+
+```
+rule_definition_def:
+equals("log.eventType", "alert") &&
+(contains("log.alert.signature", ["executable", "EXE download", "PE file", "script download", "malware download"]) ||
+ oneOf("log.alert.category", ["A Network Trojan was detected", "Potentially Bad Traffic", "Misc Attack"]) &&
+ contains("log.alert.signature", ["download", "file"])) &&
+exists("origin.ip") &&
+exists("target.ip")
+```
+
+La signature Suricata déclenchée était `NF - Generic - Exe file masquerading using Right-to-Left Override - MITRE T1036` (SID 5018812, catégorie `A Network Trojan was detected`) — une détection légitime en soi (technique RTLO utilisée pour déguiser des exécutables malveillants), mais qui matche par accident sur certains noms de fichiers de mise à jour Windows/Defender. Le trafic contenait déjà le flowbit `ET.INFO.WindowsUpdate`, confirmant son origine légitime — mais la règle de corrélation 521 ne tenait pas compte de ce marqueur : le mot-clé `"file"` présent dans la signature RTLO, combiné à la catégorie `A Network Trojan was detected`, suffisait à faire matcher la règle et déclencher le SOAR.
+
+### Fix appliqué
+
+Exclusion sur le flowbit `ET.INFO.WindowsUpdate`, déjà présent nativement dans le trafic légitime concerné :
+
+```sql
+UPDATE utm_correlation_rules
+SET rule_definition_def = $$equals("log.eventType", "alert") &&
+(contains("log.alert.signature", ["executable", "EXE download", "PE file", "script download", "malware download"]) ||
+ oneOf("log.alert.category", ["A Network Trojan was detected", "Potentially Bad Traffic", "Misc Attack"]) &&
+ contains("log.alert.signature", ["download", "file"])) &&
+exists("origin.ip") &&
+exists("target.ip") &&
+!contains("log.metadata.flowbits", "ET.INFO.WindowsUpdate")$$
+WHERE id = 521;
+```
+
+> ℹ️ Ce fix illustre une source de faux positif différente des précédents (pas du bruit de reconnaissance réseau, ni un faux positif endpoint MDE comme le Fix 5) : une règle de détection légitime et bien conçue (RTLO masquerading) qui matche accidentellement sur un contenu bénin partageant les mêmes mots-clés génériques ("file", catégorie "Network Trojan"). La leçon : toujours vérifier si un flowbit ou un marqueur de contexte déjà présent dans les données peut servir d'exclusion ciblée, avant d'envisager de désactiver ou d'affaiblir une règle de détection par ailleurs légitime.
+
+---
+
 ## Méthode d'application — pattern réutilisable
 
 Pour éviter les problèmes d'échappement de guillemets imbriqués (`$$...$$`, guillemets doubles dans `equals("...")`) à travers `docker exec -c`, le SQL est écrit dans un fichier, copié dans le conteneur, puis exécuté via `-f` :
@@ -442,6 +480,7 @@ cp /root/update-rule875.sql /root/utmstack-fixes/
 cp /root/update-rule876.sql /root/utmstack-fixes/
 cp /root/update-rule525.sql /root/utmstack-fixes/
 cp /root/update-rule1424.sql /root/utmstack-fixes/
+cp /root/update-rule521.sql /root/utmstack-fixes/
 ```
 
 > ℹ️ **Pour un lecteur qui reconstruit ces fichiers depuis zéro** : voici le contenu final et à jour de chacun des 5 fichiers, prêt à copier-coller directement (`nano /root/update-rule<id>.sql`, coller, sauvegarder). Ce sont les mêmes contenus que dans les sections Fix 1 à 6 plus haut — regroupés ici pour éviter d'avoir à les rechercher un par un.
@@ -543,6 +582,22 @@ WHERE id = 1424;
 > ⚠️ Avant d'appliquer ce fichier sur une instance différente de ce lab (ou après tout revert de snapshot), vérifier que l'ID 1424 correspond bien à cette règle — voir la section [Les ID de règles ne sont pas stables entre versions](#-les-id-de-règles-ne-sont-pas-stables-entre-versions-utmstack).
 </details>
 
+<details>
+<summary><strong>update-rule521.sql</strong> (Fix 7 — Malicious File Download, faux positif RTLO/Windows Update)</summary>
+
+```sql
+UPDATE utm_correlation_rules
+SET rule_definition_def = $$equals("log.eventType", "alert") &&
+(contains("log.alert.signature", ["executable", "EXE download", "PE file", "script download", "malware download"]) ||
+ oneOf("log.alert.category", ["A Network Trojan was detected", "Potentially Bad Traffic", "Misc Attack"]) &&
+ contains("log.alert.signature", ["download", "file"])) &&
+exists("origin.ip") &&
+exists("target.ip") &&
+!contains("log.metadata.flowbits", "ET.INFO.WindowsUpdate")$$
+WHERE id = 521;
+```
+</details>
+
 ### Script `/usr/local/bin/utmstack-fix-rules.sh`
 
 ```bash
@@ -578,7 +633,7 @@ done
 echo "$(date) — PostgreSQL prêt après ${ELAPSED}s" >> $LOG
 
 # Réappliquer les fixes
-for sql in update-rule530.sql update-rule875.sql update-rule876.sql update-rule525.sql update-rule1424.sql; do
+for sql in update-rule530.sql update-rule875.sql update-rule876.sql update-rule525.sql update-rule1424.sql update-rule521.sql; do
   if [ -f "/root/utmstack-fixes/$sql" ]; then
     docker cp /root/utmstack-fixes/$sql $POSTGRES_ID:/tmp/$sql
     docker exec -i $POSTGRES_ID psql -U postgres -d utmstack -f /tmp/$sql >> $LOG 2>&1
@@ -702,7 +757,7 @@ Si le `rule_name` retourné ne correspond pas à ce qu'on s'apprête à modifier
 
 Le script `utmstack-fix-rules.sh` (section précédente) applique ses `UPDATE` par ID, sans cette vérification de nom — c'est un choix assumé pour la vitesse d'exécution automatique au démarrage, mais **le fichier SQL de chaque fix doit être revalidé manuellement (étape 1 et 2 ci-dessus) après tout revert de snapshot vers une version différente**, avant de laisser le service tourner en confiance. Un revert n'est pas un reboot ordinaire — c'est le seul scénario où ce lab a rencontré une dérive d'ID.
 
-**État actuel des IDs vérifiés dans ce lab (v11.2.11, au 2026-07-02) :**
+**État actuel des IDs vérifiés dans ce lab (v11.2.11, au 2026-07-15) :**
 
 | Règle | ID | rule_name |
 |---|---|---|
@@ -711,15 +766,16 @@ Le script `utmstack-fix-rules.sh` (section précédente) applique ses `UPDATE` p
 | Medium level Suricata alert | 876 | Medium level Suricata alert |
 | Port Scan Detection | 525 | Port Scan Detection |
 | Windows Suspicious PowerShell | **1424** *(anciennement 1436)* | Windows: Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) |
+| Malicious File Download Detection | 521 | Malicious File Download Detection |
 | GCP Firewall Rule Created | 1436 | GCP Firewall Rule Created — Open Ingress *(désactivée, `rule_active = false` — définition d'origine non restaurée après collision d'ID)* |
 
 ---
 
 ## ⚠️ Checklist post-reboot / post-update UTMStack
 
-**Comportement confirmé empiriquement le 2026-07-01** : un reboot UTMStack réinitialise les règles `system_owner=true` à leur définition d'origine. Les fixes 530, 525, 875 et 876 ont tous été écrasés. La règle 1424 (PowerShell) a survécu à ce reboot précis — comportement non systématique, à ne pas présumer.
+**Comportement confirmé empiriquement le 2026-07-01, et régulièrement depuis** : un reboot UTMStack — ou même le simple redémarrage d'un conteneur `event-processor` sans reboot serveur (confirmé le 5 juillet) — réinitialise les règles `system_owner=true` à leur définition d'origine. Aucune règle n'est à l'abri de façon fiable et permanente ; l'automatisation (service au boot + cron horaire de vérification, voir section précédente) est nécessaire, pas optionnelle.
 
-**Depuis le 2026-07-01**, le service `utmstack-fix-rules` gère automatiquement la réapplication au démarrage — voir section précédente. La vérification manuelle ci-dessous reste utile après un update majeur, un revert de snapshot, ou en cas de doute :
+**Depuis le 2026-07-01**, le service `utmstack-fix-rules` gère automatiquement la réapplication au démarrage, complété depuis le 5 juillet par un cron horaire de vérification (`utmstack-fix-rules-check.sh`) qui couvre le cas des redémarrages de conteneur isolés. La vérification manuelle ci-dessous reste utile après un update majeur, un revert de snapshot, ou en cas de doute :
 
 ```bash
 # Vérifier l'état du service après chaque reboot
@@ -731,7 +787,7 @@ tail -50 /var/log/utmstack-fix-rules.log
 
 # Vérification manuelle des définitions si doute — par nom, pas seulement par ID
 docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
-"SELECT id, rule_name FROM utm_correlation_rules WHERE id IN (530,875,876,525,1424);"
+"SELECT id, rule_name FROM utm_correlation_rules WHERE id IN (530,875,876,525,1424,521);"
 ```
 
 Si un fix est manquant, forcer une réexécution du service :
