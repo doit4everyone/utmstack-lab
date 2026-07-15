@@ -1,6 +1,6 @@
 ---
 title: "Règles Suricata avancées — suricata-update & NF Rules | DoIt4Everyone"
-description: "Ajout de règles Suricata avancées sur OPNsense 26.1 : suricata-update (ptrules, stamus/lateral, tgreen/hunting), NF Rules networkforensic.dk, mode IPS drop, persistance."
+description: "Ajout de règles Suricata avancées sur OPNsense 26.1 : suricata-update (ptrules, stamus/lateral, tgreen/hunting), NF Rules networkforensic.dk, mode IPS drop, Spamhaus, CINS, règle custom DVR exploit, persistance."
 lang: fr
 ---
 <style>
@@ -635,6 +635,118 @@ cscli decisions list | grep "<ip>"
 Boucle complète vérifiée de bout en bout : CINS détecté → bloqué par Suricata → remonté UTMStack → SOAR → ban CrowdSec.
 
 Une fois bloqué côté Suricata, le trafic CINS bascule de `action: allowed` à `action: blocked` — il devient alors éligible aux exclusions de bruit posées côté règles de corrélation UTMStack, voir [annexe — Réduction du bruit, règles de corrélation UTMStack](correlation-rules-tuning.md).
+
+---
+
+## Partie 6 — Règle custom : exploitation DVR/NVR (r00ts3c / ViewLog.asp)
+
+### Contexte — pourquoi bloquer alors que la philosophie du lab est d'observer
+
+Ce lab suit une règle générale (voir l'annexe [Réduction du bruit — règles de corrélation UTMStack](correlation-rules-tuning.md)) : bloquer sur réputation IP confirmée, mais seulement **observer** sur anomalie comportementale — pour éviter de bloquer par erreur du trafic légitime (Google, Azure, scanners de sécurité...) sur la base d'un simple pattern suspect.
+
+Le cas rencontré ici est une exception délibérée à cette règle, parce qu'il ne présente **aucune ambiguïté** :
+
+```
+log.http.hostname: 127.0.0.1
+log.http.url: /cgi-bin/ViewLog.asp
+log.http.http_user_agent: r00ts3c-owned-you
+```
+
+C'est une tentative d'exploitation d'une vulnérabilité connue sur des DVR/NVR en marque blanche (endpoint `ViewLog.asp`), avec un User-Agent auto-signé par un botnet/scanner automatisé — aucun logiciel légitime n'envoie jamais `r00ts3c-owned-you` comme User-Agent. Volume observé : **12 tentatives en une journée, depuis 3 IP distinctes** (Italie, Hong Kong, Chine), certaines en GET, d'autres en POST — cohérent avec un botnet distribué qui scanne Internet en continu, pas un acteur unique ciblant ce lab spécifiquement.
+
+### Choix du SID — vérifier avant d'écrire
+
+Avant d'ajouter une règle custom, vérifier qu'aucun SID de la plage utilisée n'est déjà pris ailleurs (ce lab réutilise la tranche `7000000+` depuis NGROK JA3 dans `NF-Suricata.rules`) :
+
+```bash
+grep -rhoE "sid:70000[0-9]+" /usr/local/etc/suricata/opnsense.rules/ | sort -u
+grep -rhoE "sid:70000[0-9]+" /usr/local/etc/suricata/rules/ | sort -u
+```
+
+> ℹ️ Une plage de SID partagée entre plusieurs fichiers de règles (`NF-Suricata.rules`, `custom.rules`, etc.) n'implique pas que chaque fichier contienne une suite continue — les SID 7000001 à 7000006 rencontrés ici vivent dans d'autres fichiers, `custom.rules` ne contient que le SID retenu ci-dessous.
+
+### Règle — syntaxe Suricata 8.x avec sticky buffers
+
+```bash
+nano /usr/local/etc/suricata/opnsense.rules/custom.rules
+```
+
+```
+drop http $EXTERNAL_NET any -> $HOME_NET any (msg:"CUSTOM DROP - r00ts3c ViewLog.asp DVR exploit attempt"; flow:established,to_server; http.user_agent; content:"r00ts3c-owned-you"; http.uri; content:"/cgi-bin/ViewLog.asp"; classtype:attempted-admin; sid:7000007; rev:1;)
+```
+
+```bash
+service suricata restart
+```
+
+Vérification (chercher la confirmation de démarrage complet, pas seulement l'absence d'erreur) :
+```bash
+grep -i "engine started" /var/log/suricata/latest.log | tail -1
+```
+
+### ⚠️ Découverte — `custom.rules` est réinitialisé chaque nuit à minuit
+
+**Constaté le 2026-07-08** : la règle, ajoutée et vérifiée la veille au soir (fichier actif + backup `/conf/` identiques via `diff`), avait disparu le lendemain matin — remplacée par des dizaines de répétitions du seul commentaire d'en-tête du fichier, sans plus aucune règle réelle.
+
+```bash
+ls -la /usr/local/etc/suricata/opnsense.rules/custom.rules
+# -rw-r--r--  1 root wheel  4226 Jul  8 00:00 ...
+```
+
+L'horodatage à **00:00 pile** confirme la cause : OPNsense régénère `custom.rules` à minuit, dans le même cycle que le téléchargement nocturne des règles qui réinitialise déjà `drop.rules` (Partie 4). Le hook `98-soar-ban` ne s'exécute qu'**au démarrage du système** — il ne protège pas contre ce cycle de régénération qui survient indépendamment de tout reboot. Un `uptime` au moment de la découverte confirmait que le système n'avait pas redémarré depuis la veille au soir, écartant toute autre explication.
+
+> ℹ️ Ce parallèle avec la découverte faite côté UTMStack (les règles de corrélation, elles aussi réinitialisées par un simple redémarrage de conteneur sans reboot complet — voir l'annexe correlation-rules-tuning.md) illustre un principe général valable des deux côtés de l'infrastructure : une protection uniquement au boot ne suffit jamais à elle seule, il faut aussi couvrir les cycles de régénération propres à chaque système.
+
+### Persistance — cron quotidien, même modèle que Spamhaus/CINS
+
+```bash
+nano /usr/local/bin/custom-rules-fix.sh
+```
+
+```sh
+#!/bin/sh
+cp /conf/custom.rules /usr/local/etc/suricata/opnsense.rules/custom.rules
+kill -USR2 `pgrep -x suricata`
+```
+
+```bash
+chmod +x /usr/local/bin/custom-rules-fix.sh
+```
+
+```bash
+nano /etc/cron.d/custom-rules-fix
+```
+
+```
+30 0 * * * root /usr/local/bin/custom-rules-fix.sh
+```
+
+```bash
+cp /usr/local/bin/custom-rules-fix.sh /conf/custom-rules-fix.sh
+cp /etc/cron.d/custom-rules-fix /conf/custom-rules-fix
+```
+
+Dans le hook `98-soar-ban`, ajouter :
+
+```sh
+cp /conf/custom-rules-fix.sh /usr/local/bin/custom-rules-fix.sh && chmod +x /usr/local/bin/custom-rules-fix.sh
+cp /conf/custom-rules-fix /etc/cron.d/custom-rules-fix
+cp /conf/custom.rules /usr/local/etc/suricata/opnsense.rules/custom.rules
+```
+
+### Vérification de la persistance — ne pas se fier à un seul test
+
+Un premier `diff` identique entre le fichier actif et le backup peut donner un faux sentiment de sécurité si le backup lui-même a été fait à un mauvais moment (par exemple après que la source ait déjà été vidée par le cycle de minuit). Vérifier les deux dans l'ordre :
+
+```bash
+grep "7000007" /usr/local/etc/suricata/opnsense.rules/custom.rules
+grep "7000007" /conf/custom.rules
+diff /usr/local/etc/suricata/opnsense.rules/custom.rules /conf/custom.rules
+```
+
+Un `diff` silencieux confirme des fichiers strictement identiques — mais seulement si les deux contiennent bien la règle attendue, pas juste une absence commune.
+
+> ℹ️ Le fichier accumule à chaque cycle de régénération une nouvelle copie du commentaire d'en-tête sans dédupliquer les précédentes — cosmétique, sans impact sur le fonctionnement de la règle. Pas d'action nécessaire, sauf préférence esthétique.
 
 ---
 
