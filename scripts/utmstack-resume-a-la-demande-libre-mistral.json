@@ -1,0 +1,346 @@
+{
+  "name": "UTMStack - PRODUCTION - Resume a la demande LIBRE (Mistral + Email)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "resume-soc-libre",
+        "options": {},
+        "responseMode": "responseNode"
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "webhookId": "auto-generated"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://<UTMSTACK_IP>:9200/v11-alert-*/_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"size\": 0, \"query\": {\"range\": {\"@timestamp\": {\"gte\": \"now-24h\"}}}, \"aggs\": {\"par_severite\": {\"terms\": {\"field\": \"severityLabel.keyword\"}}, \"par_statut\": {\"terms\": {\"field\": \"statusLabel.keyword\"}}, \"par_categorie\": {\"terms\": {\"field\": \"category.keyword\", \"size\": 15}}, \"par_regle\": {\"terms\": {\"field\": \"name.keyword\", \"size\": 30}, \"aggs\": {\"severite\": {\"terms\": {\"field\": \"severityLabel.keyword\", \"size\": 1}}, \"categorie\": {\"terms\": {\"field\": \"category.keyword\", \"size\": 1}}, \"technique\": {\"terms\": {\"field\": \"technique.keyword\", \"size\": 1}}, \"signatures_suricata\": {\"terms\": {\"field\": \"lastEvent.log.alert.signature.keyword\", \"size\": 8}, \"aggs\": {\"ips_source\": {\"terms\": {\"field\": \"adversary.ip.keyword\", \"size\": 3}, \"aggs\": {\"pays\": {\"terms\": {\"field\": \"adversary.geolocation.country.keyword\", \"size\": 1}}}}, \"ips_cible\": {\"terms\": {\"field\": \"target.ip.keyword\", \"size\": 3}}}}}}}}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "opensearch-node",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "<A_RECREER_DANS_VOTRE_INSTANCE_N8N>",
+          "name": "UTMStack OpenSearch"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT rule_name, rule_description FROM utm_correlation_rules WHERE rule_active = true AND rule_description IS NOT NULL ORDER BY rule_name;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        440,
+        0
+      ],
+      "id": "postgres-rules-node",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "<A_RECREER_DANS_VOTRE_INSTANCE_N8N>",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const agg = $node[\"HTTP Request\"].json.aggregations;\n\nconst reglesRows = $input.all().map(i => i.json);\nconst descMap = new Map();\nfor (const r of reglesRows) {\n  if (r.rule_name && r.rule_description)\n    descMap.set(r.rule_name, r.rule_description.substring(0, 500));\n}\n\nfunction topIps(map, n) {\n  return [...map.entries()].sort((a,b) => b[1]-a[1]).slice(0,n)\n    .map(([ip,c]) => `${ip} (${c})`).join(\", \") || \"non renseignées\";\n}\n\nlet texte = \"ALERTES DE CORRÉLATION UTMSTACK DES DERNIÈRES 24H\\n\";\ntexte += \"(source : index OpenSearch v11-alert-* — couche de corrélation UTMStack)\\n\\n\";\n\ntexte += \"Répartition par sévérité:\\n\";\nfor (const b of (agg.par_severite?.buckets || [])) texte += `- ${b.key}: ${b.doc_count}\\n`;\ntexte += \"\\nRépartition par statut:\\n\";\nfor (const b of (agg.par_statut?.buckets || [])) texte += `- ${b.key}: ${b.doc_count}\\n`;\ntexte += \"\\nRépartition par catégorie MITRE:\\n\";\nfor (const b of (agg.par_categorie?.buckets || [])) texte += `- ${b.key}: ${b.doc_count}\\n`;\n\ntexte += \"\\n\\n=== DÉTAIL PAR RÈGLE DE CORRÉLATION ===\\n\";\nfor (const r of (agg.par_regle?.buckets || [])) {\n  const sev = r.severite?.buckets?.[0]?.key || \"?\";\n  const cat = r.categorie?.buckets?.[0]?.key || \"?\";\n  const tech = r.technique?.buckets?.[0]?.key || \"non spécifiée\";\n  const sigs = r.signatures_suricata?.buckets || [];\n\n  texte += `\\n### ${r.key} (${r.doc_count} alerte(s) au total)\\n`;\n  texte += `Sévérité déclarée: ${sev} | Catégorie MITRE: ${cat} | Technique: ${tech}\\n`;\n  if (descMap.has(r.key)) {\n    texte += `Description officielle de la règle: ${descMap.get(r.key)}\\n`;\n  }\n  if (sigs.length > 0) {\n    texte += \"Signatures Suricata sous-jacentes:\\n\";\n    for (const s of sigs) {\n      texte += `  - ${s.key} (${s.doc_count} occurrence(s))\\n`;\n      const ipsMap = new Map();\n      for (const ip of (s.ips_source?.buckets || [])) {\n        const pays = ip.pays?.buckets?.[0]?.key || \"?\";\n        ipsMap.set(`${ip.key} [${pays}]`, ip.doc_count);\n      }\n      texte += `    IP sources: ${topIps(ipsMap, 3)}\\n`;\n      const cibMap = new Map();\n      for (const ip of (s.ips_cible?.buckets || [])) cibMap.set(ip.key, ip.doc_count);\n      texte += `    Cibles internes: ${topIps(cibMap, 3)}\\n`;\n    }\n  } else {\n    texte += \"(aucune signature Suricata sous-jacente renseignée pour cette règle)\\n\";\n  }\n}\n\nreturn [{ json: { donnees_brutes: texte } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "format-brut-node",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const donnees = $json.donnees_brutes;\n\nconst instructions = `Tu es un analyste SOC (Security Operations Center) senior, spécialisé dans UTMStack (Suricata + OpenSearch + CrowdSec).\n\nTu reçois ci-dessous les alertes de corrélation UTMStack brutes des dernières 24h, avec leurs signatures Suricata sous-jacentes, IP sources/cibles, géolocalisation, et la description officielle de chaque règle quand disponible.\n\nTA TÂCHE : produis une synthèse SOC complète et structurée, en français, à partir de ces données. Tu dois toi-même :\n1. Identifier les signaux nécessitant une investigation prioritaire (exploitation active, compromission, webshell, C2, mouvement latéral...)\n2. Identifier ce qui est déjà neutralisé (blocage automatique sur réputation IP confirmée)\n3. Identifier le bruit de reconnaissance passive ou le trafic légitime (scanners de sécurité connus, mises à jour logicielles, décodage protocolaire)\n4. Signaler explicitement toute règle à fort volume qui semble être un faux positif\n5. Conclure clairement sur le nombre de signaux réels nécessitant une action humaine\n\nRÈGLES DE RIGUEUR :\n- N'invente et ne cite JAMAIS de CVE, de numéro de version, de date ou de référence externe qui ne figure pas explicitement dans les données fournies ci-dessous. Si tu identifies un type de vulnérabilité probable, dis-le en termes génériques (\"exploitation connue de ce type d'équipement\") sans donner de numéro de CVE que tu ne peux pas vérifier à partir du contexte.\n- Ne classe JAMAIS en \"bruit\" une signature qui indique une exploitation, une compromission ou un accès non autorisé confirmé, même si elle appartient à une règle globalement bruyante\n- Base chaque affirmation sur les données fournies, jamais sur une supposition\n- Si la conclusion identifie des signaux prioritaires, ils doivent être nommés explicitement et ne jamais être contredits ailleurs dans le texte\n- Structure ta réponse en sections claires (Markdown), avec une conclusion finale non ambiguë`;\n\nconst promptComplet = instructions + \"\\n\\n\" + donnees;\n\nreturn [{ json: { prompt_final: promptComplet } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "prompt-node",
+      "name": "Construire Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/chat/completions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"mistral-large-latest\", messages: [{ role: \"user\", content: $json.prompt_final }] }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <MISTRAL_API_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "mistral-node",
+      "name": "Mistral Large Analyse Libre"
+    },
+    {
+      "parameters": {
+        "jsCode": "const choix = $json.choices?.[0];\nconst texte = choix?.message?.content || \"(reponse vide ou format inattendu)\";\nconst date = new Date().toISOString().split('T')[0];\n\nreturn [{ json: {\n  synthese: texte,\n  date: date\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ],
+      "id": "extraction-node",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "resumes_soc_libre",
+          "mode": "list",
+          "cachedResultName": "resumes_soc_libre"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contenu": "={{ $json.synthese }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "date_generation",
+              "displayName": "date_generation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "contenu",
+              "displayName": "contenu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {},
+        "operation": "insert"
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1540,
+        -120
+      ],
+      "id": "insert-node",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "<A_RECREER_DANS_VOTRE_INSTANCE_N8N>",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "<SMTP_USER>",
+        "toEmail": "<EMAIL_DESTINATAIRE>",
+        "subject": "=🔍 [ANALYSE LIBRE - Indicatif] Rapport SOC UTMStack — {{ $json.date }}",
+        "emailFormat": "text",
+        "text": "={{ $json.synthese }}\n\n---\n⚠️ Ceci est un rapport d'ANALYSE LIBRE (sans tri déterministe), généré à titre indicatif par Mistral Large. Ne pas confondre avec le rapport officiel du pipeline principal.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1540,
+        0
+      ],
+      "id": "email-node",
+      "name": "Send Email Rapport Libre",
+      "credentials": {
+        "smtp": {
+          "id": "<A_RECREER_DANS_VOTRE_INSTANCE_N8N>",
+          "name": "SMTP UTMStack Notifications"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Analyse libre SOC UTMStack</title>\n  <style>\n    body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background:#fffbe6; }\n    h1 { color: #7a4a00; border-bottom: 2px solid #e8b339; padding-bottom: 10px; }\n    .warn { background:#fff3cd; border:1px solid #e8b339; padding:10px; margin-bottom:20px; }\n    pre { white-space: pre-wrap; font-family: Arial, sans-serif; }\n  </style>\n</head>\n<body>\n  <h1>🔍 Analyse libre SOC UTMStack (indicatif)</h1>\n  <div class=\"warn\">⚠️ Rapport SANS tri déterministe — analyse libre par Mistral Large. À titre indicatif uniquement, ne remplace pas le rapport officiel.</div>\n  <pre>{{ $json.synthese }}</pre>\n</body>\n</html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1540,
+        120
+      ],
+      "id": "respond-node",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Construire Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construire Prompt": {
+      "main": [
+        [
+          {
+            "node": "Mistral Large Analyse Libre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral Large Analyse Libre": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Rapport Libre",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

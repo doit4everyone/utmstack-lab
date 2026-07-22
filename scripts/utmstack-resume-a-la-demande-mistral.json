@@ -1,0 +1,705 @@
+{
+  "name": "UTMStack - Résumé à la demande (v12 - Qwen)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "resume-soc-now",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "d4b7f2f4-4d5e-7f6a-2b8c-4d5e6f7a8b9c",
+      "name": "Webhook Trigger",
+      "webhookId": "resume-soc-now-webhook-id"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://<UTMSTACK_IP>:9200/v11-alert-*/_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"size\": 0, \"query\": {\"range\": {\"@timestamp\": {\"gte\": \"now-24h\"}}}, \"aggs\": {\"par_severite\": {\"terms\": {\"field\": \"severityLabel.keyword\"}}, \"par_statut\": {\"terms\": {\"field\": \"statusLabel.keyword\"}}, \"par_categorie\": {\"terms\": {\"field\": \"category.keyword\", \"size\": 15}}, \"par_regle\": {\"terms\": {\"field\": \"name.keyword\", \"size\": 30}, \"aggs\": {\"severite\": {\"terms\": {\"field\": \"severityLabel.keyword\", \"size\": 1}}, \"categorie\": {\"terms\": {\"field\": \"category.keyword\", \"size\": 1}}, \"technique\": {\"terms\": {\"field\": \"technique.keyword\", \"size\": 1}}, \"signatures_suricata\": {\"terms\": {\"field\": \"lastEvent.log.alert.signature.keyword\", \"size\": 8}, \"aggs\": {\"ips_source\": {\"terms\": {\"field\": \"adversary.ip.keyword\", \"size\": 3}, \"aggs\": {\"pays\": {\"terms\": {\"field\": \"adversary.geolocation.country.keyword\", \"size\": 1}}}}, \"ips_cible\": {\"terms\": {\"field\": \"target.ip.keyword\", \"size\": 3}}}}}}}}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        220,
+        0
+      ],
+      "id": "e5c8a3a5-5e6f-8a7b-3c9d-5e6f7a8b9c0d",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "<A_RECREER_DANS_VOTRE_INSTANCE_N8N>",
+          "name": "UTMStack OpenSearch"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregations OpenSearch : reference directe au noeud HTTP Request\nconst agg = $node[\"HTTP Request\"].json.aggregations;\n\nconst TERMES_SIGNAL = [\n  \"WebShell\",\"EXPLOIT\",\"COMPROMISED\",\"MALWARE\",\"TROJAN\",\"ATTACK_RESPONSE\",\"CNC\",\n  \"Cobalt Strike\",\"Empire\",\"Remote Command Execution\",\"Suspicious String\",\"sinkhole\",\n  \"Backdoor\",\"Ransomware\",\"Shellcode\",\"Phishing\",\"Exfiltration\",\"Lateral Movement\",\n  \"Mimikatz\",\"PsExec\",\"Reverse Shell\"\n];\nconst TERMES_CONTROLE = [\n  \"ET DROP\",\"ET CINS\",\"Dshield\",\"Spamhaus\",\"Poor Reputation\",\"Block Listed\",\"DROP SYN\"\n];\nconst TERMES_BRUIT = [\n  \"ET INFO\",\"SURICATA STREAM\",\"SURICATA HTTP\",\"SURICATA TCPv4\",\"SURICATA IPv4\",\n  \"NF - Known Scanner\",\"Not Suspicious Traffic\",\"Windows Update\",\"package management\",\"GNU/Linux APT\"\n];\nconst SEUIL_RARETE = 2;\n\nfunction classer(sig) {\n  const s = sig.toLowerCase();\n  for (const t of TERMES_SIGNAL) if (s.includes(t.toLowerCase())) return {classe:\"SIGNAL\",terme:t};\n  for (const t of TERMES_BRUIT) if (s.includes(t.toLowerCase())) return {classe:\"BRUIT\",terme:t};\n  for (const t of TERMES_CONTROLE) if (s.includes(t.toLowerCase())) return {classe:\"CONTROLE\",terme:t};\n  return {classe:\"INDETERMINE\",terme:null};\n}\n\nfunction topIps(map, n) {\n  return [...map.entries()].sort((a,b) => b[1]-a[1]).slice(0,n)\n    .map(([ip,c]) => `${ip} (${c})`).join(\", \") || \"non renseignées\";\n}\n\nfunction isPrivate(ip) {\n  return ip.startsWith(\"10.\") || ip.startsWith(\"192.168.\") ||\n         ip.startsWith(\"172.\") || ip === \"\" || ip === \"non renseignées\";\n}\n\n// Descriptions des regles PostgreSQL\nconst reglesRows = $input.all().map(i => i.json);\nconst descMap = new Map();\nfor (const r of reglesRows) {\n  if (r.rule_name && r.rule_description)\n    descMap.set(r.rule_name, r.rule_description.substring(0, 250));\n}\n\n// Collecte avec deduplication\nconst signatureMap = new Map();\nfor (const r of (agg.par_regle?.buckets || [])) {\n  const sev = r.severite?.buckets?.[0]?.key || \"?\";\n  const cat = r.categorie?.buckets?.[0]?.key || \"?\";\n  const tech = r.technique?.buckets?.[0]?.key || \"non spécifiée\";\n  for (const s of (r.signatures_suricata?.buckets || [])) {\n    const c = classer(s.key);\n    if (!signatureMap.has(s.key)) {\n      signatureMap.set(s.key, {\n        signature: s.key, count: 0,\n        regles: new Set(), severites: new Set(),\n        categories: new Set(), techniques: new Set(),\n        ipsSource: new Map(), ipsCible: new Map(),\n        classe: c.classe, motif: c.terme\n      });\n    }\n    const entry = signatureMap.get(s.key);\n    entry.count += s.doc_count;\n    entry.regles.add(r.key);\n    entry.severites.add(sev);\n    entry.categories.add(cat);\n    entry.techniques.add(tech);\n    for (const ip of (s.ips_source?.buckets || [])) {\n      const pays = ip.pays?.buckets?.[0]?.key || \"?\";\n      const cle = `${ip.key} [${pays}]`;\n      entry.ipsSource.set(cle, (entry.ipsSource.get(cle) || 0) + ip.doc_count);\n    }\n    for (const ip of (s.ips_cible?.buckets || [])) {\n      entry.ipsCible.set(ip.key, (entry.ipsCible.get(ip.key) || 0) + ip.doc_count);\n    }\n  }\n}\n\nconst signaux = [], controle = [], bruit = [], indetermine = [];\nconst ipsALookup = new Set();\n\nfor (const entry of signatureMap.values()) {\n  const e = {\n    signature: entry.signature, count: entry.count,\n    regle: [...entry.regles].join(\" / \"),\n    reglesArr: [...entry.regles],\n    severite: [...entry.severites].join(\"/\"),\n    technique: [...entry.techniques].join(\"/\"),\n    srcIps: topIps(entry.ipsSource, 3),\n    dstIps: topIps(entry.ipsCible, 3),\n    rawSrcIps: [...entry.ipsSource.keys()].slice(0, 3),\n    motif: entry.motif\n  };\n  if (entry.classe === \"SIGNAL\") {\n    signaux.push(e);\n    for (const ipL of e.rawSrcIps) {\n      const ipOnly = ipL.split(\" [\")[0].trim();\n      if (!isPrivate(ipOnly)) ipsALookup.add(ipOnly);\n    }\n  }\n  else if (entry.classe === \"CONTROLE\") controle.push(e);\n  else if (entry.classe === \"BRUIT\") bruit.push(e);\n  else {\n    indetermine.push(e);\n    // FIX v12.1 : lookup TI aussi sur les IPs des non-classees\n    for (const ipL of e.rawSrcIps) {\n      const ipOnly = ipL.split(\" [\")[0].trim();\n      if (!isPrivate(ipOnly)) ipsALookup.add(ipOnly);\n    }\n  }\n}\n[signaux, controle, bruit, indetermine].forEach(a => a.sort((x,y) => y.count-x.count));\n\n// Squelette\nlet compteur = 0;\nlet sq = \"# Synthèse SOC UTMStack — dernières 24h\\n\\n\";\nsq += `**Volumes** — Sévérité : ${(agg.par_severite?.buckets||[]).map(b=>`${b.key}: ${b.doc_count}`).join(\", \")}. `;\nsq += `Statut : ${(agg.par_statut?.buckets||[]).map(b=>`${b.key}: ${b.doc_count}`).join(\", \")}.\\n\\n`;\n\nsq += \"## SECTION 1 — SIGNAUX À INVESTIGUER EN PRIORITÉ\\n\\n\";\nif (signaux.length === 0) {\n  sq += \"Aucune signature de menace confirmée sur cette période.\\n\\n\";\n} else {\n  for (const e of signaux) {\n    compteur++;\n    sq += `**${e.signature}** — ${e.count} occurrence(s)\\n`;\n    sq += `- Règle(s) : ${e.regle} | sévérité ${e.severite} | ${e.technique}\\n`;\n    sq += `- IP sources principales : ${e.srcIps}\\n`;\n    sq += `- Cibles internes : ${e.dstIps}\\n`;\n    let desc = null;\n    for (const rn of e.reglesArr) if (descMap.has(rn)) { desc = descMap.get(rn); break; }\n    if (desc) sq += `- Procédure officielle (extrait) : ${desc}\\n`;\n    sq += `[COMMENTAIRE_${compteur}]\\n\\n`;\n  }\n}\n\nsq += \"## SECTION 2 — SOUS CONTRÔLE\\n\\n\";\nif (controle.length === 0) {\n  sq += \"Aucun.\\n\\n\";\n} else {\n  sq += `${controle.length} signature(s), ${controle.reduce((a,b)=>a+b.count,0)} occurrence(s) :\\n`;\n  for (const e of controle) sq += `- ${e.signature} : ${e.count}\\n`;\n  compteur++;\n  sq += `\\n[COMMENTAIRE_${compteur}]\\n\\n`;\n}\n\nsq += \"## SECTION 3 — BRUIT DE FOND\\n\\n\";\nif (bruit.length === 0) {\n  sq += \"Aucun.\\n\\n\";\n} else {\n  sq += `${bruit.length} signature(s), ${bruit.reduce((a,b)=>a+b.count,0)} occurrence(s) :\\n`;\n  for (const e of bruit) sq += `- ${e.signature} : ${e.count} (${e.regle})\\n`;\n  compteur++;\n  sq += `\\n[COMMENTAIRE_${compteur}]\\n\\n`;\n}\n\nsq += \"## SIGNATURES NON CLASSÉES\\n\\n\";\nif (indetermine.length === 0) {\n  sq += \"Aucune.\\n\\n\";\n} else {\n  for (const e of indetermine) {\n    const flag = e.count <= SEUIL_RARETE ? \" — **RARETÉ SUSPECTE**\" : \"\";\n    compteur++;\n    sq += `**${e.signature}** — ${e.count}${flag}\\n`;\n    sq += `- IP sources : ${e.srcIps} | Cibles : ${e.dstIps}\\n`;\n    sq += `[COMMENTAIRE_${compteur}]\\n\\n`;\n  }\n}\n\nconst nbRaretes = indetermine.filter(e => e.count <= SEUIL_RARETE).length;\nsq += \"## CONCLUSION\\n\\n\";\nif (signaux.length > 0) {\n  sq += `**${signaux.length} signal(aux) à investiguer** : ${signaux.map(e=>e.signature).join(\" ; \")}.\\n`;\n} else {\n  sq += \"Aucun signal prioritaire sur cette période.\\n\";\n}\nif (nbRaretes > 0) sq += `**${nbRaretes} rareté(s) suspecte(s)** à surveiller.\\n`;\nsq += \"[CONCLUSION]\\n\";\n\nreturn [{ json: {\n  resume_donnees: sq,\n  ips_a_lookup: [...ipsALookup],\n  nb_signaux: signaux.length,\n  nb_raretes: nbRaretes,\n  nb_commentaires: compteur\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "f6d9b4b6-6f7a-9b8c-4d0e-6f7a8b9c0d1e",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const choix = $json.choices?.[0];\nconst reponse = choix?.message?.content || \"\";\n\nif (!reponse || reponse.trim() === \"\") {\n  return [{ json: {\n    synthese: \"⚠️ GÉNÉRATION ÉCHOUÉE — réponse vide ou format API inattendu.\",\n    generation_complete: false,\n    balises_restantes: -1,\n    genere_le: new Date().toISOString()\n  } }];\n}\n\nconst balisesRestantes = (reponse.match(/\\[COMMENTAIRE_\\d+\\]|\\[CONCLUSION\\]/g) || []).length;\nlet synthese = reponse;\nif (balisesRestantes > 0) {\n  synthese = \"⚠️ GÉNÉRATION INCOMPLÈTE — \" + balisesRestantes + \" emplacement(s) non rempli(s).\\n\\n\" + reponse;\n}\nreturn [{ json: {\n  synthese,\n  generation_complete: balisesRestantes === 0,\n  balises_restantes: balisesRestantes,\n  genere_le: new Date().toISOString()\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ],
+      "id": "3abdf8fa-0d1e-3f2a-8b4c-0d1e2f3a4b5c",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const synthese = $input.first().json.synthese;\nconst date = new Date().toISOString().split('T')[0];\n\nreturn [{ json: { \n  synthese: synthese,\n  date: date\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        0
+      ],
+      "id": "4bcea9ab-1e2f-4a3b-9c5d-1e2f3a4b5c6d",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Résumé SOC UTMStack — à la demande</title>\n  <style>\n    body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; }\n    h1 { color: #1a1a2e; border-bottom: 2px solid #e94560; padding-bottom: 10px; }\n    .meta { color: #666; font-size: 0.9em; margin-bottom: 20px; }\n    .contenu { white-space: pre-wrap; line-height: 1.6; }\n  </style>\n</head>\n<body>\n  <h1>🛡️ Résumé SOC UTMStack (temps réel)</h1>\n  <div class=\"meta\">Généré le : {{ $json.date }}</div>\n  <div class=\"contenu\">{{ $json.synthese.replace(/\\\\n/g, '\\n') }}</div>\n</body>\n</html>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          },
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1760,
+        0
+      ],
+      "id": "5cdfa0bc-2f3a-5b4c-0d6e-2f3a4b5c6d7e",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT rule_name, rule_description, rule_technique\nFROM utm_correlation_rules\nWHERE rule_active = true\nAND rule_description IS NOT NULL\nORDER BY rule_name;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        440,
+        0
+      ],
+      "id": "aa11bb22-cc33-4d44-9e55-ff6677889900",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "<A_RECREER_DANS_VOTRE_INSTANCE_N8N>",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Transforme la liste d'IPs en items individuels pour les lookups paralleles\nconst ips = $input.first().json.ips_a_lookup || [];\nif (ips.length === 0) {\n  return [{ json: { ip: null, aucune_ip: true } }];\n}\nreturn ips.map(ip => ({ json: { ip } }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        60
+      ],
+      "id": "split-ips-node",
+      "name": "IPs Signaux"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.abuseipdb.com/api/v2/check?ipAddress={{ $json.ip }}&maxAgeInDays=30&verbose=false",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Key",
+              "value": "<ABUSEIPDB_KEY>"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000,
+          "allowUnauthorizedCerts": false
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -120
+      ],
+      "id": "ti-abuseipdb-node",
+      "name": "AbuseIPDB Check",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.greynoise.io/v3/community/{{ $json.ip }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "<GREYNOISE_KEY>"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "ti-greynoise-node",
+      "name": "GreyNoise Check",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://otx.alienvault.com/api/v1/indicators/IPv4/{{ $json.ip }}/general",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-OTX-API-KEY",
+              "value": "<OTX_API_KEY>"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        120
+      ],
+      "id": "ti-otx-node",
+      "name": "OTX Check",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://threatfox-api.abuse.ch/api/v1/",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ JSON.stringify({\"query\": \"search_ioc\", \"search_term\": $json.ip}) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        240
+      ],
+      "id": "ti-threatfox-node",
+      "name": "ThreatFox Check",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agregation resiliente des 4 feeds TI + historique pour une IP\nconst ip = $('IPs Signaux').first().json.ip;\nif (!ip) return [{ json: { ti_enrichissements: {} } }];\n\nconst tiParts = [];\n\n// AbuseIPDB\ntry {\n  const abuse = $('AbuseIPDB Check').first().json;\n  if (abuse && abuse.data) {\n    const score = abuse.data.abuseConfidenceScore || 0;\n    const nbReports = abuse.data.totalReports || 0;\n    if (score > 0 || nbReports > 0) {\n      tiParts.push(`  * AbuseIPDB : score ${score}/100, ${nbReports} signalement(s)`);\n    }\n  }\n} catch(e) {}\n\n// GreyNoise\ntry {\n  const gn = $('GreyNoise Check').first().json;\n  if (gn && (gn.classification || gn.noise !== undefined || gn.riot !== undefined)) {\n    const classification = gn.classification || (gn.riot ? \"trusted\" : \"unknown\");\n    const name = gn.name || \"\";\n    tiParts.push(`  * GreyNoise : ${classification}${name ? \" — \" + name : \"\"}`);\n  }\n} catch(e) {}\n\n// OTX\ntry {\n  const otx = $('OTX Check').first().json;\n  if (otx && otx.pulse_info && otx.pulse_info.count > 0) {\n    const pulses = otx.pulse_info.pulses.slice(0,3).map(p => p.name).join(\", \");\n    tiParts.push(`  * OTX : ${otx.pulse_info.count} pulse(s) — ${pulses}`);\n  }\n} catch(e) {}\n\n// ThreatFox\ntry {\n  const tf = $('ThreatFox Check').first().json;\n  if (tf && tf.query_status === \"ok\" && tf.data && tf.data.length > 0) {\n    const malware = tf.data[0].malware_printable || tf.data[0].malware || \"inconnu\";\n    const confidence = tf.data[0].confidence_level || \"?\";\n    tiParts.push(`  * ThreatFox : ${malware}, confiance ${confidence}%`);\n  }\n} catch(e) {}\n\n// Correlation historique (30 jours)\ntry {\n  const hist = $('Correlation Historique').first().json;\n  if (hist && hist.historique_enrichissements && hist.historique_enrichissements[ip]) {\n    tiParts.push(hist.historique_enrichissements[ip]);\n  }\n} catch(e) {}\n\nconst tiMap = {};\nif (tiParts.length > 0) {\n  tiMap[ip] = tiParts.join(\"\\n\");\n}\n\nreturn [{ json: { ti_enrichissements: tiMap } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        60
+      ],
+      "id": "ti-aggregation-node",
+      "name": "Aggregation TI"
+    },
+    {
+      "parameters": {
+        "jsCode": "const squelette = $node[\"Code in JavaScript\"].json.resume_donnees;\nconst nbSignaux = $node[\"Code in JavaScript\"].json.nb_signaux;\nconst nbRaretes = $node[\"Code in JavaScript\"].json.nb_raretes;\n\n// Fusionner tous les enrichissements TI recus\nconst tiMap = {};\nfor (const item of $input.all()) {\n  if (item.json && item.json.ti_enrichissements) {\n    Object.assign(tiMap, item.json.ti_enrichissements);\n  }\n}\n\n// Injection APRES la ligne \"- IP sources principales : ...\"\n// Format : nouvelle ligne indentee avec les donnees TI\nlet squeletteTI = squelette;\nfor (const [ip, ti] of Object.entries(tiMap)) {\n  if (!ti || ti.trim() === \"\") continue;\n  // Cherche la ligne contenant cette IP exacte et ajoute le bloc TI dessous\n  const ipEscape = ip.replace(/\\./g, '\\\\.').replace(/\\[/g, '\\\\[').replace(/\\]/g, '\\\\]');\n  // Match la ligne \"- IP sources principales : ... X.X.X.X ...\"\n  // ou \"- IP sources : ... X.X.X.X ...\"\n  const regex = new RegExp(`(- IP (?:sources principales|sources) : [^\\\\n]*${ipEscape}[^\\\\n]*)\\\\n`, 'g');\n  squeletteTI = squeletteTI.replace(regex, `$1\\n${ti}\\n`);\n}\n\nreturn [{ json: { prompt_enrichi: squeletteTI, nb_signaux: nbSignaux, nb_raretes: nbRaretes } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        60
+      ],
+      "id": "fusion-ti-node",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 5
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [
+        770,
+        60
+      ],
+      "id": "merge-ti-node",
+      "name": "Merge TI"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT date_generation, contenu FROM resumes_soc WHERE date_generation >= NOW() - INTERVAL '30 days' ORDER BY date_generation DESC LIMIT 60;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        660,
+        380
+      ],
+      "id": "historique-sql-node",
+      "name": "Historique SOC (30j)",
+      "credentials": {
+        "postgres": {
+          "id": "<A_RECREER_DANS_VOTRE_INSTANCE_N8N>",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Corrélation temporelle : cette IP est-elle apparue dans des rapports precedents (30j) ?\nconst ips = $('IPs Signaux').all().map(i => i.json.ip).filter(Boolean);\nconst rapports = $input.all().map(i => i.json).filter(r => r.contenu);\n\nfunction joursDepuis(dateStr) {\n  const d = new Date(dateStr);\n  const now = new Date();\n  return Math.floor((now - d) / (1000 * 60 * 60 * 24));\n}\n\nconst correlations = {};\nfor (const ip of ips) {\n  const occurrences = rapports.filter(r => r.contenu && r.contenu.includes(ip));\n  if (occurrences.length === 0) continue;\n  const jours = occurrences.map(r => joursDepuis(r.date_generation)).filter(j => j >= 1); // exclure le jour meme\n  if (jours.length === 0) continue;\n  const texte = `  * Historique : apparue dans ${jours.length} rapport(s) précédent(s) sur 30 jours (il y a ${jours.slice(0,5).join(\", \")} jour(s)) — pattern potentiellement récurrent à surveiller.`;\n  correlations[ip] = texte;\n}\n\nreturn [{ json: { historique_enrichissements: correlations } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        380
+      ],
+      "id": "correlation-js-node",
+      "name": "Correlation Historique"
+    },
+    {
+      "parameters": {
+        "jsCode": "const instructions = \"Tu re\\u00e7ois un rapport SOC d\\u00e9j\\u00e0 structur\\u00e9 avec des emplacements [COMMENTAIRE_N] et [CONCLUSION].\\n\\nTA SEULE T\\u00c2CHE : reproduire ce rapport \\u00c0 L'IDENTIQUE en rempla\\u00e7ant chaque emplacement par ton texte.\\n\\nINTERDICTION ABSOLUE : il est formellement interdit d'\\u00e9crire la balise elle-m\\u00eame (le texte '[COMMENTAIRE_' suivi d'un chiffre et ']', ou '[CONCLUSION]') n'importe o\\u00f9 dans ta r\\u00e9ponse, m\\u00eame juste avant ou apr\\u00e8s ton propre texte. La balise doit dispara\\u00eetre COMPL\\u00c8TEMENT, remplac\\u00e9e - pas compl\\u00e9t\\u00e9e, pas pr\\u00e9c\\u00e9d\\u00e9e, pas suivie. Si tu \\u00e9cris '[COMMENTAIRE_3] Voici mon analyse...', c'est une erreur : la bonne forme est uniquement 'Voici mon analyse...', sans aucune trace du marqueur original.\\n\\nR\\u00c8GLES :\\n- Recopie tout le texte existant EXACTEMENT : titres, noms de signatures, chiffres, IP, listes, blocs threat intelligence. Ne reformule rien, n'ajoute aucune section.\\n- SECTION 1 : pour chaque signal, commente les donn\\u00e9es threat intelligence si elles sont pr\\u00e9sentes sous l'IP (AbuseIPDB, GreyNoise, OTX, ThreatFox) \\u2014 elles sont factuelles et v\\u00e9rifi\\u00e9es, utilise-les pour enrichir ton commentaire. Synth\\u00e9tise aussi la proc\\u00e9dure officielle si pr\\u00e9sente.\\n- SECTION 2 : une phrase suffit.\\n- SECTION 3 : 2 phrases max. Signale toute r\\u00e8gle High compos\\u00e9e uniquement de bruit comme faux positif \\u00e0 tuner.\\n- SIGNATURES NON CLASS\\u00c9ES : mentionne les RARET\\u00c9 SUSPECTE explicitement.\\n- [CONCLUSION] : 2-3 phrases coh\\u00e9rentes avec les chiffres d\\u00e9j\\u00e0 \\u00e9crits au-dessus. Si nb_signaux > 0, nomme-les.\\n- N'\\u00e9cris RIEN d'autre. Pas de pr\\u00e9ambule, pas de section suppl\\u00e9mentaire.\";\nconst promptComplet = instructions + \"\\n\\n \" + $json.prompt_enrichi;\nreturn [{ json: { prompt_final_mistral: promptComplet } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        -120
+      ],
+      "id": "construire-prompt-mistral-node",
+      "name": "Construire Prompt Mistral"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/chat/completions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"mistral-large-latest\", messages: [{ role: \"user\", content: $json.prompt_final_mistral }] }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <MISTRAL_API_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1330,
+        -120
+      ],
+      "id": "mistral-analyse-node",
+      "name": "Mistral Large Analyse"
+    },
+    {
+      "parameters": {
+        "fromEmail": "<SMTP_USER>",
+        "toEmail": "<EMAIL_DESTINATAIRE>",
+        "subject": "=🛡️ Rapport SOC UTMStack — {{ $json.date }}",
+        "emailFormat": "text",
+        "text": "={{ $json.synthese }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1780,
+        -60
+      ],
+      "id": "send-email-node",
+      "name": "Send Email Rapport SOC",
+      "credentials": {
+        "smtp": {
+          "id": "<A_RECREER_DANS_VOTRE_INSTANCE_N8N>",
+          "name": "SMTP UTMStack Notifications"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "resumes_soc",
+          "mode": "list",
+          "cachedResultName": "resumes_soc"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contenu": "={{ $json.synthese }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "contenu",
+              "displayName": "contenu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1780,
+        60
+      ],
+      "id": "insert-db-a-la-demande-node",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "<A_RECREER_DANS_VOTRE_INSTANCE_N8N>",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "IPs Signaux",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Construire Prompt Mistral",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Rapport SOC",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IPs Signaux": {
+      "main": [
+        [
+          {
+            "node": "AbuseIPDB Check",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GreyNoise Check",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "OTX Check",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ThreatFox Check",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Historique SOC (30j)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AbuseIPDB Check": {
+      "main": [
+        [
+          {
+            "node": "Merge TI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GreyNoise Check": {
+      "main": [
+        [
+          {
+            "node": "Merge TI",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "OTX Check": {
+      "main": [
+        [
+          {
+            "node": "Merge TI",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "ThreatFox Check": {
+      "main": [
+        [
+          {
+            "node": "Merge TI",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Aggregation TI": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge TI": {
+      "main": [
+        [
+          {
+            "node": "Aggregation TI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Historique SOC (30j)": {
+      "main": [
+        [
+          {
+            "node": "Correlation Historique",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Correlation Historique": {
+      "main": [
+        [
+          {
+            "node": "Merge TI",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Construire Prompt Mistral": {
+      "main": [
+        [
+          {
+            "node": "Mistral Large Analyse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral Large Analyse": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "6def1a2b-3c4d-6e5f-1a7b-3c4d5e6f7a8b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "741527df6a2b305ecf3dcc04e43e9dfb225ad50d37f9db040894b80ffe9de0e5"
+  },
+  "nodeGroups": [],
+  "id": "W3OrSShwiqnj6gF2",
+  "tags": []
+}

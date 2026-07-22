@@ -1,0 +1,107 @@
+{
+  "name": "UTMStack - Webhook consultation résumé SOC",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "resume-soc",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "a1e4c9c1-1a2b-4c3d-9e5f-1a2b3c4d5e6f",
+      "name": "Webhook Trigger",
+      "webhookId": "resume-soc-webhook-id"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, date_generation, contenu\nFROM resumes_soc\nORDER BY date_generation DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        0
+      ],
+      "id": "b2f5d0d2-2b3c-5d4e-0f6a-2b3c4d5e6f7a",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "<A_RECREER_DANS_VOTRE_INSTANCE_N8N>",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Résumé SOC UTMStack</title>\n  <style>\n    body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; }\n    h1 { color: #1a1a2e; border-bottom: 2px solid #e94560; padding-bottom: 10px; }\n    .meta { color: #666; font-size: 0.9em; margin-bottom: 20px; }\n    .contenu { white-space: pre-wrap; line-height: 1.6; }\n  </style>\n</head>\n<body>\n  <h1>🛡️ Résumé SOC UTMStack</h1>\n  <div class=\"meta\">Généré le : {{ $json.date_generation }} | ID : {{ $json.id }}</div>\n  <div class=\"contenu\">{{ $json.contenu }}</div>\n</body>\n</html>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          },
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        624,
+        0
+      ],
+      "id": "c3a6e1e3-3c4d-6e5f-1a7b-3c4d5e6f7a8b",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "741527df6a2b305ecf3dcc04e43e9dfb225ad50d37f9db040894b80ffe9de0e5"
+  },
+  "nodeGroups": [],
+  "id": "W2NqRRgvhpmh5eF1",
+  "tags": []
+}
