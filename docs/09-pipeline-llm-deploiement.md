@@ -1,24 +1,26 @@
 ---
-canonical: https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm-deploiement.html
-meta-description: Guide de déploiement complet du pipeline SOC IA locale pour UTMStack — Ollama, n8n, PostgreSQL, Qdrant, SearXNG, Open WebUI. Configuration pas à pas, pièges à éviter, variables à adapter.
-meta-generator: Jekyll v3.10.0
-meta-og:description: Guide de déploiement complet du pipeline SOC IA locale pour UTMStack — Ollama, n8n, PostgreSQL, Qdrant, SearXNG, Open WebUI. Configuration pas à pas, pièges à éviter, variables à adapter.
-meta-og:locale: fr
-meta-og:site_name: UTMStack Lab — Guide et Procédures de déploiement
-meta-og:title: Guide de déploiement du pipeline IA locale DoIt4Everyone
-meta-og:type: website
-meta-og:url: https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm-deploiement.html
-meta-twitter:card: summary
-meta-twitter:title: Guide de déploiement du pipeline IA locale DoIt4Everyone
-meta-viewport: width=device-width, initial-scale=1
-title: Guide de déploiement du pipeline IA locale DoIt4Everyone | UTMStack Lab — Guide et Procédures de déploiement
+title: "Guide de déploiement du pipeline IA locale | DoIt4Everyone"
+description: "Guide de déploiement complet du pipeline SOC IA locale pour UTMStack — Ollama, n8n, PostgreSQL, Qdrant, SearXNG, Open WebUI. Configuration pas à pas, pièges à éviter, variables à adapter."
 ---
-
-# [UTMStack Lab — Guide et Procédures de déploiement](https://doit4everyone.github.io/utmstack-lab/)
-
-UTMStack v11.2.11 Community Edition — Procédures de déploiement pour lab PME Suisse. Installation VMware, Suricata, CrowdSec, SOAR, OPNsense, Pipeline IA locale.
-
-[View the Project on GitHub doit4everyone/utmstack-lab](https://github.com/doit4everyone/utmstack-lab)
+<style>
+  header, footer { display: none !important; }
+  .wrapper {
+    max-width: 900px !important;
+    margin: 0 auto !important;
+    float: none !important;
+    position: relative !important;
+    padding: 40px 20px !important;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+    font-size: 1.1em !important;
+  }
+  section {
+    width: 100% !important;
+    float: none !important;
+    margin: 0 !important;
+  }
+  h1, h2 { text-align: center; }
+  table { width: 100%; display: table; margin: 20px 0; }
+</style>
 
 # Guide de déploiement du pipeline IA locale
 > [← Retour à l'index](https://doit4everyone.github.io/utmstack-lab/docs/)
@@ -622,9 +624,4 @@ Les autres variables (IP UTMStack, credentials PostgreSQL/OpenSearch, clés thre
 
 ---
 
-> | [← Retour à l'index](https://doit4everyone.github.io/utmstack-lab/docs/) | [← Pipeline SOC augmenté par IA locale](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html) |
-> | ----------------------------------------- | ------------------------------------------------------------- |
-
-This project is maintained by [doit4everyone](https://github.com/doit4everyone)
-
-Hosted on GitHub Pages — Theme by [orderedlist](https://github.com/orderedlist)
+> [← Retour à l'index](https://doit4everyone.github.io/utmstack-lab/docs/) | [← Pipeline SOC augmenté par IA locale](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html)

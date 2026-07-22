@@ -1,24 +1,26 @@
 ---
-canonical: https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html
-meta-description: Pipeline SOC augmenté par IA locale (Ollama, n8n) pour UTMStack. Retour d'expérience complet sur 12 versions, tri déterministe, enrichissement threat intelligence, et pourquoi un LLM local seul ne suffit pas.
-meta-generator: Jekyll v3.10.0
-meta-og:description: Pipeline SOC augmenté par IA locale (Ollama, n8n) pour UTMStack. Retour d'expérience complet sur 12 versions, tri déterministe, enrichissement threat intelligence, et pourquoi un LLM local seul ne suffit pas.
-meta-og:locale: fr
-meta-og:site_name: UTMStack Lab — Guide et Procédures de déploiement
-meta-og:title: Pipeline SOC augmenté par IA locale DoIt4Everyone
-meta-og:type: website
-meta-og:url: https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html
-meta-twitter:card: summary
-meta-twitter:title: Pipeline SOC augmenté par IA locale DoIt4Everyone
-meta-viewport: width=device-width, initial-scale=1
-title: Pipeline SOC augmenté par IA locale DoIt4Everyone | UTMStack Lab — Guide et Procédures de déploiement
+title: "Pipeline SOC augmenté par IA locale | DoIt4Everyone"
+description: "Pipeline SOC augmenté par IA locale (Ollama, n8n) pour UTMStack. Retour d'expérience complet sur 12 versions, tri déterministe, enrichissement threat intelligence, et pourquoi un LLM local seul ne suffit pas."
 ---
-
-# [UTMStack Lab — Guide et Procédures de déploiement](https://doit4everyone.github.io/utmstack-lab/)
-
-UTMStack v11.2.11 Community Edition — Procédures de déploiement pour lab PME Suisse. Installation VMware, Suricata, CrowdSec, SOAR, OPNsense, Pipeline IA locale.
-
-[View the Project on GitHub doit4everyone/utmstack-lab](https://github.com/doit4everyone/utmstack-lab)
+<style>
+  header, footer { display: none !important; }
+  .wrapper {
+    max-width: 900px !important;
+    margin: 0 auto !important;
+    float: none !important;
+    position: relative !important;
+    padding: 40px 20px !important;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+    font-size: 1.1em !important;
+  }
+  section {
+    width: 100% !important;
+    float: none !important;
+    margin: 0 !important;
+  }
+  h1, h2 { text-align: center; }
+  table { width: 100%; display: table; margin: 20px 0; }
+</style>
 
 # Pipeline SOC augmenté par IA locale
 > [← Retour à l'index](https://doit4everyone.github.io/utmstack-lab/docs/)
@@ -658,9 +660,4 @@ Une revue d'architecture menée sur ce pipeline a identifié deux améliorations
 
 ---
 
-> | [← Retour à l'index](https://doit4everyone.github.io/utmstack-lab/docs/) | [→ Guide de déploiement du pipeline](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm-deploiement.html) |
-> | ----------------------------------------- | ------------------------------------------------------------- |
-
-This project is maintained by [doit4everyone](https://github.com/doit4everyone)
-
-Hosted on GitHub Pages — Theme by [orderedlist](https://github.com/orderedlist)
+> [← Retour à l'index](https://doit4everyone.github.io/utmstack-lab/docs/) | [→ Guide de déploiement du pipeline](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm-deploiement.html)
