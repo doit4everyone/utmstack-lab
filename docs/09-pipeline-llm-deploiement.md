@@ -23,7 +23,7 @@ description: "Guide de déploiement complet du pipeline SOC IA locale pour UTMSt
 </style>
 
 # Guide de déploiement du pipeline IA locale
-> [← Retour à l'index](https://doit4everyone.github.io/utmstack-lab/docs/)
+> [← Retour à l'index](../)
 
 Cette page est un guide pas-à-pas, sans le récit — si tu veux comprendre les raisons des choix d'architecture avant de déployer, lis d'abord le [chapitre principal](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html). Ici, l'objectif est d'aller du système vide à un pipeline fonctionnel.
 
