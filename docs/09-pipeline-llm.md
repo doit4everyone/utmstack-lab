@@ -23,7 +23,7 @@ description: "Pipeline SOC augmenté par IA locale (Ollama, n8n) pour UTMStack. 
 </style>
 
 # Pipeline SOC augmenté par IA locale
-> [← Retour à l'index](https://doit4everyone.github.io/utmstack-lab/docs/)
+> [← Retour à l'index](../)
 
 Ce chapitre documente le projet qui a occupé la majeure partie de deux sessions de travail : brancher un LLM local (Ollama) sur les alertes UTMStack pour produire un résumé quotidien exploitable, sans dépendance cloud. Le résultat final fonctionne bien — mais le chemin pour y arriver est le vrai contenu de cette page. Douze versions de pipeline, plusieurs échecs de classification révélateurs, et une leçon d'architecture qui dépasse largement ce lab.
 
