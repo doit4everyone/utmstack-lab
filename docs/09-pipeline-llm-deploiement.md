@@ -560,7 +560,7 @@ Cette section couvre le déploiement de la variante cloud décrite dans le [chap
 2. **Settings → Billing** : passer sur le **Scale plan** (pay-as-you-go, sans minimum) — indispensable pour la production, voir l'encadré ci-dessous
 3. **Settings → API Keys → Create new key** — copier la clé immédiatement, elle ne s'affiche qu'une fois
 
-> ⚠️ **Ne pas rester sur le tier gratuit "Experiment" pour de vraies données.** Ce tier utilise les entrées/sorties API pour l'entraînement de leurs modèles par défaut (opt-out manuel requis dans Admin Console → Confidentialité si on l'utilise quand même) et n'est explicitement prévu que pour l'évaluation. Le Scale plan est une facturation à l'usage réel, sans abonnement ni engagement — pour ce pipeline (~0,20 $/mois), le passage est quasi gratuit et débloque le DPA standard plus la garantie de non-entraînement.
+> ⚠️ **Ne pas rester sur le tier gratuit "Experiment" pour de vraies données.** Ce tier utilise les entrées/sorties API pour l'entraînement de leurs modèles par défaut (opt-out manuel requis dans Admin Console → Confidentialité si on l'utilise quand même) et n'est explicitement prévu que pour l'évaluation. Le Scale plan est une facturation à l'usage réel, sans abonnement ni engagement — pour ce pipeline (~0,20 $/mois), le passage est quasi gratuit et débloque la garantie de non-entraînement, plus un DPA self-serve (sans négociation commerciale), à vérifier/accepter dans la console selon la procédure en vigueur au moment du déploiement.
 
 ### 12.2 Fichiers workflows
 
@@ -624,4 +624,4 @@ Les autres variables (IP UTMStack, credentials PostgreSQL/OpenSearch, clés thre
 
 ---
 
-> [← Retour à l'index](https://doit4everyone.github.io/utmstack-lab/docs/) | [← Pipeline SOC augmenté par IA locale](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html)
+> [← Retour à l'index](../) | [← Pipeline SOC augmenté par IA locale](09-pipeline-llm.md)

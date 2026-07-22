@@ -539,11 +539,11 @@ Rapport quotidien + à la demande quotidien : ≈ 0,22 $/mois
 
 Négligeable, dans le même ordre de grandeur que Claude Sonnet testé en section 9.
 
-> ⚠️ **Le tier gratuit n'est pas fait pour la production.** Mistral propose un plan "Experiment" gratuit (~1 milliard de tokens/mois), largement suffisant en volume pour ce cas d'usage — mais ce tier **utilise les données envoyées pour l'entraînement de leurs modèles par défaut**, sauf opt-out manuel dans Admin Console → Confidentialité. Pour un usage réel, même de lab, le passage sur le **Scale plan** (pay-as-you-go, sans minimum, sans abonnement) est la seule option sérieuse : il active la garantie de non-entraînement par défaut et donne accès au DPA (Data Processing Addendum) standard, sans négociation commerciale requise. Le surcoût pour y accéder est nul — le Scale plan est une facturation à l'usage, pas un forfait.
+> ⚠️ **Le tier gratuit n'est pas fait pour la production.** Mistral propose un plan "Experiment" gratuit (~1 milliard de tokens/mois), largement suffisant en volume pour ce cas d'usage — mais ce tier **utilise les données envoyées pour l'entraînement de leurs modèles par défaut**, sauf opt-out manuel dans Admin Console → Confidentialité. Pour un usage réel, même de lab, le passage sur le **Scale plan** (pay-as-you-go, sans minimum, sans abonnement) est la seule option sérieuse : il active la garantie de non-entraînement par défaut, et un DPA (Data Processing Addendum) standard est disponible en libre accès sur `legal.mistral.ai`, sans négociation commerciale ni contact avec les ventes — contrairement à un accord "Enterprise" sur-mesure. Vérifier dans la console si une action explicite (acceptation du document) est nécessaire pour qu'il s'applique formellement au compte. Le surcoût pour accéder au Scale plan est nul — c'est une facturation à l'usage, pas un forfait.
 
 ### Ce que ce choix règle, et ce qu'il ne règle pas pour la nLPD
 
-Le passage Suisse → UE est reconnu comme offrant un niveau de protection adéquat par la nLPD, sans clause contractuelle type ni garantie supplémentaire — contrairement à un transfert vers les USA ou tout pays sans décision d'adéquation. Combiné au DPA disponible sur le Scale plan et à la garantie de non-entraînement, ce choix règle la question du **mécanisme de transfert**.
+Le passage Suisse → UE est reconnu comme offrant un niveau de protection adéquat par la nLPD, sans clause contractuelle type ni garantie supplémentaire — contrairement à un transfert vers les USA ou tout pays sans décision d'adéquation. Combiné au DPA self-serve disponible sur le Scale plan et à la garantie de non-entraînement, ce choix règle la question du **mécanisme de transfert**.
 
 Il ne règle pas, à lui seul :
 - **La nature des données envoyées** — une IP d'attaquant externe n'est généralement pas une donnée personnelle ; un nom d'utilisateur ou un poste nominatif (pertinent si une future intégration O365/Purview enrichit le flux) en serait une, avec un régime plus strict
@@ -660,4 +660,4 @@ Une revue d'architecture menée sur ce pipeline a identifié deux améliorations
 
 ---
 
-> [← Retour à l'index](https://doit4everyone.github.io/utmstack-lab/docs/) | [→ Guide de déploiement du pipeline](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm-deploiement.html)
+> [← Retour à l'index](../) | [→ Guide de déploiement du pipeline](09-pipeline-llm-deploiement.md)
