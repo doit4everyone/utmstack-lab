@@ -55,6 +55,7 @@ Toutes les procédures sont testées et validées en conditions réelles sous VM
 | [06 — SOC AI](https://doit4everyone.github.io/utmstack-lab/docs/06-soc-ai.html) | Analyse automatique des alertes — architecture backend, limites du prompt natif |
 | [07 — Règles Suricata avancées](https://doit4everyone.github.io/utmstack-lab/docs/07-custom-rules.html) | suricata-update, NF Rules networkforensic.dk, IPS drop mode, CINS, 🆕 règle custom DVR/IoT (r00ts3c) avec persistance double (boot + cron nocturne) |
 | [08 — Audit NTLM & Migration Kerberos](https://doit4everyone.github.io/utmstack-lab/docs/08-ntlm-audit.html) | WEF, GPO, Intune, dashboard SIEM, roadmap Phase 1→3 — Server 2025 |
+| [09 — Pipeline SOC augmenté par IA locale](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html) | Ollama + n8n, tri déterministe, threat intelligence, heartbeat de supervision, comparatif LLM (Sonnet/DeepSeek-R1/Mistral) + variante cloud optionnelle |
 
 ---
 
@@ -102,6 +103,12 @@ suricata-update (ptrules, stamus/lateral, tgreen/hunting), règles NF Scanners e
 
 Déploiement de l'audit NTLM via Windows Event Forwarding (WEF) en self-subscription locale. Scripts prêts à l'emploi pour GPO et Intune, corrections terrain Server 2025, cas d'étude réplication AD inter-sites utilisant NTLM par design. [Scripts sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts).
 
+### 🤖 Pipeline SOC augmenté par IA locale
+
+[→ Ollama + n8n — de l'idée au pipeline fiable, en 12 versions](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html)
+
+Retour d'expérience complet sur la construction d'un pipeline de résumé quotidien assisté par LLM, avec un pipeline local (Ollama) comme socle de référence : pourquoi le classement signal/bruit doit rester déterministe (pas confié au LLM), enrichissement automatique via AbuseIPDB/GreyNoise/OTX/ThreatFox, corrélation temporelle sur 30 jours, et détection de panne silencieuse transformée en alerte SIEM native. Comparatif honnête Llama 3.1 8B / Mistral NeMo 12B / Qwen 2.5 14B en local, puis confrontation sans garde-fou entre Claude Sonnet 5, DeepSeek-R1 (14B/32B) et Mistral Large — avec les hallucinations et erreurs d'interprétation observées montrées telles quelles, y compris quand elles trompent le modèle le plus fiable du lot. Une **variante cloud optionnelle** (Mistral, hébergement UE, coût mensuel négligeable) est documentée en complément du pipeline local, jamais à sa place. [Guide de déploiement pas à pas](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm-deploiement.html) et [workflows n8n sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts).
+
 ---
 
 ## 📅 Roadmap documentation
@@ -110,7 +117,7 @@ Déploiement de l'audit NTLM via Windows Event Forwarding (WEF) en self-subscrip
 | --- | --- | --- |
 | V1 | Installation & Architecture | 🟢 Publié |
 | V2 | Configuration SIEM — Agents, sources de logs, règles, intégrations Azure/M365 | 📋 Planifié |
-| V3 | Modules complémentaires — SOC AI, OPNsense stack | 🟡 En cours |
+| V3 | Modules complémentaires — SOC AI, OPNsense stack, Pipeline IA locale (Ollama + n8n) | 🟢 Publié |
 | V4 | SOAR & Incident Response — Tests Red Team Kali | 🟡 En cours |
 | V5 | Red Team / Validation Kali | 📋 Planifié |
 
@@ -138,6 +145,7 @@ Déploiement de l'audit NTLM via Windows Event Forwarding (WEF) en self-subscrip
 - **Logs** : syslog-ng → Agent UTMStack → OpenSearch
 - **WEF** : Windows Event Forwarding — collecte NTLM/Operational → ForwardedEvents
 - **SOC AI** : analyse d'alertes assistée — architecture backend documentée (voir chapitre 06)
+- **Pipeline IA** : Ollama (Llama 3.1 8B / Qwen 2.5 14B, local, socle de référence) + n8n — tri déterministe, enrichissement AbuseIPDB/GreyNoise/OTX/ThreatFox, heartbeat de supervision → alerte SIEM native ; variante cloud optionnelle documentée avec Mistral Large (hébergement UE) (voir chapitre 09)
 
 ---
 
@@ -147,6 +155,7 @@ Déploiement de l'audit NTLM via Windows Event Forwarding (WEF) en self-subscrip
 | --- | --- |
 | [Checklist Migration OPNsense 26.1](https://doit4everyone.github.io/utmstack-lab/docs/06-migration-checklist.html) | Points de vigilance post-migration OPNsense 25.7 → 26.1 |
 | [Réduction du bruit — Règles de corrélation UTMStack](https://doit4everyone.github.io/utmstack-lab/docs/correlation-rules-tuning.html) | Alert fatigue, diagnostic OpenSearch/PostgreSQL, 7 fixes de règles de corrélation, dérive d'ID entre versions, automatisation double (boot + cron horaire), checklist post-update |
+| [Workflows Pipeline IA (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts) | JSON n8n (rapport quotidien, à la demande, consultation webhook), scripts heartbeat systemd, Modelfiles Ollama |
 | [Scripts WEF NTLM (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts) | Deploy-WEF-NTLM-GPO.ps1, Intune, Detect, ntlm-subscription.xml |
 
 ---
