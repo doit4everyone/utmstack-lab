@@ -370,7 +370,7 @@ Microsoft Defender for Business (l'EDR endpoint inclus dans M365 Business Premiu
 | EDR + MSSP externalisé (SIEM mutualisé, 3-8k CHF/mois) | ~20% |
 | Vrai SOC interne avec SIEM premium dédié | ~5-10% |
 
-Un lab UTMStack + pipeline IA local ne remplace pas un SIEM Enterprise pour une banque régulée. Il remplace en revanche, de façon économiquement et techniquement défendable, ce que fait aujourd'hui la majorité des PME de 50 à 200 utilisateurs : rien, ou un EDR isolé sans corrélation réseau.
+Un lab UTMStack + pipeline IA local ne remplace pas un SIEM Enterprise pour une banque régulée. Il remplace en revanche, de façon économiquement et techniquement défendable, ce que font aujourd'hui la majorité des PME de 50 à 200 utilisateurs : rien, ou un EDR isolé sans corrélation réseau.
 
 ---
 
@@ -430,7 +430,7 @@ Au-delà de Qwen 14B, le paysage des modèles ouverts spécialisés en raisonnem
 
 > ⚠️ **Ces prix se périment vite, silencieusement.** Le marché de la location GPU (surtout spot/marketplace) bouge sur des cycles de quelques semaines, pas d'années. Si tu lis ce chapitre plusieurs mois après juillet 2026, considère ce tableau comme un **ordre de grandeur historique**, pas un tarif actuel — revérifie directement chez le fournisseur avant toute décision budgétaire. Un peu ironique de le préciser dans un chapitre qui parle justement d'erreurs silencieuses, mais c'en est une : un tableau de prix qui semble à jour alors qu'il ne l'est plus.
 
-> ℹ️ **Le piège du Pod loué pour un usage ponctuel.** Louer un GPU façon RunPod/Vast.ai implique de déployer un Pod persistant, facturé **tant qu'il tourne** — pas seulement pendant le calcul réel. Pour un test ponctuel, deux alternatives évitent ce piège : le **serverless GPU** (facturation à la seconde de calcul, mise en veille automatique entre appels) ou l'**API hébergée directe** (Together AI, Fireworks AI proposent DeepSeek-R1 déjà déployé, facturé au token). Le calcul d'amortissement le confirme : à un usage de 2h/jour, un GPU 24 Go loué coûte ~18 $/mois — il faudrait des années d'usage quotidien pour justifier l'achat d'une carte dédiée face à la location. **L'achat matériel ne se justifie que pour un usage récurrent et intensif** (un pipeline de production tournant quotidiennement), pas pour explorer ponctuellement un modèle plus gros.
+> ℹ️ **Le piège du Pod loué pour un usage ponctuel.** Louer un GPU façon RunPod/Vast.ai implique de déployer un Pod persistant, facturé **tant qu'il tourne** — pas seulement pendant le calcul réel. Pour un test ponctuel, deux alternatives évitent ce piège : le **serverless GPU** (facturation à la seconde de calcul, mise en veille automatique entre appels) ou l'**API hébergée directe** (Together AI, Fireworks AI proposent DeepSeek-R1 déjà déployé, facturé au token). Le calcul d'amortissement le confirme : pour un usage de 2h/jour, un GPU 24 Go loué coûte ~18 $/mois — il faudrait des années d'usage quotidien pour justifier l'achat d'une carte dédiée face à la location. **L'achat matériel ne se justifie que pour un usage récurrent et intensif** (un pipeline de production tournant quotidiennement), pas pour explorer ponctuellement un modèle plus gros.
 
 **Voie 3 — API hébergée**, la plus simple : aucun matériel à gérer, facturation au token, quelques centimes par rapport généré. C'est la voie empruntée pour le test Claude Sonnet 5 de la [section suivante](#9-confrontation-avec-un-llm-sans-contrainte--sonnet-5-vs-deepseek-r1-vs-mistral). Le compromis reste la sortie de données hors du lab.
 
@@ -540,7 +540,7 @@ Les tests de la section précédente ont mis en évidence un résultat qu'il ser
 
 ### Le principe — même architecture, moteur interchangeable
 
-L'architecture déterministe décrite dans ce chapitre (tri JS, squelette pré-rédigé, enrichissement threat intelligence, corrélation temporelle) reste strictement identique. Le seul changement : le nœud d'appel LLM, qui pointait vers Ollama/Qwen en local, pointe désormais vers l'API Mistral. Le modèle ne fait toujours que de la **complétion** — remplir des emplacements `[COMMENTAIRE_N]` dans un texte déjà classé et structuré, jamais de classification libre. Toutes les garanties du pipeline déterministe restent intactes ; seule la qualité de rédaction change, à la marge.
+L'architecture déterministe décrite dans ce chapitre (tri JS, squelette pré-rédigé, enrichissement threat intelligence, corrélation temporelle) reste strictement identique. Le seul changement : le nœud d'appel LLM, qui pointait vers Ollama/Qwen en local, pointe désormais vers l'API Mistral. Le modèle ne fait toujours que de la **complétion** — remplir des emplacements `[COMMENTAIRE_N]` dans un texte déjà classé et structuré, jamais de classification libre. Toutes les garanties du pipeline déterministe restent intactes ; seule la qualité de rédaction change.
 
 ### Coût réel mesuré
 
