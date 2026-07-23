@@ -396,6 +396,8 @@ Au-delà de Qwen 14B, le paysage des modèles ouverts spécialisés en raisonnem
 | DeepSeek-R1-Distill-Qwen-32B | 32,8B | ~18-20 Go | RTX 3090/4090 (24 Go) | 128K |
 | Llama 3.3 70B (dense, non-reasoning dédié) | 70B | ~40-43 Go | 48 Go (2× RTX 3090, ou Mac 64 Go) | 128K |
 
+> ⚠️ **Ne pas confondre avec le pipeline de production.** Le pipeline documenté dans ce chapitre tourne sur **Qwen 2.5 14B**, testé et stabilisé sur des dizaines de runs. Le **Qwen3-14B** listé ci-dessus appartient au panorama général des modèles de raisonnement disponibles en 2026 — il n'a jamais été testé sur ce pipeline précis, malgré la proximité de nom. Les deux sont des générations différentes de la même famille Qwen, pas la même chose.
+
 > ⚠️ **Testé en conditions réelles sur ce lab** : le R1-Distill-32B a été exécuté en CPU pur sur les 64 Go de RAM système de ce lab, partagés avec plusieurs VM actives. Le calcul théorique laissait ~25 Go de marge — en pratique, le chargement du modèle a occupé jusqu'à 98% de la RAM totale disponible avant même le début du calcul. Le run a fini par aboutir (29 minutes au total), mais sans aucune marge de sécurité réelle. Un seul processus supplémentaire réclamant de la mémoire au mauvais moment aurait pu faire échouer le calcul en cours de route. **La marge théorique de ~25 Go ne s'est pas traduite par une marge pratique confortable.**
 
 **Nécessitant un GPU de classe datacenter (hors de portée d'un lab domestique) :**
@@ -425,6 +427,8 @@ Au-delà de Qwen 14B, le paysage des modèles ouverts spécialisés en raisonnem
 | A100 80 Go | 80 Go | 1,99–4,10 $/h | dès 0,60-0,68 $/h |
 | H100 80 Go | 80 Go | 2,49–12,29 $/h (5× d'écart selon fournisseur) | dès 1,03-1,49 $/h |
 | H200 141 Go | 141 Go | dès 0,50 $/h chez certains fournisseurs | — |
+
+> ⚠️ **Ces prix se périment vite, silencieusement.** Le marché de la location GPU (surtout spot/marketplace) bouge sur des cycles de quelques semaines, pas d'années. Si tu lis ce chapitre plusieurs mois après juillet 2026, considère ce tableau comme un **ordre de grandeur historique**, pas un tarif actuel — revérifie directement chez le fournisseur avant toute décision budgétaire. Un peu ironique de le préciser dans un chapitre qui parle justement d'erreurs silencieuses, mais c'en est une : un tableau de prix qui semble à jour alors qu'il ne l'est plus.
 
 > ℹ️ **Le piège du Pod loué pour un usage ponctuel.** Louer un GPU façon RunPod/Vast.ai implique de déployer un Pod persistant, facturé **tant qu'il tourne** — pas seulement pendant le calcul réel. Pour un test ponctuel, deux alternatives évitent ce piège : le **serverless GPU** (facturation à la seconde de calcul, mise en veille automatique entre appels) ou l'**API hébergée directe** (Together AI, Fireworks AI proposent DeepSeek-R1 déjà déployé, facturé au token). Le calcul d'amortissement le confirme : à un usage de 2h/jour, un GPU 24 Go loué coûte ~18 $/mois — il faudrait des années d'usage quotidien pour justifier l'achat d'une carte dédiée face à la location. **L'achat matériel ne se justifie que pour un usage récurrent et intensif** (un pipeline de production tournant quotidiennement), pas pour explorer ponctuellement un modèle plus gros.
 
@@ -471,6 +475,8 @@ Tout ce chapitre repose sur un principe : sortir la classification du LLM parce 
 ### Le protocole
 
 Un prompt unique demandait au modèle de tout faire lui-même : classer les signaux prioritaires, identifier ce qui est neutralisé, repérer le bruit, signaler les règles à fort volume suspectes de faux positif, et conclure sur un nombre précis de signaux réels — exactement la tâche que le tri déterministe du reste du pipeline effectue aujourd'hui en JavaScript.
+
+> ⚠️ **À lire avant le tableau, pas seulement après.** La plupart des configurations ci-dessous reposent sur **un seul ou deux runs**, pas sur une série statistique. Un tableau comparatif a tendance à faire paraître ses verdicts plus établis qu'ils ne le sont — c'est une leçon que ce chapitre applique à ses propres modèles testés, elle s'applique tout autant à ses propres conclusions. Traiter chaque ligne comme un indice, pas comme un verdict scellé.
 
 ### Résultats
 

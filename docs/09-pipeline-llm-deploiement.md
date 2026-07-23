@@ -622,6 +622,30 @@ Nommer ce credential **"SMTP UTMStack Notifications"** (le nom exact référenc�
 
 Les autres variables (IP UTMStack, credentials PostgreSQL/OpenSearch, clés threat intelligence) sont les mêmes que celles du tableau général de la section 9 — cette variante cloud ne change que le moteur de rédaction et l'envoi mail, pas le reste du pipeline.
 
+### 12.7 Validation
+
+Contrairement au heartbeat (section 11.6), qui a un protocole de test unique et définitif, la variante cloud mérite une vérification en deux temps : d'abord que le pipeline officiel (déterministe + Mistral) tourne sans erreur, ensuite que le contexte topologique ajouté au prompt (voir encadré ci-dessous) est bien respecté par le modèle.
+
+**Test 1 — Le pipeline officiel se termine sans balise résiduelle**
+
+Déclenche manuellement le workflow "à la demande" (webhook), puis vérifie le rapport reçu par mail ou via la page web :
+
+- Aucune balise `[COMMENTAIRE_N]` ou `[CONCLUSION]` visible dans le texte final
+- Aucun bandeau `⚠️ GÉNÉRATION INCOMPLÈTE` en haut du rapport
+- Le nombre de signaux annoncé en conclusion correspond bien au nombre de signaux détaillés dans le corps du rapport (pas de décompte contradictoire)
+
+**Test 2 — Le garde-fou topologique est respecté**
+
+Ce pipeline inclut une ligne de contexte précisant que `192.168.1.203` est l'IP WAN d'OPNsense (passerelle NAT), pas un hôte identifiable — un correctif appliqué après qu'un test en analyse libre ait produit un faux scénario de compromission basé sur cette IP (voir [chapitre principal, section 9](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html#9-confrontation-avec-un-llm-sans-contrainte--sonnet-5-vs-deepseek-r1-vs-mistral)).
+
+Dans un rapport contenant cette IP, vérifier que le texte généré :
+- Ne présente jamais `192.168.1.203` comme un hôte compromis unique
+- Recommande une vérification (logs NAT/DHCP) plutôt que d'affirmer une compromission directe
+
+**Résultat obtenu lors des tests de ce lab** : confirmé indépendamment sur deux modèles différents (Claude Sonnet 5 et Mistral Large), chacun ayant correctement noté l'IP comme `(NAT)` et reformulé sa recommandation en conséquence, sans reconstruire de faux scénario de pivot. Deux runs par modèle, résultat reproductible dans les deux cas — voir le détail complet en section 9 du chapitre principal.
+
+> ⚠️ **Ce test ne couvre pas tout.** Contrairement au heartbeat, dont le comportement est binaire (alerte émise ou non), la qualité rédactionnelle d'un LLM reste variable d'un run à l'autre. Un test réussi confirme que le garde-fou fonctionne sur le cas précis testé — il ne garantit pas l'absence d'autres erreurs d'interprétation sur des signatures différentes (voir le cas "Golden Ticket", section 9 du chapitre principal, qui reste une erreur non corrigible par un simple ajout de contexte).
+
 ---
 
 > [← Retour à l'index](../) | [← Pipeline SOC augmenté par IA locale](09-pipeline-llm.md)
