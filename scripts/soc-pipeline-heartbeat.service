@@ -1,0 +1,12 @@
+[Unit]
+Description=Heartbeat de supervision du pipeline SOC LLM
+Documentation=https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/soc-pipeline-heartbeat.sh
+# Le script sort en 1 quand il emet une alerte : c'est un resultat
+# attendu, pas un echec du service.
+SuccessExitStatus=0 1

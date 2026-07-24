@@ -1,0 +1,15 @@
+[Unit]
+Description=Verification quotidienne du pipeline SOC LLM
+Documentation=https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html
+
+[Timer]
+# 08h00 : deux heures apres le run planifie du pipeline (06h00)
+OnCalendar=*-*-* 08:00:00
+# Rattrape l'execution manquee si la VM etait eteinte a 08h00
+# (indispensable pour un lab qui ne tourne pas en continu)
+Persistent=true
+# Evite que plusieurs VMs declenchent exactement a la meme seconde
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
