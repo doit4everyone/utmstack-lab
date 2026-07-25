@@ -55,7 +55,7 @@ En creusant dans le schéma PostgreSQL, une colonne est apparue sans être explo
 
 Ce champ inexploité est devenu le point de départ du projet : construire un pipeline externe (n8n) qui interroge les vraies données d'alertes UTMStack, exploite `rule_description`, et produit un résumé réellement contextualisé — avec un objectif de départ non négociable : **tout doit rester local**, aucune donnée ne sort du lab.
 
-Ce chapitre documente d'abord cette architecture 100% locale (sections 2 à 9), qui reste la référence et le pipeline de production principal. Les tests comparatifs menés en section 9 ont cependant fait émerger un résultat qu'il aurait été malhonnête de passer sous silence : un fournisseur cloud basé en UE peut égaler, voire dépasser, la qualité d'analyse du meilleur modèle local testé, pour un coût mensuel dérisoire. La section 10 documente cette **variante cloud optionnelle** — jamais comme un remplacement du pipeline local, mais comme un second choix légitime, avec ses propres compromis explicites. La section 13, ajoutée après plusieurs mois de production réelle, documente un second changement : la bascule du moteur local lui-même, de Qwen vers Llama, pour une raison précise et testée.
+Ce chapitre documente d'abord cette architecture 100% locale (sections 2 à 9), qui reste la référence et le pipeline de production principal. Les tests comparatifs menés en section 9 ont cependant fait émerger un résultat qu'il aurait été malhonnête de passer sous silence : un fournisseur cloud basé en UE peut égaler, voire dépasser, la qualité d'analyse du meilleur modèle local testé, pour un coût mensuel dérisoire. La section 10 documente cette **variante cloud optionnelle** — jamais comme un remplacement du pipeline local, mais comme un second choix légitime, avec ses propres compromis explicites. La section 13, ajoutée après quelques jours de tests répétés en conditions réelles, documente un second changement : la bascule du moteur local lui-même, de Qwen vers Llama, pour une raison précise et testée.
 
 ---
 
@@ -236,7 +236,7 @@ Sa tâche devient de la pure complétion — reproduire le texte à l'identique,
 | Mistral NeMo 12B | Correct une fois le tri déterministe en place, mais tendance à minimiser les signaux confirmés dans les versions antérieures au tri |
 | Qwen 2.5 14B | Le plus riche en contexte et le mieux rédigé sur les premiers éléments d'un rapport, mais le plus "créatif" — a inventé une section entière ("NEXT STEPS") en pompant le contexte PostgreSQL brut fourni en trop grande quantité, et tend à recycler un commentaire générique mot pour mot sur les éléments en fin de rapport à fort volume (voir section 13) |
 
-Un enseignement contre-intuitif s'est dégagé de ce comparatif : **sur une tâche de pure complétion, le modèle le plus docile bat parfois le plus capable.** Qwen, plus intelligent, prenait des initiatives non désirées ; Llama, plus simple, exécutait la consigne à la lettre. La correction a fini par retirer la source de la dérive plutôt que de changer de modèle : le contexte PostgreSQL brut (15 `rule_description` en vrac) a été remplacé par l'injection d'**une seule description ciblée**, celle de la règle concernée, directement dans le squelette au bon endroit. Une fois cette source de confusion supprimée, les deux modèles se sont stabilisés — jusqu'à ce qu'un test à plus fort volume, des mois plus tard, révèle une limite plus profonde chez Qwen (section 13).
+Un enseignement contre-intuitif s'est dégagé de ce comparatif : **sur une tâche de pure complétion, le modèle le plus docile bat parfois le plus capable.** Qwen, plus intelligent, prenait des initiatives non désirées ; Llama, plus simple, exécutait la consigne à la lettre. La correction a fini par retirer la source de la dérive plutôt que de changer de modèle : le contexte PostgreSQL brut (15 `rule_description` en vrac) a été remplacé par l'injection d'**une seule description ciblée**, celle de la règle concernée, directement dans le squelette au bon endroit. Une fois cette source de confusion supprimée, les deux modèles se sont stabilisés — jusqu'à ce qu'un test à plus fort volume révèle une limite plus profonde chez Qwen (section 13).
 
 ### Comment la liste de classification a été construite
 
@@ -687,7 +687,7 @@ Une revue d'architecture menée sur ce pipeline a identifié plusieurs améliora
 
 ## 13. Mise à jour production — bascule vers Llama 3.1 8B
 
-Cette section documente un changement survenu après la stabilisation complète du pipeline racontée dans les sections précédentes — un test concret, mené sur des mois de production réelle, a révélé une limite de Qwen que les tests initiaux (section 3) n'avaient pas fait apparaître, faute de volume suffisant.
+Cette section documente un changement survenu après la stabilisation complète du pipeline racontée dans les sections précédentes — un test concret, mené sur quelques jours d'usage réel avec un volume d'alertes plus élevé qu'aux tests initiaux, a révélé une limite de Qwen que les tests initiaux (section 3) n'avaient pas fait apparaître, faute de volume suffisant à l'époque.
 
 ### Le symptôme
 
