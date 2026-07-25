@@ -25,7 +25,7 @@ description: "Pipeline SOC augmenté par IA locale (Ollama, n8n) pour UTMStack. 
 # Pipeline SOC augmenté par IA locale
 > [← Retour à l'index](../)
 
-Ce chapitre documente le projet qui a occupé la majeure partie de deux sessions de travail : brancher un LLM local (Ollama) sur les alertes UTMStack pour produire un résumé quotidien exploitable, sans dépendance cloud. Le résultat final fonctionne bien — mais le chemin pour y arriver est le vrai contenu de cette page. Douze versions de pipeline, plusieurs échecs de classification révélateurs, et une leçon d'architecture qui dépasse largement ce lab.
+Ce chapitre documente le projet qui a occupé la majeure partie de plusieurs sessions de travail : brancher un LLM local (Ollama) sur les alertes UTMStack pour produire un résumé quotidien exploitable, sans dépendance cloud. Le résultat final fonctionne bien — mais le chemin pour y arriver est le vrai contenu de cette page. Douze versions de pipeline, plusieurs échecs de classification révélateurs, une leçon d'architecture qui dépasse largement ce lab, et une bascule de modèle en production décidée après coup sur la base de tests concrets.
 
 > ℹ️ **À qui s'adresse ce chapitre.** Si tu cherches juste à déployer le pipeline chez toi, va directement à l'[annexe technique de déploiement](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm-deploiement.html). Cette page-ci raconte *pourquoi* le pipeline est construit comme il l'est — utile si tu veux comprendre les pièges avant de les reproduire, ou si tu veux adapter l'approche à ton propre contexte.
 
@@ -43,6 +43,7 @@ Ce chapitre documente le projet qui a occupé la majeure partie de deux sessions
 10. [Variante cloud — remplacer Qwen par un LLM hébergé](#10-variante-cloud--remplacer-qwen-par-un-llm-hébergé)
 11. [Supervision du pipeline — détecter la panne silencieuse](#11-supervision-du-pipeline--détecter-la-panne-silencieuse)
 12. [Limitations connues, assumées honnêtement](#12-limitations-connues-assumées-honnêtement)
+13. [Mise à jour production — bascule vers Llama 3.1 8B](#13-mise-à-jour-production--bascule-vers-llama-31-8b)
 
 ---
 
@@ -54,7 +55,7 @@ En creusant dans le schéma PostgreSQL, une colonne est apparue sans être explo
 
 Ce champ inexploité est devenu le point de départ du projet : construire un pipeline externe (n8n) qui interroge les vraies données d'alertes UTMStack, exploite `rule_description`, et produit un résumé réellement contextualisé — avec un objectif de départ non négociable : **tout doit rester local**, aucune donnée ne sort du lab.
 
-Ce chapitre documente d'abord cette architecture 100% locale (sections 2 à 9), qui reste la référence et le pipeline de production principal. Les tests comparatifs menés en section 9 ont cependant fait émerger un résultat qu'il aurait été malhonnête de passer sous silence : un fournisseur cloud basé en UE peut égaler, voire dépasser, la qualité d'analyse du meilleur modèle local testé, pour un coût mensuel dérisoire. La section 10 documente cette **variante cloud optionnelle** — jamais comme un remplacement du pipeline local, mais comme un second choix légitime, avec ses propres compromis explicites.
+Ce chapitre documente d'abord cette architecture 100% locale (sections 2 à 9), qui reste la référence et le pipeline de production principal. Les tests comparatifs menés en section 9 ont cependant fait émerger un résultat qu'il aurait été malhonnête de passer sous silence : un fournisseur cloud basé en UE peut égaler, voire dépasser, la qualité d'analyse du meilleur modèle local testé, pour un coût mensuel dérisoire. La section 10 documente cette **variante cloud optionnelle** — jamais comme un remplacement du pipeline local, mais comme un second choix légitime, avec ses propres compromis explicites. La section 13, ajoutée après plusieurs mois de production réelle, documente un second changement : la bascule du moteur local lui-même, de Qwen vers Llama, pour une raison précise et testée.
 
 ---
 
@@ -62,10 +63,12 @@ Ce chapitre documente d'abord cette architecture 100% locale (sections 2 à 9), 
 
 Le pipeline existe en deux variantes, qui partagent la même logique :
 
-| Variante | Déclenchement | Modèle | Usage |
-| --- | --- | --- | --- |
-| Rapport quotidien | Schedule Trigger, 6h00 (Europe/Zurich) | Qwen 2.5 14B | Consultation du matin, pas de contrainte de temps |
-| À la demande | Webhook n8n | Qwen 2.5 14B | Vérification ponctuelle, ~5-9 minutes de génération |
+| Variante | Déclenchement | Modèle | Usage | Notification |
+| --- | --- | --- | --- | --- |
+| Rapport quotidien | Schedule Trigger, 6h00 (Europe/Zurich) | Llama 3.1 8B *(historiquement Qwen 2.5 14B — voir [section 13](#13-mise-à-jour-production--bascule-vers-llama-31-8b))* | Consultation du matin, pas de contrainte de temps | Email + stockage PostgreSQL |
+| À la demande | Webhook n8n | Llama 3.1 8B *(historiquement Qwen 2.5 14B)* | Vérification ponctuelle, réponse synchrone via webhook | Réponse HTTP immédiate, pas d'email |
+
+> ℹ️ **Pourquoi le rapport quotidien envoie un email et pas celui à la demande.** Le rapport quotidien tourne sans supervision directe (déclenché par un Schedule Trigger à 6h00) — sans notification, sa seule trace est une ligne de plus dans la table `resumes_soc`, qu'il faut penser à aller consulter. Le rapport à la demande, lui, est déclenché manuellement via webhook et répond **immédiatement** dans le navigateur ou le client HTTP qui l'a appelé — une notification email serait redondante avec la réponse déjà reçue en synchrone.
 
 **Stack technique complète** : Ollama natif sur l'hôte Windows (accès direct au CPU/futur GPU sans passthrough), n8n pour l'orchestration, PostgreSQL pour le stockage des rapports et la lecture des `rule_description`, OpenSearch (`v11-alert-*`) comme source de données, plus SearXNG et Open WebUI pour l'usage conversationnel complémentaire (voir [section 8](#8-pour-aller-plus-loin-dans-la-stack-ia-locale)).
 
@@ -135,7 +138,7 @@ Le pipeline existe en deux variantes, qui partagent la même logique :
                     │
                     ▼
        ┌─────────────────────────┐
-       │  Ollama — Qwen 14B         │  COMPLÉTION PURE :
+       │  Ollama — Llama 3.1 8B     │  COMPLÉTION PURE :
        │  (HTTP Request)             │  remplit [COMMENTAIRE_N],
        └────────────┬────────────────  ne reclasse rien,
                     │                  n'invente aucun nom
@@ -146,14 +149,16 @@ Le pipeline existe en deux variantes, qui partagent la même logique :
        └────────────┬──────────────┘     (jamais de nettoyage
                     │                     silencieux)
                     ▼
-       ┌─────────────────────────┐
-       │  PostgreSQL resumes_soc    │  stockage + purge >365j
-       └────────────┬──────────────┘
-                    │
-                    ▼
-       ┌─────────────────────────┐
-       │  Webhook / Dashboard        │  consultation web
-       └─────────────────────────┘
+       ┌────────────┴────────────┐
+       ▼                         ▼
+┌──────────────┐      ┌─────────────────────┐
+│ PostgreSQL     │      │ Email (SMTP)          │
+│ resumes_soc    │      │ quotidien uniquement  │
+└──────┬───────┘      └─────────────────────┘
+       ▼
+┌─────────────────────────┐
+│  Webhook / Dashboard        │  consultation web
+└─────────────────────────┘
 ```
 
 Le principe qui traverse tout le schéma : **tout ce qui est encadré en amont d'Ollama est déterministe et auditable** — du code, pas du LLM. Le modèle n'intervient qu'à un seul endroit précis, pour une seule tâche précise (compléter un texte déjà structuré), jamais pour classer ni pour décider. Ce principe n'est pas arrivé du premier coup — la section suivante raconte comment on y est arrivé.
@@ -161,6 +166,8 @@ Le principe qui traverse tout le schéma : **tout ce qui est encadré en amont d
 ---
 
 ## 3. L'arc narratif — 12 versions, ce qu'on a appris à chaque échec
+
+> ℹ️ **Note de lecture.** Cette section documente le parcours réel avec **Qwen 2.5 14B**, le modèle utilisé pendant toute la phase de construction et de stabilisation du pipeline. La bascule de production vers Llama 3.1 8B (section 13) est intervenue après coup, pour une raison précise et différente des échecs racontés ici — elle ne remet pas en cause ce qui suit, qui reste la trace fidèle de comment cette architecture a été construite.
 
 ### v1-v3 — La fausse bonne piste
 
@@ -219,15 +226,17 @@ La correction a poussé le principe du tri déterministe à son terme logique : 
 
 Sa tâche devient de la pure complétion — reproduire le texte à l'identique, remplacer chaque balise par 2-3 phrases d'analyse. Plus aucune possibilité structurelle d'inventer un nom.
 
+> ⚠️ **Instruction de remplacement, ajoutée plus tard.** Un run en production a montré qu'un modèle peut respecter la consigne de complétion sans pour autant *supprimer* la balise : il écrit son commentaire juste à côté de `[COMMENTAIRE_N]` au lieu de remplacer ce texte, ce qui déclenche à tort l'avertissement de génération incomplète alors que le contenu est bien présent. La correction est une instruction de prompt explicite, ajoutée après le remplacement du texte à recopier : *"chaque balise doit être REMPLACÉE, jamais recopiée ni laissée visible à côté — la chaîne exacte ne doit apparaître nulle part dans la réponse finale."* Ce comportement a été observé aussi bien chez Qwen que chez Llama (voir [section 13](#13-mise-à-jour-production--bascule-vers-llama-31-8b)) ; l'instruction de remplacement corrige les deux.
+
 ### Comparatif des modèles testés
 
 | Modèle | Comportement observé sur la tâche de complétion |
 | --- | --- |
-| Llama 3.1 8B | Le plus fiable sur la fidélité des noms (aucune altération observée), mais laisse parfois la balise `[COMMENTAIRE_N]` visible à côté de son propre commentaire au lieu de la supprimer |
+| Llama 3.1 8B | Le plus fiable sur la fidélité des noms (aucune altération observée) et sur la tenue de la consigne jusqu'au bout d'une génération longue (voir [section 13](#13-mise-à-jour-production--bascule-vers-llama-31-8b)) — mais laisse parfois la balise `[COMMENTAIRE_N]` visible à côté de son propre commentaire au lieu de la supprimer (corrigé par l'instruction de remplacement ci-dessus) |
 | Mistral NeMo 12B | Correct une fois le tri déterministe en place, mais tendance à minimiser les signaux confirmés dans les versions antérieures au tri |
-| Qwen 2.5 14B | Le plus riche en contexte et le mieux rédigé, mais le plus "créatif" — a inventé une section entière ("NEXT STEPS") en pompant le contexte PostgreSQL brut fourni en trop grande quantité |
+| Qwen 2.5 14B | Le plus riche en contexte et le mieux rédigé sur les premiers éléments d'un rapport, mais le plus "créatif" — a inventé une section entière ("NEXT STEPS") en pompant le contexte PostgreSQL brut fourni en trop grande quantité, et tend à recycler un commentaire générique mot pour mot sur les éléments en fin de rapport à fort volume (voir section 13) |
 
-Un enseignement contre-intuitif s'est dégagé de ce comparatif : **sur une tâche de pure complétion, le modèle le plus docile bat parfois le plus capable.** Qwen, plus intelligent, prenait des initiatives non désirées ; Llama, plus simple, exécutait la consigne à la lettre. La correction a fini par retirer la source de la dérive plutôt que de changer de modèle : le contexte PostgreSQL brut (15 `rule_description` en vrac) a été remplacé par l'injection d'**une seule description ciblée**, celle de la règle concernée, directement dans le squelette au bon endroit. Une fois cette source de confusion supprimée, les deux modèles se sont stabilisés.
+Un enseignement contre-intuitif s'est dégagé de ce comparatif : **sur une tâche de pure complétion, le modèle le plus docile bat parfois le plus capable.** Qwen, plus intelligent, prenait des initiatives non désirées ; Llama, plus simple, exécutait la consigne à la lettre. La correction a fini par retirer la source de la dérive plutôt que de changer de modèle : le contexte PostgreSQL brut (15 `rule_description` en vrac) a été remplacé par l'injection d'**une seule description ciblée**, celle de la règle concernée, directement dans le squelette au bon endroit. Une fois cette source de confusion supprimée, les deux modèles se sont stabilisés — jusqu'à ce qu'un test à plus fort volume, des mois plus tard, révèle une limite plus profonde chez Qwen (section 13).
 
 ### Comment la liste de classification a été construite
 
@@ -396,7 +405,7 @@ Au-delà de Qwen 14B, le paysage des modèles ouverts spécialisés en raisonnem
 | DeepSeek-R1-Distill-Qwen-32B | 32,8B | ~18-20 Go | RTX 3090/4090 (24 Go) | 128K |
 | Llama 3.3 70B (dense, non-reasoning dédié) | 70B | ~40-43 Go | 48 Go (2× RTX 3090, ou Mac 64 Go) | 128K |
 
-> ⚠️ **Ne pas confondre avec le pipeline de production.** Le pipeline documenté dans ce chapitre tourne sur **Qwen 2.5 14B**, testé et stabilisé sur des dizaines de runs. Le **Qwen3-14B** listé ci-dessus appartient au panorama général des modèles de raisonnement disponibles en 2026 — il n'a jamais été testé sur ce pipeline précis, malgré la proximité de nom. Les deux sont des générations différentes de la même famille Qwen, pas la même chose.
+> ⚠️ **Ne pas confondre avec le pipeline de production.** Le pipeline de production tourne aujourd'hui sur **Llama 3.1 8B** (voir [section 13](#13-mise-à-jour-production--bascule-vers-llama-31-8b)), après avoir tourné sur Qwen 2.5 14B pendant toute la phase de construction documentée dans ce chapitre. Le **Qwen3-14B** et le **Llama 3.3** listés ci-dessus appartiennent au panorama général des modèles de raisonnement disponibles en 2026 — ils n'ont jamais été testés sur ce pipeline précis, malgré la proximité de nom avec les modèles réellement utilisés (Qwen 2.5, Llama 3.1). Ce sont des générations différentes des mêmes familles, pas la même chose.
 
 > ⚠️ **Testé en conditions réelles sur ce lab** : le R1-Distill-32B a été exécuté en CPU pur sur les 64 Go de RAM système de ce lab, partagés avec plusieurs VM actives. Le calcul théorique laissait ~25 Go de marge — en pratique, le chargement du modèle a occupé jusqu'à 98% de la RAM totale disponible avant même le début du calcul. Le run a fini par aboutir (29 minutes au total), mais sans aucune marge de sécurité réelle. Un seul processus supplémentaire réclamant de la mémoire au mauvais moment aurait pu faire échouer le calcul en cours de route. **La marge théorique de ~25 Go ne s'est pas traduite par une marge pratique confortable.**
 
@@ -438,8 +447,8 @@ Au-delà de Qwen 14B, le paysage des modèles ouverts spécialisés en raisonnem
 
 ### Où chaque modèle est préférable
 
-- **Pipeline structuré (rapport SOC)** : le modèle le plus fiable sur le respect strict de la structure, quel qu'il soit — dans ce lab, la bascule complète sur Qwen 14B (batch et à la demande) a été retenue après stabilisation du prompt, au prix d'un temps de génération plus long
-- **Usage conversationnel (Open WebUI, RAG + recherche web)** : un modèle plus créatif comme Qwen 14B est préférable — la prise d'initiative, défaut sur une tâche de complétion stricte, devient un atout pour synthétiser et croiser des sources
+- **Pipeline structuré (rapport SOC)** : le modèle le plus fiable sur le respect strict de la structure jusqu'au bout de la génération, quel qu'il soit — dans ce lab, Llama 3.1 8B a été retenu en production (section 13) précisément pour cette raison
+- **Usage conversationnel (Open WebUI, RAG + recherche web)** : un modèle plus créatif comme Qwen 14B reste préférable — la prise d'initiative, défaut sur une tâche de complétion stricte, devient un atout pour synthétiser et croiser des sources
 
 ### Limite observée sur RAG + recherche web
 
@@ -512,7 +521,7 @@ Une objection légitime se pose à ce stade : si le but final est un rapport **l
 La réponse dépend du **type** d'erreur, et c'est la distinction la plus importante de ce chapitre :
 
 - **Les erreurs visibles** se voient à la relecture — un texte tronqué, une contradiction numérique flagrante (211 vs 207), un mélange de langue. Un analyste attentif les repère sans peine, et sur ce point, la supervision humaine est un vrai filet de sécurité qui rend le déterminisme moins critique.
-- **Les erreurs silencieuses** ne se voient pas, parce qu'elles **ne ressemblent en rien à une erreur**. Le tout premier échec documenté dans ce chapitre — un modèle classant un webshell confirmé en *"bruit de reconnaissance passive"* — était rédigé avec la même prose fluide et confiante que le reste du rapport. Rien n'attirait l'œil. C'est exactement le mécanisme de la fatigue d'alerte, documenté en cybersécurité depuis des décennies : un analyste qui lit un rapport cohérent et bien écrit tous les matins, pendant des mois, va progressivement baisser sa garde face à un format qui a l'air normal 99% du temps — y compris le jour où il ne l'est pas.
+- **Les erreurs silencieuses** ne se voient pas, parce qu'elles **ne ressemblent en rien à une erreur**. Le tout premier échec documenté dans ce chapitre — un modèle classant un webshell confirmé en *"bruit de reconnaissance passive"* — était rédigé avec la même prose fluide et confiante que le reste du rapport. Rien n'attirait l'œil. C'est exactement le mécanisme de la fatigue d'alerte, documenté en cybersécurité depuis des décennies : un analyste qui lit un rapport cohérent et bien écrit tous les matins, pendant des mois, va progressivement baisser sa garde face à un format qui a l'air normal 99% du temps — y compris le jour où il ne l'est pas. C'est exactement ce type de risque, sur un mécanisme différent (répétition plutôt que classification), qui a motivé la bascule documentée en section 13.
 
 Le déterminisme ne protège donc pas contre "le LLM se trompe" en général — il protège spécifiquement contre le cas où **le LLM se trompe sans que rien ne le signale**. C'est ce risque précis, pas la qualité générale du modèle, qui justifie de garder une classification déterministe en frontal d'un pipeline qui tourne sans supervision immédiate, même si un modèle de la classe de Sonnet serait probablement plus fiable qu'un humain fatigué sur la majorité des cas.
 
@@ -584,7 +593,7 @@ Le rapport complémentaire a une vraie valeur ajoutée démontrée : sur un run 
 
 | Besoin | Recommandation |
 |---|---|
-| Pipeline automatisé, aucune sortie de donnée acceptable | 100% local (Qwen), comme documenté dans tout le reste de ce chapitre |
+| Pipeline automatisé, aucune sortie de donnée acceptable | 100% local (Llama 3.1 8B en production, historiquement Qwen), comme documenté dans ce chapitre |
 | Rapport officiel avec une meilleure qualité de rédaction, coût acceptable | Variante cloud (Mistral) en remplacement du moteur, architecture déterministe inchangée |
 | Second avis d'analyse plus riche, en complément | Pattern double-rapport, jamais en source unique |
 | Contexte réglementaire strict (secteur régulé, contrat client zéro-sortie) | 100% local, indépendamment du coût de la variante cloud |
@@ -664,13 +673,68 @@ Le mécanisme complet a été testé de bout en bout, alerte forcée à l'appui 
 - **Dépendance forte à `TERMES_SIGNAL`/`BRUIT`/`CONTROLE`** — une liste de mots-clés maintenue à la main, qui doit être enrichie à chaque nouvelle source de données (Kali red team, O365, Azure) sous peine de laisser passer des signatures inconnues en zone grise
 - **Les événements Microsoft Defender ne sont pas encore corrélés** — un test EICAR confirme que Defender détecte et que l'agent UTMStack remonte bien l'événement dans les logs bruts (`v11-log-*`, canal `Microsoft-Windows-Windows Defender/Operational`), mais aucune règle de corrélation UTMStack native ne promeut cet événement en alerte (`v11-alert-*`) — un chantier de règle de corrélation dédiée reste à faire
 - **ThreatFox reste silencieux sur les cas testés** — probablement normal (base spécialisée malware, toutes les IP n'y figurent pas), non confirmé de façon exhaustive
+- **Aucune détection croisée IP source/cible à travers les règles de corrélation** — le pipeline déterministe repère une IP à la fois source et cible *au sein d'une même signature* (garde-fou NAT), mais pas quand cette même IP apparaît comme source d'une règle et cible d'une autre, dispersée dans le rapport. Un cas réel (`147.185.132.63`, bloqué en entrée par une règle DShield et cible d'un trafic sortant du LAN sur une autre règle) n'a été repéré que par une analyse libre complémentaire, jamais par le tri déterministe — chantier différé, voir ci-dessous
 
 ### Chantiers de durcissement volontairement différés
 
-Une revue d'architecture menée sur ce pipeline a identifié deux améliorations supplémentaires, sciemment reportées plutôt qu'appliquées dans l'immédiat :
+Une revue d'architecture menée sur ce pipeline a identifié plusieurs améliorations supplémentaires, sciemment reportées plutôt qu'appliquées dans l'immédiat :
 
 - **Promotion automatique d'un INDÉTERMINÉ en SIGNAL sur la base d'un score threat intelligence élevé** (seuil retenu : AbuseIPDB ≥ 75 OU classification GreyNoise "malicious"). Aujourd'hui, une IP avec un score de réputation confirmé mais dont la signature Suricata ne matche aucun mot-clé de `TERMES_SIGNAL` reste visible dans les données du rapport, mais pas mise en avant dans la section prioritaire — l'analyste doit la repérer lui-même. Corriger ça proprement demande de redistribuer la construction du squelette entre deux nœuds du pipeline (aujourd'hui, le squelette est écrit avant que les données threat intelligence soient disponibles) — une opération qui touche deux nœuds actuellement stables. Reportée à une session de durcissement dédiée, après les intégrations d'agents et les tests Kali, pour ne pas fragiliser un pipeline qui vient d'être stabilisé juste avant une phase de tests plus large.
 - **Déplacement des clés API threat intelligence vers le credential store n8n**, plutôt que dans les headers des nœuds HTTP. Sur un lab avec des clés gratuites révocables, l'enjeu n'est pas la confidentialité en tant que telle — c'est d'éliminer une classe d'erreur récurrente lors des futures publications sur ce dépôt : un export de workflow oublié sans nettoyage manuel expose les clés en clair. Reportée pour la même raison que le point précédent — regrouper les changements structurels du pipeline en une seule session plutôt que les répartir.
+- **Détection croisée IP source/cible à travers les règles de corrélation** (décrite ci-dessus) — regroupée avec les deux chantiers précédents pour la même session de durcissement future.
+
+---
+
+## 13. Mise à jour production — bascule vers Llama 3.1 8B
+
+Cette section documente un changement survenu après la stabilisation complète du pipeline racontée dans les sections précédentes — un test concret, mené sur des mois de production réelle, a révélé une limite de Qwen que les tests initiaux (section 3) n'avaient pas fait apparaître, faute de volume suffisant.
+
+### Le symptôme
+
+Sur des rapports à fort volume de signatures peu prioritaires (la section "Signatures non classées", listant les raretés suspectes en fin de squelette), Qwen 2.5 14B a montré une tendance reproductible à recycler **mot pour mot** le même commentaire générique au-delà des 5-6 premiers éléments :
+
+```
+Le trafic est suspect et mérite une investigation approfondie pour confirmer sa nature malveillante.
+```
+
+Cette phrase, ou une variante très proche, est réapparue à l'identique sur 9 signatures distinctes (nœuds Tor, scan Zmap, réponse MZ depuis une IP nue, sonde gitrepo, scanner LeakIX) dans un même rapport — sans jamais mentionner l'IP, le pays, ou la particularité propre à chaque signature.
+
+### Ce que ce n'est pas
+
+Un premier réflexe a été de suspecter une troncature de la fenêtre de contexte (le symptôme documenté en section 4 de l'[annexe de déploiement](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm-deploiement.html#4-modelfiles--system-prompt-et-fenêtre-de-contexte)). Vérification faite via le champ `prompt_eval_count` retourné par Ollama : le prompt consommait 3600-3900 tokens sur les runs concernés, loin sous la limite de 8192 configurée. **Ce n'est donc pas un problème de contexte.**
+
+Deux corrections de prompt ont été testées avant de conclure à une limite du modèle :
+1. Une instruction de remplacement stricte des balises (*"chaque balise doit être remplacée, jamais recopiée à côté"*) — a corrigé un bug distinct (balise visible à côté du commentaire, voir section 3) mais n'a rien changé à la répétition.
+2. Une instruction anti-répétition explicite (*"ne recopie jamais un commentaire déjà écrit mot pour mot ailleurs, mentionne un élément spécifique à chaque signature"*) — testée en production, sans effet mesurable sur le comportement.
+
+Ni l'augmentation du contexte, ni le renforcement du prompt n'ont corrigé la dérive. C'est une limite de **tenue d'attention en fin de génération longue**, propre à cette classe de modèle sur cette tâche précise — pas un problème de formulation ou de mémoire disponible.
+
+### Le test comparatif
+
+Le principe déjà énoncé en section 3 — *"sur une tâche de pure complétion, le modèle le plus docile bat parfois le plus capable"* — a motivé un nouveau test sur `utmstack-analyst-test` (Llama 3.1 8B, déjà construit depuis le comparatif initial, aucune infrastructure supplémentaire nécessaire). Sur le même jeu de données ayant produit la répétition chez Qwen, Llama a rédigé un commentaire distinct et spécifique pour chacune des mêmes 9 signatures — nœud Tor identifié comme tentative d'anonymisation, réponse MZ décrite comme technique de distribution de malware via IP nue, sonde gitrepo comme risque d'exfiltration de code source — sans aucune répétition, et avec un temps de génération plus court (8B contre 14B).
+
+| Critère | Qwen 2.5 14B | Llama 3.1 8B |
+| --- | --- | --- |
+| Richesse de contexte (signaux prioritaires) | Plus riche, plus narratif | Plus sobre, factuel |
+| Tenue de consigne en fin de rapport long | Dégrade en commentaire générique recyclé au-delà de ~6 items | Reste spécifique jusqu'au bout |
+| Respect de la balise de remplacement | Parfois laissée visible à côté du commentaire | Idem sans l'instruction de remplacement ; corrigé par la même instruction que Qwen |
+| Temps de génération (CPU, ce lab) | Plus long (14B) | Plus court (8B) |
+
+### La décision et sa justification
+
+Le pipeline de production (rapport quotidien et à la demande) tourne désormais sur **Llama 3.1 8B** (`utmstack-analyst-test` dans Ollama). La justification tient en une phrase, directement liée au principe déjà posé en [section 9](#9-confrontation-avec-un-llm-sans-contrainte--sonnet-5-vs-deepseek-r1-vs-mistral) sur les erreurs silencieuses : un rapport qui répète la même phrase sur plusieurs signatures en fin de liste entraîne exactement le réflexe de fatigue d'alerte que ce chapitre met en garde contre ailleurs — un format qui a l'air normal 99% du temps, jusqu'au jour où une des raretés suspectes est réellement différente et se noie dans le pattern habituel. Ce n'est pas une erreur factuelle (chaque commentaire pris isolément reste correct), mais un risque réel sur la durée pour un outil dont la valeur repose sur la confiance répétée jour après jour.
+
+**Qwen reste documenté comme référence historique** dans les sections 2 à 9 de ce chapitre — c'est le modèle qui a réellement servi à construire et stabiliser cette architecture sur 12 versions, et le récit reste fidèle à ce qui a été testé. La bascule vers Llama ne remet rien en cause de cette histoire ; elle en est la suite logique, une fois un nouveau type de limite découvert en conditions réelles de production, sur un volume que les tests initiaux n'avaient pas couvert.
+
+### Modèles écartés avant ce choix
+
+Une recherche des nouveautés 2026 a fait ressortir deux candidats alternatifs, non retenus faute de nécessité une fois Llama validé :
+- **Mistral Small 3.2 (24B)** — documenté pour une forte adhérence aux sorties structurées et un support natif du français, aurait été le prochain test si Llama avait échoué. Non testé, Llama ayant réglé le problème dès le premier essai.
+- **Phi-4 (14B)** — fort sur le raisonnement structuré, mais écarté d'emblée à cause d'une fenêtre de contexte native de 16K, jugée trop juste au vu de la marge de croissance prévue du prompt (intégrations O365/Azure à venir).
+
+### Fichiers de production
+
+`utmstack-resume-quotidien-llama.json` et `utmstack-resume-a-la-demande-llama.json` remplacent les fichiers `-v12.json` (Qwen) comme référence de production — ces derniers restent publiés et documentés comme trace historique du parcours décrit dans ce chapitre, pas retirés du dépôt. Aucune configuration supplémentaire requise au-delà du changement de nom de modèle : le Modelfile de `utmstack-analyst-test` existe depuis le comparatif initial (section 3), voir l'[annexe de déploiement](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm-deploiement.html#4-modelfiles--system-prompt-et-fenêtre-de-contexte).
 
 ---
 

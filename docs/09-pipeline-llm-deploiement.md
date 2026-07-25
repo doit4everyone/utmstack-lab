@@ -27,6 +27,8 @@ description: "Guide de déploiement complet du pipeline SOC IA locale pour UTMSt
 
 Cette page est un guide pas-à-pas, sans le récit — si tu veux comprendre les raisons des choix d'architecture avant de déployer, lis d'abord le [chapitre principal](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html). Ici, l'objectif est d'aller du système vide à un pipeline fonctionnel.
 
+> ℹ️ **Modèle de production actuel : Llama 3.1 8B.** Ce guide installe les deux modèles (Qwen 2.5 14B et Llama 3.1 8B) comme dans la phase de construction du pipeline — mais depuis fin juillet 2026, le pipeline de rapport en production tourne sur **Llama 3.1 8B** (`utmstack-analyst-test`), suite à un test documenté dans le [chapitre principal, section 13](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html#13-mise-à-jour-production--bascule-vers-llama-31-8b). Les deux Modelfiles restent utiles : Qwen reste documenté comme référence historique et convient bien à l'usage conversationnel (section 8 du chapitre principal), Llama est recommandé pour le pipeline de rapport structuré.
+
 ## 📋 Table des matières
 
 1. [Architecture cible et prérequis](#1-architecture-cible-et-prérequis)
@@ -117,6 +119,8 @@ ollama pull qwen2.5:14b
 
 > ⚠️ Utiliser explicitement `llama3.1:8b` (avec le `.1`) et non `llama3:8b` — la version sans `.1` ne supporte pas correctement le tool calling natif, ce qui bloque certaines fonctionnalités d'Open WebUI (Souvenirs, Automatisations).
 
+> ℹ️ **Les deux modèles restent utiles.** Llama 3.1 8B est le modèle du pipeline de rapport en production (voir encadré en tête de page) ; Qwen 2.5 14B reste pertinent pour l'usage conversationnel (Open WebUI, RAG + recherche web) où sa prise d'initiative est un atout plutôt qu'un défaut. Installer les deux.
+
 ### Réglages système recommandés
 
 Deux variables d'environnement à définir au niveau utilisateur Windows :
@@ -139,7 +143,7 @@ Chaque modèle utilisé par le pipeline est packagé avec un Modelfile dédié, 
 
 ```
 C:\ollama\utmstack-analyst-qwen\Modelfile
-C:\ollama\utmstack-analyst-test\Modelfile      (basé sur llama3.1:8b)
+C:\ollama\utmstack-analyst-test\Modelfile      (basé sur llama3.1:8b — modèle de production, voir encadré en tête de page)
 ```
 
 Contenu complet (`utmstack-analyst-qwen`), à copier tel quel — le même Modelfile sert de base à `utmstack-analyst-test` (Llama 3.1 8B), seul le `FROM` change :
@@ -194,17 +198,23 @@ PARAMETER temperature 0.3
 
 > ℹ️ Ce system prompt s'applique uniquement à l'usage **conversationnel** (Open WebUI) et au fallback de rédaction du pipeline. Depuis la version v9 du pipeline (squelette pré-rédigé), la consigne réellement déterminante pour le rapport SOC est celle du **prompt utilisateur envoyé par n8n** à chaque appel — voir la section [Import des workflows n8n](#8-import-des-workflows-n8n) — qui prime sur ce system prompt pour la structure et le contenu exact du rapport.
 
-Création du modèle Ollama à partir du fichier :
+Création des modèles Ollama à partir des fichiers :
 
 ```powershell
 cd C:\ollama\utmstack-analyst-qwen
 ollama create utmstack-analyst-qwen -f Modelfile
+
+cd C:\ollama\utmstack-analyst-test
+ollama create utmstack-analyst-test -f Modelfile
+
 ollama list
 ```
 
 ### Augmenter la fenêtre de contexte
 
 Par défaut, Ollama applique une fenêtre de contexte de **4096 tokens**. Avec le squelette pré-rédigé, les enrichissements threat intelligence et la description de règle injectée, le prompt final peut dépasser cette limite — le symptôme est une génération qui s'arrête au milieu, laissant des emplacements `[COMMENTAIRE_N]` non remplis, **sans message d'erreur explicite** (le modèle tronque silencieusement).
+
+> ℹ️ **À ne pas confondre avec une dérive de contenu.** Un rapport qui recycle le même commentaire générique sur plusieurs signatures en fin de liste n'est **pas** un symptôme de troncature de contexte — vérifie toujours le champ `prompt_eval_count` retourné par Ollama avant d'augmenter `num_ctx` : si le prompt consomme largement moins que la limite configurée, le problème est ailleurs (voir [chapitre principal, section 13](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html#13-mise-à-jour-production--bascule-vers-llama-31-8b), qui documente ce cas précis et pourquoi il a motivé un changement de modèle plutôt qu'un ajustement de contexte).
 
 Deux façons de corriger, utilisées en complément l'une de l'autre dans ce lab :
 
@@ -223,7 +233,7 @@ Deux façons de corriger, utilisées en complément l'une de l'autre dans ce lab
 
 ```json
 {
-  "model": "utmstack-analyst-qwen",
+  "model": "utmstack-analyst-test",
   "prompt": "...",
   "stream": false,
   "num_ctx": 8192
@@ -238,7 +248,7 @@ ollama ps
 
 ```
 NAME                            SIZE      PROCESSOR    CONTEXT    UNTIL
-utmstack-analyst-qwen:latest    10 GB     100% CPU     8192       4 minutes from now
+utmstack-analyst-test:latest    5 GB      100% CPU     8192       4 minutes from now
 ```
 
 La colonne `CONTEXT` doit afficher `8192`, pas `4096`.
@@ -357,15 +367,21 @@ Les fichiers JSON des workflows sont hébergés dans le dépôt GitHub du projet
 
 | Fichier | Rôle |
 | --- | --- |
-| [`utmstack-resume-quotidien-v12.json`](https://github.com/doit4everyone/utmstack-lab/blob/main/scripts/utmstack-resume-quotidien-v12.json) | Rapport automatique quotidien — Schedule Trigger 6h00 |
-| [`utmstack-resume-a-la-demande-v12.json`](https://github.com/doit4everyone/utmstack-lab/blob/main/scripts/utmstack-resume-a-la-demande-v12.json) | Génération à la demande — Webhook Trigger |
+| [`utmstack-resume-quotidien-llama.json`](https://github.com/doit4everyone/utmstack-lab/blob/main/scripts/utmstack-resume-quotidien-llama.json) | **Rapport quotidien — production actuelle** (Llama 3.1 8B) — Schedule Trigger 6h00, stockage PostgreSQL **+ notification email** |
+| [`utmstack-resume-a-la-demande-llama.json`](https://github.com/doit4everyone/utmstack-lab/blob/main/scripts/utmstack-resume-a-la-demande-llama.json) | **Génération à la demande — production actuelle** (Llama 3.1 8B) — Webhook Trigger, réponse HTTP immédiate, sans email |
+| [`utmstack-resume-quotidien-v12.json`](https://github.com/doit4everyone/utmstack-lab/blob/main/scripts/utmstack-resume-quotidien-v12.json) | Rapport quotidien (Qwen 2.5 14B) — référence historique, voir [chapitre principal §13](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html#13-mise-à-jour-production--bascule-vers-llama-31-8b) — stockage + email également |
+| [`utmstack-resume-a-la-demande-v12.json`](https://github.com/doit4everyone/utmstack-lab/blob/main/scripts/utmstack-resume-a-la-demande-v12.json) | Génération à la demande (Qwen 2.5 14B) — référence historique, sans email |
 | [`utmstack-webhook-consultation.json`](https://github.com/doit4everyone/utmstack-lab/blob/main/scripts/utmstack-webhook-consultation.json) | Consultation web du dernier rapport stocké (lecture seule, sans regénération) |
 
-Les trois s'importent dans n8n de la même façon : **Workflows → Import from File**, sélectionner le `.json` téléchargé.
+Tous s'importent dans n8n de la même façon : **Workflows → Import from File**, sélectionner le `.json` téléchargé.
+
+> ℹ️ **Quel fichier utiliser.** Pour un nouveau déploiement, importer les fichiers `-llama.json` (production actuelle). Les fichiers `-v12.json` (Qwen) restent disponibles pour qui veut reproduire fidèlement le parcours de construction documenté dans le chapitre principal, ou pour l'usage conversationnel où Qwen reste préférable (section 8 du chapitre principal) — les deux jeux de fichiers partagent la même architecture, seul le nœud d'appel Ollama diffère (nom du modèle).
 
 > ⚠️ **Point de vérification obligatoire après import** : le nœud **Merge TI** doit être en mode **Append**, avec **5 entrées**, toutes câblées. C'est le point de défaillance le plus fréquent constaté lors des tests — voir le détail du piège dans le [chapitre principal](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html#le-piège-technique-n8n--merge-combine-vs-append). Si le mode "Combine" apparaît après import, le changer manuellement.
 
-Après import, pour chaque nœud HTTP/PostgreSQL, **recréer les credentials** dans n8n (les identifiants embarqués dans le JSON exporté ne sont pas réutilisables tels quels — voir tableau ci-dessous) et publier le workflow (toggle Actif en haut à droite de l'éditeur).
+Après import, pour chaque nœud HTTP/PostgreSQL/SMTP, **recréer les credentials** dans n8n (les identifiants embarqués dans le JSON exporté ne sont pas réutilisables tels quels — voir tableau ci-dessous) et publier le workflow (toggle Actif en haut à droite de l'éditeur).
+
+> ℹ️ **Credential SMTP requis pour les deux fichiers quotidien** (`-llama.json` et `-v12.json`). Contrairement aux versions précédentes de ce guide, la notification email n'est plus réservée à la variante cloud Mistral (section 12) — les rapports quotidiens locaux l'envoient aussi désormais. La procédure de création du credential SMTP est identique dans les deux cas ; elle est détaillée en [section 12.4](#124-credential-smtp--pourquoi-il-ne-peut-pas-être-pré-rempli-et-comment-le-créer) pour éviter de la dupliquer — applique-la également si tu importes un fichier quotidien local.
 
 > ℹ️ **Workflows de test comparatif (hors production).** Les workflows utilisés pour la comparaison LLM de la [section 9 du chapitre principal](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html#9-confrontation-avec-un-llm-sans-contrainte--sonnet-5-vs-deepseek-r1-vs-mistral) — envoi des données brutes sans tri déterministe à Claude Sonnet 5, DeepSeek-R1 en local, ou Mistral Large — sont également disponibles dans `/scripts`, à des fins de reproduction ou d'expérimentation. Ce sont des **workflows de test isolés**, à déclenchement manuel uniquement, jamais destinés à un usage en production : ils n'ont pas les garde-fous du pipeline principal (pas de tri, pas de contrôle de complétion).
 
@@ -377,9 +393,11 @@ Après import, pour chaque nœud HTTP/PostgreSQL, **recréer les credentials** d
 | --- | --- | --- |
 | IP UTMStack / OpenSearch | URL du nœud `HTTP Request` | IP de ta VM UTMStack, port 9200 |
 | IP Ollama | URL du nœud `HTTP Request1` | IP de l'hôte Windows, port 11434 |
-| Nom du modèle Ollama | Champ `model` dans le body du nœud `HTTP Request1` | ex. `utmstack-analyst-qwen` |
+| Nom du modèle Ollama | Champ `model` dans le body du nœud `HTTP Request1` | `utmstack-analyst-test` (production, Llama) ou `utmstack-analyst-qwen` (référence historique / usage conversationnel) |
 | Path du webhook | Nœud `Webhook Trigger` | ex. `resume-soc-now` |
-| Credentials n8n | `credentials.httpBasicAuth.id`, `credentials.postgres.id` | IDs internes n8n, propres à chaque instance — **à recréer manuellement après import**, jamais réutilisables tels quels |
+| Credentials n8n (HTTP/Postgres) | `credentials.httpBasicAuth.id`, `credentials.postgres.id` | IDs internes n8n, propres à chaque instance — **à recréer manuellement après import**, jamais réutilisables tels quels |
+| Credential SMTP | `credentials.smtp.id` du nœud `Send Email Rapport SOC` (fichiers quotidien uniquement) | À créer manuellement — procédure détaillée en [section 12.4](#124-credential-smtp--pourquoi-il-ne-peut-pas-être-pré-rempli-et-comment-le-créer) |
+| Destinataire email | Champ `toEmail` du nœud `Send Email Rapport SOC` | Ton adresse de réception |
 | Clés API threat intel | Headers des nœuds `AbuseIPDB Check`, `GreyNoise Check`, `OTX Check` | Tes propres clés (voir [section 6](#6-comptes-api-threat-intelligence)) |
 
 > ℹ️ **La variable la plus importante n'est pas dans ce tableau.** La liste `TERMES_SIGNAL` / `TERMES_BRUIT` / `TERMES_CONTROLE`, dans le nœud `Code in JavaScript`, n'est pas un simple identifiant à remplacer — c'est le cœur de la logique de tri, à adapter en profondeur à ton propre ruleset Suricata/UTMStack et à enrichir dans le temps, à mesure que de nouvelles sources (Windows, O365, Kali red team) apparaissent dans tes alertes. La méthode de construction de cette liste (lecture empirique des signatures réellement rencontrées, catégorisation par préfixe Emerging Threats) est détaillée dans le [chapitre principal](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html#comment-la-liste-de-classification-a-été-construite). Un lecteur qui se contente de changer les IP sans revoir cette liste aura un pipeline fonctionnel mais mal calibré pour son environnement.
@@ -390,13 +408,14 @@ Après import, pour chaque nœud HTTP/PostgreSQL, **recréer les credentials** d
 
 ## 10. Checklist de validation avant mise en production
 
-- [ ] `ollama list` affiche bien les deux modèles créés
+- [ ] `ollama list` affiche bien les deux modèles créés (`utmstack-analyst-qwen` et `utmstack-analyst-test`)
 - [ ] `ollama ps` pendant un run affiche `CONTEXT: 8192` (pas 4096)
 - [ ] SearXNG répond en JSON : `curl "http://<IP>:8080/search?q=test&format=json"`
 - [ ] Open WebUI a bien "Appel de fonction" sur Déprécié pour chaque preset
 - [ ] Le nœud Merge TI est en mode Append avec 5 entrées connectées
 - [ ] Un run manuel du webhook produit un rapport **sans** balise `[COMMENTAIRE_N]` résiduelle
 - [ ] Au moins une IP de test montre des données AbuseIPDB/GreyNoise/OTX dans le rapport
+- [ ] Un run du rapport quotidien envoie bien l'email de notification (fichiers `-llama.json` / `-v12.json`)
 - [ ] Le workflow est publié (toggle Actif) pour que le Schedule Trigger et le Webhook fonctionnent réellement
 
 ---
@@ -589,7 +608,7 @@ CREATE TABLE resumes_soc_libre (
 
 ### 12.4 Credential SMTP — pourquoi il ne peut pas être pré-rempli, et comment le créer
 
-Les deux variantes "officielle" et "libre" peuvent envoyer le rapport par e-mail en plus de l'écriture en base. Le nœud d'envoi utilise un **credential SMTP dédié**, qui doit être créé manuellement dans n8n — pas parce que c'est un oubli du fichier fourni, mais parce que **le format d'export des workflows n8n ne contient jamais les données de credential**, uniquement une référence à un credential qui doit déjà exister dans l'instance cible. C'est la même contrainte, pour la même raison de sécurité, que celle déjà rencontrée pour les credentials PostgreSQL et OpenSearch en section 9 de ce document — aucun JSON, aussi complet soit-il, ne peut la contourner.
+Les variantes "officielle" et "libre" de la version cloud, ainsi que le rapport quotidien local (`-llama.json` / `-v12.json`, voir [section 8](#8-import-des-workflows-n8n)), envoient le rapport par e-mail en plus de l'écriture en base. Le nœud d'envoi utilise un **credential SMTP dédié**, qui doit être créé manuellement dans n8n — pas parce que c'est un oubli du fichier fourni, mais parce que **le format d'export des workflows n8n ne contient jamais les données de credential**, uniquement une référence à un credential qui doit déjà exister dans l'instance cible. C'est la même contrainte, pour la même raison de sécurité, que celle déjà rencontrée pour les credentials PostgreSQL et OpenSearch en section 9 de ce document — aucun JSON, aussi complet soit-il, ne peut la contourner.
 
 **Création du credential** (n8n → Credentials → Add credential → SMTP) :
 
@@ -602,7 +621,9 @@ Les deux variantes "officielle" et "libre" peuvent envoyer le rapport par e-mail
 | SSL/TLS | **Désactivé** — le port 587 utilise STARTTLS (négocié automatiquement), pas du SSL direct dès la connexion. Le port 465, lui, demanderait ce toggle activé |
 | Client Host Name | Optionnel, laisser vide ou renseigner le nom de la VM |
 
-Nommer ce credential **"SMTP UTMStack Notifications"** (le nom exact référencé dans les 4 workflows), puis le rattacher au nœud d'envoi mail de chacun après import.
+Nommer ce credential **"SMTP UTMStack Notifications"** (le nom exact référencé dans tous les workflows qui envoient un email — local et cloud), puis le rattacher au nœud d'envoi mail de chacun après import.
+
+> ℹ️ **Ce credential est partagé entre le pipeline local et la variante cloud.** Une seule création suffit pour les deux : rapport quotidien local (`-llama.json` / `-v12.json`) et variantes Mistral (officielle et libre) référencent tous le même nom de credential — pas besoin de le recréer plusieurs fois si tu utilises plusieurs de ces workflows sur la même instance n8n.
 
 > ℹ️ **Pourquoi SMTP classique et pas OAuth Microsoft 365.** n8n propose un nœud dédié "Microsoft Outlook" en OAuth2 via Microsoft Graph — c'est d'ailleurs la seule méthode que Microsoft continue de garantir dans la durée, l'authentification SMTP basique étant progressivement dépréciée sur Exchange Online. Ce choix SMTP classique a été retenu ici parce qu'**UTMStack Community Edition lui-même ne supporte pas encore OAuth pour ses propres notifications** — la config a été alignée sur le même mécanisme, avec la même adresse d'envoi, pour rester cohérent. Si l'authentification SMTP basique venait à être coupée côté tenant, la migration vers le nœud Outlook (avec une App Registration Azure en mode "Application", pour éviter la complexité d'une boîte partagée en délégué) serait la solution durable.
 
