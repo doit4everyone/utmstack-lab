@@ -1,5 +1,5 @@
 {
-  "name": "UTMStack - Résumé quotidien alertes (v12 - Qwen)",
+  "name": "UTMStack - Résumé quotidien alertes (Llama 3.1 8B)",
   "nodes": [
     {
       "parameters": {
@@ -51,7 +51,7 @@
           "parameters": [
             {
               "name": "model",
-              "value": "utmstack-analyst-qwen"
+              "value": "utmstack-analyst-test"
             },
             {
               "name": "prompt",
@@ -439,7 +439,7 @@
       "parameters": {
         "fromEmail": "<SMTP_USER>",
         "toEmail": "<EMAIL_DESTINATAIRE>",
-        "subject": "=🛡️ Rapport SOC UTMStack (Qwen) — {{ $json.date }}",
+        "subject": "=🛡️ Rapport SOC UTMStack (Llama) — {{ $json.date }}",
         "emailFormat": "text",
         "text": "={{ $json.synthese }}",
         "options": {}
