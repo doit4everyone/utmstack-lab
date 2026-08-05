@@ -1,0 +1,24 @@
+name: Windows Defender - Exclusion Added (Event 5007)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Defense Evasion
+technique: T1562.001 - Impair Defenses Disable or Modify Tools
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/001/
+  - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
+description: 'La configuration de Windows Defender a été modifiée sur un endpoint (Event 5007). Les modifications les plus critiques sont l''ajout d''exclusions de fichiers, dossiers ou processus — technique couramment utilisée post-compromise pour masquer des outils malveillants et empêcher leur détection. Vérifier le champ log.data.New Value pour identifier la modification effectuée. Next Steps: 1. Identifier la modification via log.data.New Value (exclusion ajoutée, paramètre modifié). 2. Vérifier si la modification est autorisée et planifiée. 3. Contrôler les events de connexion récents sur cette machine (Event 4624/4625). 4. Vérifier si d''autres modifications de sécurité ont eu lieu dans la même fenêtre temporelle. 5. Supprimer l''exclusion si non autorisée et investiguer l''origine de la modification.'
+where: |-
+  equals("log.eventCode", 5007) &&
+  equals("log.providerName", "Microsoft-Windows-Windows Defender") &&
+  !contains("log.data.New Value", "WdConfigHash") &&
+  !contains("log.data.New Value", "UX Configuration") &&
+  !contains("log.data.New Value", "DLP Configs") &&
+  !contains("log.data.New Value", "EcsConfigs")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

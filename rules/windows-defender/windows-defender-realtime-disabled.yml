@@ -1,0 +1,20 @@
+name: Windows Defender - Real-Time Protection Disabled (Event 5001)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Defense Evasion
+technique: T1562.001 - Impair Defenses Disable or Modify Tools
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/001/
+  - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
+description: 'La protection en temps réel de Windows Defender a été désactivée sur un endpoint. Cette action est une technique d''évasion classique utilisée par les ransomwares et les malwares avancés avant leur déploiement (MITRE T1562.001 - Impair Defenses). Une désactivation non planifiée doit être considérée comme une compromission potentielle. Next Steps: 1. Vérifier si la désactivation est planifiée et autorisée. 2. Identifier le processus ou l''utilisateur ayant désactivé la protection. 3. Vérifier les events 1116/1117 récents sur la même machine. 4. Contrôler les connexions réseau sortantes depuis l''endpoint. 5. Réactiver immédiatement la protection si non autorisée.'
+where: |-
+  equals("log.eventCode", 5001) &&
+  equals("log.providerName", "Microsoft-Windows-Windows Defender")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

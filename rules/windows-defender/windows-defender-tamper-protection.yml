@@ -1,0 +1,21 @@
+name: Windows Defender - Tamper Protection Blocked (Event 5013)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Defense Evasion
+technique: T1562.001 - Impair Defenses Disable or Modify Tools
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/001/
+  - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/prevent-changes-to-security-settings-with-tamper-protection
+description: 'La Tamper Protection de Windows Defender a bloqué une tentative de modification des paramètres de sécurité (Event 5013). Cet événement indique qu''un processus ou utilisateur a tenté de désactiver ou modifier Windows Defender mais a été bloqué. C''est un signal fort d''une tentative d''évasion de défense — technique MITRE T1562.001. Next Steps: 1. Identifier le processus ayant tenté la modification via les logs de sécurité (Event 4688). 2. Vérifier l''utilisateur connecté au moment de l''event. 3. Contrôler les events 1116/1117 récents sur la même machine. 4. Investiguer si d''autres techniques d''évasion ont été tentées simultanément.'
+where: |-
+  equals("log.eventCode", 5013) &&
+  equals("log.providerName", "Microsoft-Windows-Windows Defender") &&
+  !equals("log.data.Changed Type", "Ignoré")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

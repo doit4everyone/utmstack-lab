@@ -1,0 +1,20 @@
+name: Windows Defender - Malware Remediation Failed (Event 1118)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Malware Defense
+technique: T1204 - User Execution
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1204/
+  - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
+description: 'Windows Defender a détecté un logiciel malveillant mais n''a pas pu effectuer l''action de remédiation (quarantaine ou suppression). Le malware est toujours présent sur la machine — intervention manuelle requise immédiatement. Vérifier le champ log.data.Threat Name pour le nom de la menace et log.data.Path pour le chemin du fichier. Next Steps: 1. Isoler immédiatement la machine du réseau. 2. Identifier le fichier via log.data.Path. 3. Tenter une remédiation manuelle depuis le portail security.microsoft.com. 4. Analyser les connexions réseau sortantes depuis l''endpoint. 5. Vérifier si d''autres machines sont affectées.'
+where: |-
+  equals("log.eventCode", 1118) &&
+  equals("log.providerName", "Microsoft-Windows-Windows Defender")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
