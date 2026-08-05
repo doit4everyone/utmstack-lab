@@ -43,8 +43,7 @@ Ce chapitre documente l'ensemble des sources de logs connectées au SIEM UTMStac
    - [6.2 Configuration dans UTMStack](#62-configuration-dans-utmstack)
    - [6.3 Dashboards O365 prédéfinis](#63-dashboards-o365-prédéfinis)
    - [6.4 Règles de corrélation O365 natives](#64-règles-de-corrélation-o365-natives)
-   - [6.5 Règles custom O365 développées dans ce lab](#65-règles-custom-o365-développées-dans-ce-lab)
-   - [6.6 Gaps de détection vs licence](#66-gaps-de-détection-vs-licence)
+   - [6.5 Gaps de détection vs licence](#65-gaps-de-détection-vs-licence)
 7. [Intégration Azure (Event Hub)](#7-intégration-azure-event-hub)
    - [7.1 Pourquoi Event Hub et pas Log Analytics](#71-pourquoi-event-hub-et-pas-log-analytics)
    - [7.2 Procédure de configuration](#72-procédure-de-configuration)
@@ -304,195 +303,57 @@ Contrairement à l'agent standard qui collecte des logs syslog, le collecteur UT
 
 ### 6.1 Prérequis et App Registration
 
-**Prérequis licence :** Entra ID P1 minimum (inclus dans Microsoft 365 Business Premium). Entra ID P2 ou Microsoft 365 E5 débloque les alertes MDE formelles avec `ThreatName` et l'Impossible Travel natif.
+**Prérequis licence :** Entra ID P1 minimum (inclus dans Microsoft 365 Business Premium). Entra ID P2 ou Microsoft 365 E5 débloque les alertes MDE formelles avec `ThreatName`.
 
-#### Étape 1 — Créer l'App Registration
+**App Registration Entra ID :**
 
-1. [portal.azure.com](https://portal.azure.com) → **Microsoft Entra ID** → **Inscriptions d'applications** → **+ Nouvelle inscription**
-2. Remplir le formulaire :
+1. portal.azure.com → **Entra ID** → **Inscriptions d'applications** → **Nouvelle inscription**
+2. Permissions API requises :
+   - `Office 365 Management APIs` → `ActivityFeed.Read`, `ActivityFeed.ReadDlp`, `ServiceHealth.Read`
+   - `Microsoft Graph` → `SecurityEvents.Read.All`
+3. Créer un secret client et noter : Tenant ID, Client ID, Client Secret
 
-| Champ | Valeur |
-|---|---|
-| Nom | `UTMStack O365 Agent` |
-| Types de comptes pris en charge | **Locataire unique seulement** |
-| URI de redirection | *(laisser vide)* |
-
-3. Cliquer sur **S'inscrire**
-4. Noter le **Client ID** (ID d'application) et le **Tenant ID** (ID de l'annuaire) affichés dans la vue d'ensemble
-
-#### Étape 2 — Créer le secret client
-
-Dans l'App Registration → **Certificats et secrets** → **+ Nouveau secret client** :
-
-| Champ | Valeur |
-|---|---|
-| Description | `UTMStack M365 Integration` |
-| Expiration | **730 jours (24 mois)** |
-
-> ⚠️ **Copier immédiatement la valeur du secret** après création — elle ne sera plus visible après avoir quitté la page. En cas d'oubli, il faudra en créer un nouveau.
-
-#### Étape 3 — Ajouter les permissions API
-
-Dans l'App Registration → **API autorisées** → **+ Ajouter une autorisation** :
-
-**Office 365 Management APIs → Autorisations d'application :**
-
-| Permission | Type | Rôle |
-|---|---|---|
-| `ActivityFeed.Read` | Application | Lecture des logs d'activité O365 |
-| `ActivityFeed.ReadDlp` | Application | Lecture des events DLP |
-
-**Microsoft Graph → Autorisations déléguées :**
-
-| Permission | Type |
-|---|---|
-| `SecurityAlert.Read.All` | Déléguée |
-| `SecurityAlert.ReadWrite.All` | Déléguée |
-
-**Microsoft Graph → Autorisations d'application :**
-
-| Permission | Type |
-|---|---|
-| `SecurityAlert.Read.All` | Application |
-| `SecurityAlert.ReadWrite.All` | Application |
-
-> ℹ️ `User.Read` est ajouté automatiquement à la création — le laisser en place.
-
-> ℹ️ `ServiceHealth.Read` n'est **pas** requis par UTMStack — ne pas l'ajouter.
-
-Après chaque ajout de permissions, cliquer sur **Accorder un consentement d'administrateur pour [nom du tenant]** et confirmer. Toutes les permissions doivent afficher le statut ✅ **Accordé**.
-
-#### Étape 4 — Vérifier l'audit Microsoft Purview
-
-L'audit M365 doit être actif pour que les logs remontent. Vérification depuis un poste local :
-
-```powershell
-# Installer le module si nécessaire (PowerShell local, en tant qu'Administrateur)
-Install-Module -Name ExchangeOnlineManagement -Force -AllowClobber
-
-# Vérifier si l'audit est actif
-Connect-ExchangeOnline
-Get-AdminAuditLogConfig | Select-Object UnifiedAuditLogIngestionEnabled
-# Résultat attendu : UnifiedAuditLogIngestionEnabled : True
-
-# Si False — activer l'audit
-Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true
-
-Disconnect-ExchangeOnline -Confirm:$false
-```
-
-> ⚠️ **Compatibilité PowerShell** : Windows PowerShell 5.1 est la méthode la plus fiable. Le module est également supporté sous PowerShell 7 (v7.4+ pour les versions 3.5.0 à 3.9.2 du module, v7.6+ pour les versions 3.10.0+). Azure Cloud Shell est techniquement supporté mais des conflits de versions avec le module Az préchargé peuvent provoquer des erreurs — si c'est le cas, ajouter `-DisableWAM` à la commande `Connect-ExchangeOnline`.
-
-> ℹ️ Sur un tenant actif avec des utilisateurs licenciés, l'audit est généralement déjà actif. Le portail Microsoft Purview ([purview.microsoft.com](https://purview.microsoft.com)) le confirme : si l'interface de recherche Audit s'affiche directement sans bannière d'activation, l'audit est actif. L'ancien portail `compliance.microsoft.com` est retraité depuis novembre 2024 et redirige automatiquement vers Purview.
+**Activation de l'audit Microsoft Purview :** Microsoft Purview → **Audit** → activer si non actif (délai de propagation ~24h).
 
 ### 6.2 Configuration dans UTMStack
 
-Dans UTMStack → **Integrations** → carte **Microsoft 365** → **Enabled**.
-
-Cliquer sur **+ Add tenant** — un formulaire en deux étapes s'ouvre :
-
-**Étape 1 — Créer le groupe :**
-
-| Champ | Valeur |
-|---|---|
-| Name | Nom libre identifiant le tenant (ex: `M365 Lab`) |
-| Group description | Description libre |
-
-**Étape 2 — Saisir les credentials :**
-
-| Champ UTMStack | Valeur à saisir |
-|---|---|
-| **Client ID** | ID d'application (client) de l'App Registration |
-| **Client Secret** | Valeur du secret créé à l'étape 2 |
-| **Tenant ID** | ID de l'annuaire (locataire) |
-| **Cloud Environment** | `Commercial - Azure commercial global (Default)` |
-
-Cliquer sur **Save configuration**. UTMStack teste la connexion et affiche une confirmation **"Check module configuration — Microsoft 365 ✅"** si les credentials sont valides.
-
-Cliquer ensuite sur le bouton **Enable integration** pour activer les règles de corrélation M365 dans UTMStack.
-
-> ℹ️ Il est possible d'ajouter **plusieurs tenants** en cliquant à nouveau sur **+ Add tenant** — utile pour superviser plusieurs organisations M365 depuis un même UTMStack.
+**Integrations** → **Microsoft 365** → **Enabled** → renseigner Tenant ID, Client ID, Client Secret.
 
 **Index créé :** `v11-log-o365-*`
 
-> ⚠️ L'index est `v11-log-o365-*` et **non** `v11-log-office365-*` — important pour les requêtes OpenSearch et les règles de corrélation.
+> ⚠️ L'index est `v11-log-o365-*` et non `v11-log-office365-*` — important pour les requêtes OpenSearch et les règles de corrélation.
 
-**Latence observée :** ~5 minutes entre l'événement réel et son apparition dans UTMStack (polling de l'API O365 Management). Les horodatages affichés dans UTMStack sont en **UTC** — les événements n'ont pas de retard réel, c'est uniquement le fuseau horaire affiché vs le fuseau local.
-
-**Volume de données observé :** avec un tenant Business Premium, un seul poste enrollé MDE et un utilisateur actif, le volume O365 est d'environ **400-500 KB/jour** — négligeable par rapport aux logs Windows (~150 MB/jour).
+**Latence observée :** ~5 minutes entre l'événement réel et son apparition dans UTMStack. Ce délai est lié au polling de l'API O365 Management, pas à un problème de configuration.
 
 ### 6.3 Dashboards O365 prédéfinis
 
-L'activation de l'intégration crée automatiquement 5 dashboards O365 natifs accessibles depuis **Dashboards** :
+UTMStack inclut 5 dashboards O365 natifs accessibles depuis **Dashboards** → **Office 365** :
 
-| Dashboard | Contenu principal |
+| Dashboard | Contenu |
 |---|---|
-| **O365 Overview** | Vue globale : Failed Logins, Top Exchange Operations, SharePoint File Access, carte des connexions réussies, Top 5 events by Source (Endpoint/AzureActiveDirectory/Exchange), Alerts by Category |
-| **O365 Exchange** | Activités email, règles inbox, opérations Exchange |
-| **O365 Active Directory** | Connexions Entra ID, échecs par utilisateur, carte géographique, Failed Operations Count, Logon Error Count |
-| **O365 SharePoint** | Accès fichiers, partages, activités SharePoint/OneDrive |
-| **O365 Threat Intelligence** | Event Count par source (Endpoint, AzureActiveDirectory), Phishing Targets, Recent Attacks, Top 5 events by Source |
-
-> ℹ️ Les dashboards s'alimentent progressivement — avec peu d'historique, certains widgets affichent "No data found". Après 24-48h d'activité normale sur le tenant, tous les widgets se remplissent. Le widget **O365 Alerts by Category** est cliquable et drille directement vers la liste des alertes filtrées par catégorie.
+| Office 365 Overview | Vue globale des activités O365 |
+| Exchange Online | Activités email, règles inbox |
+| SharePoint & OneDrive | Accès fichiers, partages |
+| Entra ID Sign-ins | Connexions, échecs, géolocalisation |
+| DLP Events | Correspondances politiques DLP |
 
 ### 6.4 Règles de corrélation O365 natives
 
-UTMStack CE inclut **15 règles de corrélation natives** pour les logs O365, toutes actives par défaut. Inventaire extrait depuis PostgreSQL :
+UTMStack inclut 15 règles de corrélation natives pour les logs O365, couvrant les scénarios courants : activités suspectes Exchange, partages anonymes SharePoint, modifications de rôles Entra ID, etc.
 
-| ID | Règle | Catégorie |
+> ℹ️ **Limitation CE** : avec Entra ID P1 et MDE Plan 1, les alertes MDE formelles (RecordType 41 avec `ThreatName`) ne sont pas disponibles. Seuls les events d'audit endpoint (RecordType 63, `Workload: Endpoint`) remontent dans UTMStack.
+
+### 6.5 Gaps de détection vs licence
+
+| Fonctionnalité | P1 / MDE Plan 1 | P2 / E5 |
 |---|---|---|
-| 792 | Office 365 Anti-Phishing Policy Bypass Detected | Defense Evasion |
-| 793 | Office 365 App Consent Grants Detected | Persistence |
-| 801 | O365 Excessive Single Sign-On Logon Errors | Credential Access |
-| 806 | Data Loss Prevention Policy Violation ✅ | Data Loss Prevention |
-| 812 | Office 365 Forms and Sway Phishing Detection | Initial Access |
-| 823 | Office 365 Mail Flow Rule Modified | Defense Evasion |
-| 825 | Office 365 Mailbox Delegation Abuse | Persistence |
-| 826 | Office 365 Mailbox Export to PST | Data Exfiltration |
-| 832 | Office 365 OAuth Application Anomalous Activity | Credential Access |
-| 838 | Office 365 Safe Attachment Policy Violation | Initial Access |
-| 1437 | O365 Audit Log Purge | Defense Evasion |
-| 1438 | O365 Admin Role/Permission Granted | Privilege Escalation |
-| 1439 | O365 Inbox Forward Rule with Email Exfiltration | Data Exfiltration |
-| 1440 | O365 Admin Role Assignment | Privilege Escalation |
-| 802 | Microsoft 365 Exchange Malware Filter Policy Deletion | Defense Evasion |
+| Logs audit O365 | ✅ | ✅ |
+| Alertes MDE avec ThreatName | ❌ | ✅ |
+| Identity Protection (risk scoring) | ❌ | ✅ |
+| Impossible Travel natif Entra | ❌ | ✅ |
+| Privileged Identity Management | ❌ | ✅ |
 
-> ⚠️ **Point d'attention — Règle 801** : cette règle cible uniquement les erreurs `SsoArtifactInvalidOrExpired` (tokens SSO invalides), **pas** les tentatives `InvalidUserNameOrPassword` (brute force classique). Pour détecter le brute force sur mot de passe, une règle custom est nécessaire — voir section 6.5.
-
-> ℹ️ **Limitation CE** : avec Entra ID P1 et MDE Plan 1, les alertes MDE formelles (RecordType 41 avec `ThreatName`) ne sont pas disponibles. Seuls les events d'audit endpoint (RecordType 63, `Workload: Endpoint`) remontent dans UTMStack. La détection malware avec `ThreatName` complet passe par l'agent Windows (Event 1116) — voir section 2.3.
-
-### 6.5 Règles custom O365 développées dans ce lab
-
-Quatre règles custom ont été développées, testées et validées pour combler les gaps de détection avec une licence P1. Elles sont disponibles dans le [dépôt GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/o365).
-
-| Fichier | Règle | Scénario testé |
-|---|---|---|
-| `o365-entra-brute-force.yml` | Entra ID - Brute Force Password Attack | 6 tentatives `InvalidUserNameOrPassword` consécutives |
-| `o365-entra-password-spray.yml` | Entra ID - Password Spray Attack | 1 mot de passe testé sur 5 comptes distincts |
-| `o365-mde-malware-deleted.yml` | MDE Endpoint - Malware File Deleted by Defender | Fichier EICAR supprimé par MDE |
-| `o365-impossible-travel.yml` | Entra ID - Impossible Travel Detection | Connexion CH puis NL via ProtonVPN dans la même fenêtre 2h |
-
-> ℹ️ **Règles Brute Force vs Password Spray** : les deux règles partagent intentionnellement la même condition `where` (`UserLoginFailed` + `InvalidUserNameOrPassword`). La distinction entre les deux types d'attaque se fait lors de l'investigation : si `origin.user` est identique sur toutes les alertes → brute force ; si `origin.user` est différent sur chaque alerte depuis la même IP → password spray.
-
-> ℹ️ **Règle MDE Malware Deleted** : avec MDE Plan 1, les events O365 de type `FileDeleted` (Workload: Endpoint, RecordType 63) ne contiennent pas le `ThreatName`. Pour une détection avec le nom complet de la menace, utiliser la règle Windows native sur l'Event 1116 (section 2.3). Les deux règles sont complémentaires : O365 pour la visibilité cloud, agent Windows pour les détails de la menace.
-
-> ℹ️ **Règle Impossible Travel** : détecte deux `UserLoggedIn` du même utilisateur depuis deux pays différents dans une fenêtre de 2 heures, via le mécanisme `afterEvents`. Avec Entra ID P1, cette corrélation est assurée par UTMStack — Entra ID P2 (Identity Protection) offre une détection native avec scoring de risque automatisé.
-
-### 6.6 Gaps de détection vs licence
-
-| Fonctionnalité | P1 / MDE Plan 1 | P2 / E5 | Compensé par règle custom |
-|---|---|---|---|
-| Logs audit O365 (Exchange, SharePoint, Teams) | ✅ | ✅ | — |
-| Events audit endpoint MDE (RecordType 63) | ✅ | ✅ | — |
-| Alertes MDE avec ThreatName | ❌ | ✅ | ✅ Event 1116 via agent Windows |
-| Brute force / Password Spray Entra ID | ❌ natif | ✅ | ✅ Règles custom |
-| Impossible Travel | ❌ natif | ✅ | ✅ Règle custom afterEvents |
-| Identity Protection (risk scoring) | ❌ | ✅ | ❌ |
-| Privileged Identity Management (PIM) | ❌ | ✅ | ❌ |
-| DLP Purview — détection | ✅ | ✅ | — |
-| DLP Purview — blocage effectif | ⚠️ Partiel | ✅ | — |
-
-> ℹ️ **DLP Purview avec Business Premium** : les règles DLP détectent et notifient, mais le blocage effectif des partages externes peut ne pas s'appliquer sans licence Purview add-on. Les événements `DLPRuleMatch` remontent correctement dans UTMStack et déclenchent la règle native 806 (**Data Loss Prevention Policy Violation**) — testée avec un fichier RH contenant un numéro AVS suisse.
+Les règles custom O365 développées dans ce lab comblent partiellement ces gaps pour les environnements P1 — voir [Bibliothèque de règles](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/microsoft-365).
 
 ---
 
