@@ -1,0 +1,21 @@
+name: Entra ID - Brute Force Password Attack
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Credential Access
+technique: T1110.001 - Brute Force Password Guessing
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1110/001/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
+description: 'Détecte plusieurs tentatives de connexion échouées sur un même compte Entra ID avec le code d''erreur InvalidUserNameOrPassword (ErrorNumber 50126). Un nombre élevé d''échecs successifs indique une attaque par force brute sur le mot de passe. Vérifier si les tentatives proviennent d''une IP externe inconnue et si le compte a été compromis.'
+where: |-
+  oneOf("action", ["UserLoginFailed"]) &&
+  oneOf("log.Workload", ["AzureActiveDirectory"]) &&
+  oneOf("log.LogonError", ["InvalidUserNameOrPassword"])
+afterEvents: []
+groupBy: []
+deduplicateBy: []

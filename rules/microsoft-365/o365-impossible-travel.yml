@@ -1,0 +1,36 @@
+name: Entra ID - Impossible Travel Detection
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Initial Access
+technique: T1078 - Valid Accounts
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1078/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
+  - https://learn.microsoft.com/en-us/entra/id-protection/concept-identity-protection-risks
+description: 'Détecte une connexion réussie depuis un pays différent du pays de la connexion précédente dans une fenêtre de 2 heures pour le même utilisateur. Ce pattern indique soit un vol de token de session (attaque AiTM via Evilginx/Modlishka), soit une connexion non autorisée depuis un pays étranger. Note : avec Entra ID P1, cette détection est réalisée par UTMStack via corrélation des logs O365. Entra ID P2 (Identity Protection) offre une détection native avec scoring de risque. Next Steps: 1. Vérifier si le déplacement géographique est physiquement possible dans la fenêtre temporelle. 2. Contacter l''utilisateur pour confirmer si les deux connexions sont légitimes. 3. Si compromission suspectée : révoquer toutes les sessions actives via Entra ID. 4. Vérifier les activités post-connexion (accès fichiers, emails, modifications de configuration). 5. Contrôler si des règles inbox ou des modifications de compte ont été effectuées.'
+where: |-
+  oneOf("action", ["UserLoggedIn"]) &&
+  oneOf("log.Workload", ["AzureActiveDirectory"]) &&
+  exists("origin.geolocation.countryCode")
+afterEvents:
+  - indexPattern: v11-log-o365-*
+    with:
+      - field: origin.user
+        operator: filter_term
+        value: "{{.origin.user}}"
+      - field: action
+        operator: filter_term
+        value: UserLoggedIn
+      - field: origin.geolocation.countryCode
+        operator: must_not_term
+        value: "{{.origin.geolocation.countryCode}}"
+    or: null
+    within: 2h
+    count: 1
+groupBy: []
+deduplicateBy: []
