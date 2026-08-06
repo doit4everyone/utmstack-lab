@@ -15,22 +15,9 @@ rules/
 
 1. Dans UTMStack → **Threat Management** → **Correlation Rules** → **Import**
 2. Sélectionner le fichier `.yml`
-3. **Étape SQL obligatoire après import** — sans cette étape la règle ne fonctionnera pas :
+3. La règle est immédiatement active — aucune étape supplémentaire requise
 
-```bash
-docker exec $(docker ps -q -f name=utmstack_postgres) \
-  psql -U postgres -d utmstack -c \
-  "SELECT id, rule_name FROM utm_correlation_rules WHERE rule_name ILIKE '%NOM_DE_LA_REGLE%';"
-```
-
-Puis redémarrer les event-processors :
-
-```bash
-docker service update --force utmstack_event-processor-worker
-docker service update --force utmstack_event-processor-manager
-```
-
-> ⚠️ **Important** : les règles importées via l'UI (system_owner = false) ne sont **pas** réinitialisées au redémarrage des conteneurs — contrairement aux règles natives UTMStack. Aucune automatisation supplémentaire n'est nécessaire.
+> ℹ️ **Stabilité** : les règles importées via l'UI (`system_owner = false`) ne sont **pas** réinitialisées au redémarrage des conteneurs UTMStack — contrairement aux règles natives. Elles persistent sans aucune automatisation supplémentaire.
 
 ## Tableau des règles
 
