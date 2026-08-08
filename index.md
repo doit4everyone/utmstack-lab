@@ -1,6 +1,6 @@
 ---
 title: "UTMStack Lab — Guide et Procédures de déploiement | DoIt4Everyone"
-description: "UTMStack v11.2.12 Community Edition — Procédures de déploiement pour lab PME Suisse : installation VMware, Suricata, CrowdSec, SOAR automatisé, OPNsense, audit NTLM & migration Kerberos, intégrations agents Windows/Linux/M365/Azure."
+description: "UTMStack v11.2.12 Community Edition — Procédures de déploiement pour lab PME Suisse : installation VMware, Suricata, CrowdSec, SOAR automatisé, OPNsense, audit NTLM & migration Kerberos, Sysmon v15.21 + WEF, intégrations agents Windows/Linux/M365/Azure."
 lang: fr
 permalink: /
 ---
@@ -56,7 +56,8 @@ Toutes les procédures sont testées et validées en conditions réelles sous VM
 | [07 — Règles Suricata avancées](https://doit4everyone.github.io/utmstack-lab/docs/07-custom-rules.html) | suricata-update, NF Rules networkforensic.dk, IPS drop mode, CINS, 🆕 règle custom DVR/IoT |
 | [08 — Audit NTLM & Migration Kerberos](https://doit4everyone.github.io/utmstack-lab/docs/08-ntlm-audit.html) | WEF, GPO, Intune, dashboard SIEM, roadmap Phase 1→3 — Server 2025 |
 | [09 — Pipeline SOC augmenté par IA locale](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html) | Ollama + n8n, tri déterministe, threat intelligence, heartbeat de supervision, comparatif LLM |
-| [10 — Intégrations agents et sources de logs](https://doit4everyone.github.io/utmstack-lab/docs/10-integrations-agents.html) | 🆕 Agents Windows/Linux, M365, Azure Event Hub, SOC AI natif, règles custom Defender & O365 |
+| [10 — Intégrations agents et sources de logs](https://doit4everyone.github.io/utmstack-lab/docs/10-integrations-agents.html) | Agents Windows/Linux, M365, Azure Event Hub, SOC AI natif, règles custom Defender & O365 |
+| [10b — Sysmon — Déploiement et configuration](https://doit4everyone.github.io/utmstack-lab/docs/10-sysmon.html) | 🆕 Sysmon v15.21, deux configs XML (postes/DC), méthode registre ANSSI, WEF self-subscription → UTMStack |
 
 ---
 
@@ -116,6 +117,12 @@ Retour d'expérience complet sur la construction d'un pipeline de résumé quoti
 
 Déploiement complet des sources de logs UTMStack : procédure d'installation des agents Windows (5 machines AD) et Linux, collecteur UTMStack pour l'auto-supervision Docker, intégration Microsoft 365 avec règles custom O365/Defender (tuning des faux positifs documenté), intégration Azure via Event Hub + Event Grid, et fonctionnement du SOC AI natif (Echoes, incidents automatiques, providers LLM). [Bibliothèque de règles custom sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules).
 
+### 🔭 Sysmon — Déploiement et configuration 🆕
+
+[→ Sysmon v15.21 — Déploiement GPO, Intune et collecte WEF](https://doit4everyone.github.io/utmstack-lab/docs/10-sysmon.html)
+
+Déploiement de Sysmon v15.21 (schéma 4.91) en environnement hybride AD + Intune. Deux configurations XML distinctes — postes membres et contrôleurs de domaine — déployées via la méthode registre ANSSI (aucun XML exposé sur les machines cibles). Collecte dans UTMStack via Windows Event Forwarding self-subscription locale : chaque machine forwarde ses propres events Sysmon vers `ForwardedEvents`, collecté nativement par l'agent UTMStack. Validé sur Windows Server 2022/2025 et DC — limitation documentée sur Windows 11 (ticket ouvert chez UTMStack). [Configurations XML sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/configs/sysmon).
+
 ---
 
 ## 📅 Roadmap documentation
@@ -123,7 +130,7 @@ Déploiement complet des sources de logs UTMStack : procédure d'installation de
 | Volume | Contenu | Statut |
 | --- | --- | --- |
 | V1 | Installation & Architecture | 🟢 Publié |
-| V2 | Configuration SIEM — Agents, sources de logs, règles, intégrations Azure/M365 | 🟡 En cours |
+| V2 | Configuration SIEM — Agents, sources de logs, Sysmon + WEF, règles de corrélation custom, intégrations Azure/M365 | 🟡 En cours |
 | V3 | Modules complémentaires — SOC AI, OPNsense stack, Pipeline IA locale (Ollama + n8n) | 🟢 Publié |
 | V4 | SOAR & Incident Response | 📋 Planifié |
 | V5 | Red Team / Validation Kali | 📋 Planifié |
@@ -153,11 +160,12 @@ Déploiement complet des sources de logs UTMStack : procédure d'installation de
 - **HIDS** : CrowdSec + bouncer OPNsense — blocage temps réel, whitelist étendue (cloud légitime + réseaux internes)
 - **SOAR** : UTMStack Incident Response + SSH → CrowdSec
 - **Logs** : syslog-ng → Agent UTMStack → OpenSearch
-- **WEF** : Windows Event Forwarding — collecte NTLM/Operational → ForwardedEvents
+- **WEF** : Windows Event Forwarding — self-subscription locale : NTLM/Operational + Sysmon/Operational → ForwardedEvents → agent UTMStack
 - **M365** : intégration API O365 Management — Entra ID, Exchange, SharePoint, MDE endpoint events
 - **Azure** : Event Hub (Activity Log + Event Grid) → index `v11-log-azure-*`
 - **SOC AI** : module natif UTMStack (Mistral/OpenAI/Custom) + pipeline n8n custom (Ollama local)
 - **Pipeline IA** : Ollama (Llama 3.1 8B / Qwen 2.5 14B) + n8n — tri déterministe, enrichissement AbuseIPDB/GreyNoise/OTX/ThreatFox, heartbeat de supervision → alerte SIEM native
+- **Sysmon** : v15.21 schéma 4.91 — deux configs XML (postes/DC), méthode registre ANSSI, collecte WEF → ForwardedEvents → UTMStack
 - **Règles custom** : 9 règles de corrélation custom (4 Defender + 5 O365) avec tuning documenté — [bibliothèque sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules)
 
 ---
@@ -171,6 +179,7 @@ Déploiement complet des sources de logs UTMStack : procédure d'installation de
 | [Bibliothèque de règles custom (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/rules) | 9 règles YAML (Defender + O365) avec tuning des faux positifs documenté |
 | [Workflows Pipeline IA (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts) | JSON n8n (rapport quotidien, à la demande, consultation webhook), scripts heartbeat systemd, Modelfiles Ollama |
 | [Scripts WEF NTLM (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts) | Deploy-WEF-NTLM-GPO.ps1, Intune, Detect, ntlm-subscription.xml |
+| [Configurations Sysmon (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/configs/sysmon) | sysmon-workstation.xml, sysmon-dc.xml, sysmon-wef-subscription.xml — schéma 4.91 |
 
 ---
 
