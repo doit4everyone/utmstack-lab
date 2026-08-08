@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  sysmon-workstation.xml
+  Cible    : WIN11-AD-TESTS, gest-srv, postes membres du domaine
+  Version  : Sysmon v15.21 - Schema 4.91
+  Base     : SwiftOnSecurity sysmon-config + modules Olaf Hartong (credential-access, lateral-movement)
+  Auteur   : DoIt4Everyone UTMStack Lab - https://doit4everyone.github.io/utmstack-lab/
+  Date     : Aout 2026
+
+  EIDs ACTIVES (reference schema 4.91) :
+    1  - ProcessCreate        (LOLBIN, PsExec, WMI, execution suspecte)
+    3  - NetworkConnect       (connexion reseau suspecte par processus)
+    10 - ProcessAccess        (acces LSASS - credential dumping)
+    11 - FileCreate           (depot dans dossier de demarrage)
+    12 - RegistryEvent        (creation/suppression cle Run)
+    13 - RegistryEvent        (modification valeur Run)
+    17 - PipeEvent            (named pipe cree - lateral movement)
+    18 - PipeEvent            (connexion named pipe - PsExec)
+
+  EID 16 (SysmonConfigStateChanged) : supprime dans schema 4.91
+  EIDs 7, 8, 22 : desactives (volume trop eleve / FP eleves)
+
+  IMPORTANT : Ce fichier ne doit pas etre depose sur les postes cibles.
+  Procedure : appliquer sur machine de reference (WIN11-AD-TESTS), exporter les 4 valeurs
+  HKLM\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters via GPO Preferences Registre.
+  Reference ANSSI : Recommandations de securite pour la journalisation Windows.
+-->
+
+<Sysmon schemaversion="4.91">
+
+  <HashAlgorithms>sha256,md5</HashAlgorithms>
+  <CheckRevocation>false</CheckRevocation>
+
+  <EventFiltering>
+
+    <!-- ================================================================ -->
+    <!-- EID 1 - ProcessCreate : LOLBIN et execution suspecte            -->
+    <!-- ================================================================ -->
+    <RuleGroup name="ProcessCreate - LOLBIN" groupRelation="or">
+      <ProcessCreate onmatch="include">
+
+        <!-- LOLBIN - T1218 : binaires Windows legitimes detournes -->
+        <Image condition="end with">certutil.exe</Image>
+        <Image condition="end with">mshta.exe</Image>
+        <Image condition="end with">wscript.exe</Image>
+        <Image condition="end with">cscript.exe</Image>
+        <Image condition="end with">regsvr32.exe</Image>
+        <Image condition="end with">rundll32.exe</Image>
+        <Image condition="end with">msiexec.exe</Image>
+        <Image condition="end with">installutil.exe</Image>
+        <Image condition="end with">regasm.exe</Image>
+        <Image condition="end with">regsvcs.exe</Image>
+        <Image condition="end with">odbcconf.exe</Image>
+        <Image condition="end with">ieexec.exe</Image>
+        <Image condition="end with">pcalua.exe</Image>
+        <Image condition="end with">xwizard.exe</Image>
+        <Image condition="end with">ftp.exe</Image>
+        <Image condition="end with">esentutl.exe</Image>
+        <Image condition="end with">expand.exe</Image>
+        <Image condition="end with">extrac32.exe</Image>
+        <Image condition="end with">replace.exe</Image>
+        <Image condition="end with">makecab.exe</Image>
+        <Image condition="end with">presentationhost.exe</Image>
+        <Image condition="end with">msdeploy.exe</Image>
+        <Image condition="end with">aspnet_compiler.exe</Image>
+        <Image condition="end with">msconfig.exe</Image>
+        <Image condition="end with">bginfo.exe</Image>
+
+        <!-- T1059.001 : PowerShell suspect -->
+        <CommandLine condition="contains">-EncodedCommand</CommandLine>
+        <CommandLine condition="contains">-enc </CommandLine>
+        <CommandLine condition="contains">-ec </CommandLine>
+        <CommandLine condition="contains">IEX</CommandLine>
+        <CommandLine condition="contains">Invoke-Expression</CommandLine>
+        <CommandLine condition="contains">DownloadString</CommandLine>
+        <CommandLine condition="contains">DownloadFile</CommandLine>
+        <CommandLine condition="contains">WebClient</CommandLine>
+        <CommandLine condition="contains">Net.WebClient</CommandLine>
+        <CommandLine condition="contains">bitsadmin</CommandLine>
+        <CommandLine condition="contains">AmsiInitFailed</CommandLine>
+        <CommandLine condition="contains">amsiContext</CommandLine>
+        <CommandLine condition="contains">-nop </CommandLine>
+        <CommandLine condition="contains">-noprofile</CommandLine>
+        <CommandLine condition="contains">bypass</CommandLine>
+        <CommandLine condition="contains">-windowstyle h</CommandLine>
+
+        <!-- T1569.002 : PsExec / execution distante -->
+        <Image condition="end with">psexec.exe</Image>
+        <Image condition="end with">psexec64.exe</Image>
+        <ParentImage condition="end with">psexec.exe</ParentImage>
+        <ParentImage condition="end with">psexec64.exe</ParentImage>
+        <CommandLine condition="contains">\\PSEXESVC</CommandLine>
+
+        <!-- T1047 : WMI execution -->
+        <Image condition="end with">wmic.exe</Image>
+        <ParentImage condition="end with">wmiprvse.exe</ParentImage>
+        <ParentImage condition="end with">wmic.exe</ParentImage>
+
+        <!-- T1053.005 : Scheduled Task -->
+        <Image condition="end with">schtasks.exe</Image>
+        <Image condition="end with">at.exe</Image>
+
+        <!-- T1490 : Shadow copy / inhibit recovery -->
+        <CommandLine condition="contains all">vssadmin;delete</CommandLine>
+        <CommandLine condition="contains all">wmic;shadowcopy;delete</CommandLine>
+
+        <!-- T1003 : Credential dumping -->
+        <CommandLine condition="contains">-ma lsass</CommandLine>
+        <CommandLine condition="contains">sekurlsa</CommandLine>
+        <CommandLine condition="contains">mimikatz</CommandLine>
+
+        <!-- T1027 : Obfuscation -->
+        <CommandLine condition="contains">frombase64</CommandLine>
+        <CommandLine condition="contains">tobase64</CommandLine>
+
+      </ProcessCreate>
+    </RuleGroup>
+
+    <RuleGroup name="ProcessCreate - Exclusions" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+        <Image condition="begin with">C:\Windows\SoftwareDistribution\</Image>
+        <Image condition="begin with">C:\Windows\WinSxS\</Image>
+        <Image condition="begin with">C:\Program Files\UTMStack\</Image>
+        <Image condition="begin with">C:\UTMStack\</Image>
+        <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</Image>
+        <Image condition="begin with">C:\Program Files\Windows Defender\</Image>
+        <Image condition="begin with">C:\Program Files (x86)\Microsoft Intune Management Extension\</Image>
+        <Image condition="end with">edgeIT.exe</Image>
+        <Image condition="end with">Sysmon64.exe</Image>
+      </ProcessCreate>
+    </RuleGroup>
+
+
+    <!-- ================================================================ -->
+    <!-- EID 3 - NetworkConnect : processus suspects                      -->
+    <!-- Active sur postes uniquement - desactive sur DC                  -->
+    <!-- ================================================================ -->
+    <RuleGroup name="NetworkConnect - Processus suspects" groupRelation="or">
+      <NetworkConnect onmatch="include">
+        <Image condition="end with">mshta.exe</Image>
+        <Image condition="end with">wscript.exe</Image>
+        <Image condition="end with">cscript.exe</Image>
+        <Image condition="end with">regsvr32.exe</Image>
+        <Image condition="end with">rundll32.exe</Image>
+        <Image condition="end with">certutil.exe</Image>
+        <Image condition="end with">installutil.exe</Image>
+        <Image condition="end with">regasm.exe</Image>
+        <Image condition="end with">regsvcs.exe</Image>
+        <Image condition="end with">schtasks.exe</Image>
+        <Image condition="end with">powershell.exe</Image>
+        <Image condition="end with">powershell_ise.exe</Image>
+        <Image condition="end with">pwsh.exe</Image>
+        <Image condition="begin with">C:\Users\</Image>
+        <Image condition="begin with">C:\ProgramData\</Image>
+        <Image condition="begin with">C:\Windows\Temp\</Image>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <RuleGroup name="NetworkConnect - Exclusions" groupRelation="or">
+      <NetworkConnect onmatch="exclude">
+        <DestinationIp condition="is">127.0.0.1</DestinationIp>
+        <DestinationIp condition="is">::1</DestinationIp>
+        <Image condition="end with">chrome.exe</Image>
+        <Image condition="end with">firefox.exe</Image>
+        <Image condition="end with">msedge.exe</Image>
+        <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</Image>
+        <Image condition="begin with">C:\Program Files\UTMStack\</Image>
+        <Image condition="begin with">C:\UTMStack\</Image>
+      </NetworkConnect>
+    </RuleGroup>
+
+
+    <!-- ================================================================ -->
+    <!-- EID 10 - ProcessAccess : acces LSASS (T1003.001)                -->
+    <!-- ================================================================ -->
+    <RuleGroup name="ProcessAccess - LSASS" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <TargetImage condition="end with">lsass.exe</TargetImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <RuleGroup name="ProcessAccess - Exclusions LSASS" groupRelation="or">
+      <ProcessAccess onmatch="exclude">
+        <SourceImage condition="is">C:\Windows\System32\wininit.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\services.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\lsm.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\svchost.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\wbem\wmiprvse.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\taskmgr.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\MRT.exe</SourceImage>
+        <SourceImage condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</SourceImage>
+        <SourceImage condition="begin with">C:\Program Files\Windows Defender\</SourceImage>
+        <SourceImage condition="begin with">C:\Program Files\UTMStack\</SourceImage>
+        <SourceImage condition="begin with">C:\UTMStack\</SourceImage>
+        <GrantedAccess condition="is">0x1000</GrantedAccess>
+        <GrantedAccess condition="is">0x100000</GrantedAccess>
+      </ProcessAccess>
+    </RuleGroup>
+
+
+    <!-- ================================================================ -->
+    <!-- EID 11 - FileCreate : dossiers de persistance (T1547.001)       -->
+    <!-- ================================================================ -->
+    <RuleGroup name="FileCreate - Persistance" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
+        <TargetFilename condition="contains">\Microsoft\Windows\Start Menu\Programs\StartUp\</TargetFilename>
+        <TargetFilename condition="begin with">C:\Windows\Temp\</TargetFilename>
+        <TargetFilename condition="contains">\SYSVOL\</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <RuleGroup name="FileCreate - Exclusions" groupRelation="or">
+      <FileCreate onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\svchost.exe</Image>
+        <Image condition="begin with">C:\Windows\SoftwareDistribution\</Image>
+        <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</Image>
+      </FileCreate>
+    </RuleGroup>
+
+
+    <!-- ================================================================ -->
+    <!-- EID 12+13 - RegistryEvent : cles Run et persistance (T1547.001) -->
+    <!-- ================================================================ -->
+    <RuleGroup name="RegistryEvent - Run keys et persistance" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <TargetObject condition="contains">HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">HKLM\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">CurrentVersion\RunOnce</TargetObject>
+        <TargetObject condition="contains">HKLM\SYSTEM\CurrentControlSet\Services\</TargetObject>
+        <TargetObject condition="contains">AppInit_DLLs</TargetObject>
+        <TargetObject condition="contains">Image File Execution Options</TargetObject>
+        <TargetObject condition="contains">\Winlogon\</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <RuleGroup name="RegistryEvent - Exclusions" groupRelation="or">
+      <RegistryEvent onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\services.exe</Image>
+        <Image condition="is">C:\Windows\System32\svchost.exe</Image>
+        <Image condition="is">C:\Windows\System32\msiexec.exe</Image>
+        <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</Image>
+        <Image condition="begin with">C:\Program Files\Windows Defender\</Image>
+        <Image condition="begin with">C:\Program Files (x86)\Microsoft Intune Management Extension\</Image>
+        <Image condition="begin with">C:\Program Files\UTMStack\</Image>
+        <Image condition="begin with">C:\UTMStack\</Image>
+      </RegistryEvent>
+    </RuleGroup>
+
+
+    <!-- ================================================================ -->
+    <!-- EID 17+18 - PipeEvent : named pipes suspects (T1570)            -->
+    <!-- ================================================================ -->
+    <RuleGroup name="PipeEvent - Named pipes suspects" groupRelation="or">
+      <PipeEvent onmatch="include">
+        <PipeName condition="begin with">\PSEXESVC</PipeName>
+        <PipeName condition="contains">psexec</PipeName>
+        <PipeName condition="begin with">\msagent_</PipeName>
+        <PipeName condition="begin with">\isapi_</PipeName>
+        <PipeName condition="begin with">\sdlrpc</PipeName>
+        <PipeName condition="begin with">\ntsvcs</PipeName>
+        <PipeName condition="begin with">\Posh</PipeName>
+        <PipeName condition="contains">postex_</PipeName>
+        <PipeName condition="contains">status_</PipeName>
+      </PipeEvent>
+    </RuleGroup>
+
+    <RuleGroup name="PipeEvent - Exclusions" groupRelation="or">
+      <PipeEvent onmatch="exclude">
+        <PipeName condition="is">\lsass</PipeName>
+        <PipeName condition="is">\winreg</PipeName>
+        <PipeName condition="contains">Anonymous Pipe</PipeName>
+        <PipeName condition="begin with">\chrome.</PipeName>
+        <PipeName condition="begin with">\gecko_</PipeName>
+      </PipeEvent>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>

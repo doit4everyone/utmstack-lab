@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  sysmon-dc.xml
+  Cible    : DC01-MAIN-SITE (10.100.1.1), DC01-RM (10.100.2.1)
+  Version  : Sysmon v15.21 - Schema 4.91
+  Base     : SwiftOnSecurity sysmon-config + modules Olaf Hartong (credential-access, lateral-movement)
+  Auteur   : DoIt4Everyone UTMStack Lab - https://doit4everyone.github.io/utmstack-lab/
+  Date     : Aout 2026
+
+  DIFFERENCES vs sysmon-workstation.xml :
+  - EID 3 (NetworkConnect) : DESACTIVE - volume AD trop eleve
+  - EID 10 (ProcessAccess LSASS) : CRITIQUE - detection DCSync
+  - EID 11 (FileCreate) : cible NTDS et SYSVOL uniquement
+  - EID 12/13 (RegistryEvent) : ajout cles LSA (Security Packages, WDigest)
+  - EID 17/18 (PipeEvent) : exclusions pipes AD legitimes (netlogon, samr, lsarpc)
+  - ProcessCreate : exclusions AD DS etendues (ADWS, DFSR, DNS Server)
+  - EID 16 (SysmonConfigStateChanged) : supprime dans schema 4.91
+
+  IMPORTANT : Ce fichier ne doit pas etre depose sur les DC en production.
+  Procedure : appliquer sur DC01-MAIN-SITE en maintenance, exporter les 4 valeurs
+  HKLM\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters via GPO Preferences Registre
+  liee a l'OU Domain Controllers uniquement.
+-->
+
+<Sysmon schemaversion="4.91">
+
+  <HashAlgorithms>sha256,md5</HashAlgorithms>
+  <CheckRevocation>false</CheckRevocation>
+
+  <EventFiltering>
+
+    <!-- ================================================================ -->
+    <!-- EID 1 - ProcessCreate : execution suspecte sur DC               -->
+    <!-- Exclusions AD DS etendues                                        -->
+    <!-- ================================================================ -->
+    <RuleGroup name="ProcessCreate - Suspect DC" groupRelation="or">
+      <ProcessCreate onmatch="include">
+
+        <!-- LOLBIN -->
+        <Image condition="end with">certutil.exe</Image>
+        <Image condition="end with">mshta.exe</Image>
+        <Image condition="end with">wscript.exe</Image>
+        <Image condition="end with">cscript.exe</Image>
+        <Image condition="end with">regsvr32.exe</Image>
+        <Image condition="end with">rundll32.exe</Image>
+        <Image condition="end with">msiexec.exe</Image>
+        <Image condition="end with">installutil.exe</Image>
+        <Image condition="end with">odbcconf.exe</Image>
+
+        <!-- PowerShell suspect sur DC -->
+        <CommandLine condition="contains">-EncodedCommand</CommandLine>
+        <CommandLine condition="contains">-enc </CommandLine>
+        <CommandLine condition="contains">IEX</CommandLine>
+        <CommandLine condition="contains">Invoke-Expression</CommandLine>
+        <CommandLine condition="contains">DownloadString</CommandLine>
+        <CommandLine condition="contains">DownloadFile</CommandLine>
+        <CommandLine condition="contains">AmsiInitFailed</CommandLine>
+        <CommandLine condition="contains">-nop </CommandLine>
+
+        <!-- PsExec / execution distante -->
+        <Image condition="end with">psexec.exe</Image>
+        <Image condition="end with">psexec64.exe</Image>
+        <ParentImage condition="end with">psexec.exe</ParentImage>
+
+        <!-- WMI execution -->
+        <ParentImage condition="end with">wmiprvse.exe</ParentImage>
+
+        <!-- T1003 : Credential dumping ciblant NTDS -->
+        <CommandLine condition="contains">ntds</CommandLine>
+        <CommandLine condition="contains">NTDS.dit</CommandLine>
+        <CommandLine condition="contains">-ma lsass</CommandLine>
+        <CommandLine condition="contains">sekurlsa</CommandLine>
+        <CommandLine condition="contains">mimikatz</CommandLine>
+        <CommandLine condition="contains">lsadump</CommandLine>
+        <CommandLine condition="contains">dcsync</CommandLine>
+
+        <!-- ntdsutil - export NTDS -->
+        <Image condition="end with">ntdsutil.exe</Image>
+
+        <!-- Scheduled task -->
+        <Image condition="end with">schtasks.exe</Image>
+
+        <!-- Execution depuis chemin inhabituel pour un DC -->
+        <Image condition="begin with">C:\Users\</Image>
+        <Image condition="begin with">C:\Temp\</Image>
+        <Image condition="begin with">C:\Windows\Temp\</Image>
+
+      </ProcessCreate>
+    </RuleGroup>
+
+    <RuleGroup name="ProcessCreate - Exclusions AD DS" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\lsass.exe</Image>
+        <Image condition="is">C:\Windows\System32\svchost.exe</Image>
+        <Image condition="is">C:\Windows\System32\services.exe</Image>
+        <Image condition="is">C:\Windows\System32\wininit.exe</Image>
+        <Image condition="is">C:\Windows\System32\csrss.exe</Image>
+        <Image condition="is">C:\Windows\ADWS\Microsoft.ActiveDirectory.WebServices.exe</Image>
+        <Image condition="is">C:\Windows\System32\dfsrs.exe</Image>
+        <Image condition="is">C:\Windows\System32\dfssvc.exe</Image>
+        <Image condition="is">C:\Windows\System32\dns.exe</Image>
+        <Image condition="is">C:\Windows\System32\dnscmd.exe</Image>
+        <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</Image>
+        <Image condition="begin with">C:\Program Files\Windows Defender\</Image>
+        <Image condition="begin with">C:\Program Files\UTMStack\</Image>
+        <Image condition="begin with">C:\UTMStack\</Image>
+        <Image condition="end with">edgeIT.exe</Image>
+        <Image condition="end with">Sysmon64.exe</Image>
+        <Image condition="begin with">C:\Windows\SoftwareDistribution\</Image>
+        <Image condition="begin with">C:\Windows\WinSxS\</Image>
+        <Image condition="end with">repadmin.exe</Image>
+        <Image condition="end with">gpupdate.exe</Image>
+      </ProcessCreate>
+    </RuleGroup>
+
+
+    <!-- ================================================================ -->
+    <!-- EID 3 - NetworkConnect : DESACTIVE sur DC                       -->
+    <!-- Volume trop eleve : Kerberos, LDAP, DNS, replication AD         -->
+    <!-- Non declare = desactive par defaut                               -->
+    <!-- ================================================================ -->
+
+
+    <!-- ================================================================ -->
+    <!-- EID 10 - ProcessAccess : LSASS sur DC (CRITIQUE - DCSync)       -->
+    <!-- ================================================================ -->
+    <RuleGroup name="ProcessAccess - LSASS DC" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <TargetImage condition="end with">lsass.exe</TargetImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <RuleGroup name="ProcessAccess - Exclusions LSASS DC" groupRelation="or">
+      <ProcessAccess onmatch="exclude">
+        <SourceImage condition="is">C:\Windows\System32\wininit.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\services.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\lsm.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\svchost.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\wbem\wmiprvse.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\taskmgr.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\MRT.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\ADWS\Microsoft.ActiveDirectory.WebServices.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\dfsrs.exe</SourceImage>
+        <SourceImage condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</SourceImage>
+        <SourceImage condition="begin with">C:\Program Files\Windows Defender\</SourceImage>
+        <SourceImage condition="begin with">C:\Program Files\UTMStack\</SourceImage>
+        <SourceImage condition="begin with">C:\UTMStack\</SourceImage>
+        <GrantedAccess condition="is">0x1000</GrantedAccess>
+        <GrantedAccess condition="is">0x100000</GrantedAccess>
+      </ProcessAccess>
+    </RuleGroup>
+
+
+    <!-- ================================================================ -->
+    <!-- EID 11 - FileCreate : NTDS et SYSVOL uniquement sur DC          -->
+    <!-- ================================================================ -->
+    <RuleGroup name="FileCreate - NTDS et SYSVOL" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename condition="contains">NTDS</TargetFilename>
+        <TargetFilename condition="contains">ntds.dit</TargetFilename>
+        <TargetFilename condition="contains">\SYSVOL\</TargetFilename>
+        <TargetFilename condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
+        <TargetFilename condition="begin with">C:\Windows\Temp\</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <RuleGroup name="FileCreate - Exclusions DC" groupRelation="or">
+      <FileCreate onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\dfsrs.exe</Image>
+        <Image condition="is">C:\Windows\System32\svchost.exe</Image>
+        <Image condition="begin with">C:\Windows\SoftwareDistribution\</Image>
+        <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</Image>
+      </FileCreate>
+    </RuleGroup>
+
+
+    <!-- ================================================================ -->
+    <!-- EID 12+13 - RegistryEvent : Run keys + cles LSA critiques       -->
+    <!-- ================================================================ -->
+    <RuleGroup name="RegistryEvent - Persistance et auth AD" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <TargetObject condition="contains">HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">CurrentVersion\RunOnce</TargetObject>
+        <TargetObject condition="contains">HKLM\SYSTEM\CurrentControlSet\Services\</TargetObject>
+        <TargetObject condition="contains">AppInit_DLLs</TargetObject>
+        <TargetObject condition="contains">Image File Execution Options</TargetObject>
+        <TargetObject condition="contains">\Winlogon\</TargetObject>
+        <!-- Packages d'authentification LSA - persistence critique sur DC -->
+        <TargetObject condition="contains">LSA\Security Packages</TargetObject>
+        <TargetObject condition="contains">LSA\Notification Packages</TargetObject>
+        <TargetObject condition="contains">LSA\Authentication Packages</TargetObject>
+        <!-- WDigest - si reactif, mots de passe en clair en memoire LSASS -->
+        <TargetObject condition="contains">WDigest\UseLogonCredential</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <RuleGroup name="RegistryEvent - Exclusions DC" groupRelation="or">
+      <RegistryEvent onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\services.exe</Image>
+        <Image condition="is">C:\Windows\System32\svchost.exe</Image>
+        <Image condition="is">C:\Windows\System32\msiexec.exe</Image>
+        <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</Image>
+        <Image condition="begin with">C:\Program Files\Windows Defender\</Image>
+        <Image condition="begin with">C:\Program Files\UTMStack\</Image>
+        <Image condition="begin with">C:\UTMStack\</Image>
+      </RegistryEvent>
+    </RuleGroup>
+
+
+    <!-- ================================================================ -->
+    <!-- EID 17+18 - PipeEvent : named pipes suspects (T1570)            -->
+    <!-- ================================================================ -->
+    <RuleGroup name="PipeEvent - Named pipes suspects DC" groupRelation="or">
+      <PipeEvent onmatch="include">
+        <PipeName condition="begin with">\PSEXESVC</PipeName>
+        <PipeName condition="contains">psexec</PipeName>
+        <PipeName condition="begin with">\msagent_</PipeName>
+        <PipeName condition="begin with">\isapi_</PipeName>
+        <PipeName condition="begin with">\sdlrpc</PipeName>
+        <PipeName condition="begin with">\ntsvcs</PipeName>
+        <PipeName condition="begin with">\Posh</PipeName>
+        <PipeName condition="contains">postex_</PipeName>
+        <PipeName condition="contains">status_</PipeName>
+      </PipeEvent>
+    </RuleGroup>
+
+    <RuleGroup name="PipeEvent - Exclusions DC" groupRelation="or">
+      <PipeEvent onmatch="exclude">
+        <PipeName condition="is">\lsass</PipeName>
+        <PipeName condition="is">\winreg</PipeName>
+        <PipeName condition="is">\netlogon</PipeName>
+        <PipeName condition="is">\samr</PipeName>
+        <PipeName condition="is">\lsarpc</PipeName>
+        <PipeName condition="contains">Anonymous Pipe</PipeName>
+      </PipeEvent>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>
