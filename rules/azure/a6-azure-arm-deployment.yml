@@ -1,0 +1,21 @@
+name: Azure - ARM Deployment Executed
+dataTypes:
+  - azure
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 2
+category: Execution
+technique: T1072 - Software Deployment Tools
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1072/
+  - https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/overview
+description: 'Un déploiement ARM (Azure Resource Manager) a été exécuté. Les templates ARM permettent de créer ou modifier un ensemble de ressources Azure en une seule opération — ils peuvent être utilisés pour déployer des backdoors, modifier des configurations de sécurité ou provisionner des ressources non autorisées. Next Steps: 1. Identifier le template déployé et les ressources créées ou modifiées. 2. Vérifier l''auteur du déploiement via log.identity. 3. Contrôler si le déploiement était planifié et autorisé. 4. Examiner le contenu du template si disponible. 5. Supprimer les ressources non autorisées.'
+where: |-
+  equals("dataType", "azure") &&
+  contains("log.operationName", "DEPLOYMENTS/WRITE") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

@@ -1,0 +1,21 @@
+name: Azure - Virtual Machine Deallocated or Deleted
+dataTypes:
+  - azure
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 3
+category: Impact
+technique: T1529 - System Shutdown/Reboot
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1529/
+  - https://learn.microsoft.com/en-us/azure/virtual-machines/states-billing
+description: 'Une machine virtuelle Azure a été désallouée ou supprimée (deallocate/delete). La désallocation arrête la VM et libère les ressources de calcul — dans un contexte d''attaque, cela peut être utilisé pour interrompre des services ou effacer des preuves. Next Steps: 1. Identifier l''auteur de l''opération via log.identity. 2. Vérifier si l''opération était planifiée. 3. Contrôler si d''autres VMs ont été affectées simultanément. 4. Vérifier l''état des sauvegardes de la VM. 5. Redémarrer la VM si l''arrêt n''était pas autorisé.'
+where: |-
+  equals("dataType", "azure") &&
+  regexMatch("log.operationName", "(?i)MICROSOFT\\.COMPUTE/VIRTUALMACHINES/(DEALLOCATE|DELETE)/ACTION") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

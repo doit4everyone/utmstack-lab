@@ -1,0 +1,21 @@
+name: Azure - Resource Group Deleted
+dataTypes:
+  - azure
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 3
+category: Impact
+technique: T1485 - Data Destruction
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1485/
+  - https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-portal
+description: 'Un groupe de ressources Azure a été supprimé. La suppression d''un resource group entraîne la suppression irréversible de toutes les ressources qu''il contient. Dans un scénario d''attaque, cette action peut être utilisée pour détruire des preuves ou provoquer une interruption de service. Next Steps: 1. Identifier l''auteur de la suppression via log.identity. 2. Vérifier si la suppression était planifiée et autorisée. 3. Contrôler quelles ressources ont été supprimées. 4. Vérifier si des sauvegardes existent pour les ressources critiques. 5. Investiguer les connexions et activités de l''auteur dans les heures précédant la suppression.'
+where: |-
+  equals("dataType", "azure") &&
+  contains("log.operationName", "RESOURCEGROUPS/DELETE") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

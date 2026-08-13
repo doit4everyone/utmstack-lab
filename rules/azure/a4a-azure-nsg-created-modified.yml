@@ -1,0 +1,22 @@
+name: Azure - Network Security Group Created or Modified
+dataTypes:
+  - azure
+impact:
+  confidentiality: 2
+  integrity: 2
+  availability: 2
+category: Defense Evasion
+technique: T1562.007 - Impair Defenses Disable or Modify Cloud Firewall
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/007/
+  - https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview
+description: 'Un groupe de sécurité réseau Azure (NSG) a été créé ou modifié dans sa globalité. La création d''un nouveau NSG peut indiquer la mise en place d''une nouvelle infrastructure, légitime ou non. À corréler avec d''autres activités Azure inhabituelles. Next Steps: 1. Identifier le NSG créé ou modifié via log.resourceId. 2. Vérifier si la création est liée à un déploiement planifié. 3. Contrôler l''auteur via log.identity.authorization.evidence. 4. Vérifier les règles appliquées au NSG.'
+where: |-
+  equals("dataType", "azure") &&
+  contains("log.operationName", "NETWORKSECURITYGROUPS/WRITE") &&
+  !contains("log.operationName", "SECURITYRULES") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

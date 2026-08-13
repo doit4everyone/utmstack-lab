@@ -1,0 +1,21 @@
+name: Azure - Network Security Group Rule Added or Modified
+dataTypes:
+  - azure
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Defense Evasion
+technique: T1562.007 - Impair Defenses Disable or Modify Cloud Firewall
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/007/
+  - https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview
+description: 'Une règle de sécurité individuelle dans un NSG Azure a été ajoutée ou modifiée. Ce pattern est plus suspect que la modification du NSG entier — un attaquant qui a compromis un compte Azure va typiquement ajouter une règle ciblée pour ouvrir un port (RDP 3389, SSH 22, WinRM 5985) plutôt que de recréer un NSG complet. Next Steps: 1. Identifier la règle modifiée via log.resourceId (contient le nom de la règle). 2. Vérifier si un port sensible a été ouvert (RDP, SSH, WinRM, RPC). 3. Contrôler l''auteur via log.identity.authorization.evidence. 4. Vérifier si la modification est liée à un déploiement planifié. 5. Supprimer la règle si non autorisée.'
+where: |-
+  equals("dataType", "azure") &&
+  contains("log.operationName", "NETWORKSECURITYGROUPS/SECURITYRULES/WRITE") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

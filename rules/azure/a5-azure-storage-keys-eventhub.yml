@@ -1,0 +1,21 @@
+name: Azure - Event Hub Authorization Keys Listed
+dataTypes:
+  - azure
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Credential Access
+technique: T1552.005 - Unsecured Credentials Cloud Instance Metadata API
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1552/005/
+  - https://learn.microsoft.com/en-us/azure/event-hubs/authorize-access-shared-access-signature
+description: 'Les clés d''autorisation d''un espace de noms Event Hub Azure ont été listées (listKeys). Ces clés permettent d''envoyer et de recevoir des messages depuis l''Event Hub — leur exposition compromet l''intégrité du pipeline de données. Dans ce lab, l''Event Hub est utilisé par UTMStack pour collecter les logs Azure — une compromission de ces clés permettrait à un attaquant d''injecter de faux logs ou de perturber la collecte. Next Steps: 1. Identifier le principal ayant listé les clés via log.identity. 2. Vérifier si l''accès est légitime. 3. Effectuer une rotation des clés si compromis. 4. Vérifier l''intégrité des logs collectés dans la fenêtre temporelle.'
+where: |-
+  equals("dataType", "azure") &&
+  contains("log.operationName", "EVENTHUB") &&
+  contains("log.operationName", "LISTKEYS")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
