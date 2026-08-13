@@ -1,0 +1,20 @@
+name: L2 - Sudo Command Execution
+dataTypes:
+  - linux
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 2
+category: Privilege Escalation
+technique: T1548.003 - Abuse Elevation Control Mechanism Sudo and Sudo Caching
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1548/003/
+description: 'Une commande a été exécutée avec des privilèges root via sudo sur un serveur Linux (auditd USER_AUTH success sudo). Toute exécution sudo doit être tracée et vérifiée. Next Steps: 1. Identifier le compte via log.userauth.acct. 2. Vérifier si la commande est autorisée. 3. Contrôler les connexions SSH récentes depuis le même compte. 4. Vérifier si le compte est dans sudoers de manière légitime. 5. Révoquer les droits sudo si non autorisé.'
+where: |-
+  equals("action", "USER_AUTH") &&
+  contains("log.userauth.result", "success") &&
+  regexMatch("log.userauth.exe", "(?i)sudo")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
