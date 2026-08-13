@@ -1,0 +1,35 @@
+name: S1 - LOLBAS Execution Detected
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 2
+category: Defense Evasion
+technique: T1218 - System Binary Proxy Execution
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1218/
+  - https://lolbas-project.github.io/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4688
+description: 'Un binaire Windows légitime fréquemment détourné (LOLBAS) a été exécuté avec une ligne de commande suspecte (EID 4688). Les attaquants utilisent ces binaires signés Microsoft (certutil, mshta, regsvr32, rundll32, etc.) pour télécharger des payloads, exécuter du code distant ou contourner les défenses sans déposer d''exécutable malveillant. Cette règle nécessite l''activation de la GPO "Inclure la ligne de commande dans les événements de création de processus". Note : Sysmon EID 1 serait l''approche idéale mais l''agent UTMStack ne remonte pas cet EID — EID 4688 est le contournement retenu. Next Steps: 1. Examiner la ligne de commande complète via log.data.CommandLine. 2. Identifier le processus parent via log.data.ParentProcessName (un parent Office ou navigateur est très suspect). 3. Vérifier si la commande télécharge un fichier distant ou exécute du code encodé. 4. Corréler avec les connexions réseau et créations de fichiers dans la même fenêtre. 5. Isoler la machine si le pattern est confirmé malveillant.'
+where: |-
+  equals("log.eventCode", 4688) &&
+  regexMatch("log.data.NewProcessName", "(?i)\\\\(certutil|mshta|regsvr32|rundll32|installutil|odbcconf|msbuild|bitsadmin|wmic|cmstp|regasm|regsvcs)[.]exe$") &&
+  !equals("log.eventDataSubjectUserSid", "S-1-5-18") &&
+  !(contains("log.data.NewProcessName", "rundll32.exe") &&
+    regexMatch("log.data.CommandLine", "(?i)C:\\\\Windows\\\\system32\\\\.*\\.dll")) &&
+  (
+    contains("log.data.CommandLine", "http") ||
+    contains("log.data.CommandLine", "-urlcache") ||
+    contains("log.data.CommandLine", "javascript:") ||
+    contains("log.data.CommandLine", "vbscript:") ||
+    contains("log.data.CommandLine", "-decode") ||
+    contains("log.data.CommandLine", "-encode") ||
+    contains("log.data.CommandLine", "scrobj.dll") ||
+    contains("log.data.CommandLine", "/i:") ||
+    regexMatch("log.data.CommandLine", "(?i)\\.(sct|xsl|hta)$")
+  )
+afterEvents: []
+groupBy: []
+deduplicateBy: []

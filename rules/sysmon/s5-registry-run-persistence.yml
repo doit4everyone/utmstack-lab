@@ -1,0 +1,24 @@
+name: S5 - Registry Run Key Persistence
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 2
+category: Persistence
+technique: T1547.001 - Boot or Logon Autostart Execution Registry Run Keys
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1547/001/
+  - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+description: 'Une valeur a été écrite dans une clé de démarrage automatique du registre (Sysmon EID 13). Les clés Run et RunOnce sont les vecteurs de persistance les plus utilisés — un exécutable référencé dans ces clés est lancé automatiquement à chaque démarrage ou connexion utilisateur. Les modifications effectuées par des processus système légitimes sont exclues. Next Steps: 1. Identifier la valeur ajoutée via log.data.Details. 2. Vérifier le chemin de l''exécutable référencé — un chemin dans Temp ou AppData est très suspect. 3. Identifier le processus ayant effectué la modification via log.data.Image. 4. Supprimer la valeur si non autorisée : Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "nom". 5. Analyser l''exécutable référencé (hash, VirusTotal).'
+where: |-
+  oneOf("log.eventCode", [12, 13]) &&
+  contains("log.channel", "Sysmon") &&
+  regexMatch("log.data.TargetObject", "(?i)\\\\(Run|RunOnce)\\\\") &&
+  !regexMatch("log.data.Image", "(?i)\\\\(services|svchost|msiexec|trustedinstaller|tiworker)[.]exe$") &&
+  !contains("log.data.Image", "Windows Defender") &&
+  !contains("log.data.Image", "UTMStack")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

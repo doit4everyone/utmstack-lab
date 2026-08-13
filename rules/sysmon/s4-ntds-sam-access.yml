@@ -1,0 +1,29 @@
+name: S4 - Suspicious Access to NTDS or SAM Files
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Credential Access
+technique: T1003.003 - OS Credential Dumping NTDS
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1003/003/
+  - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+description: 'Un processus a créé ou modifié un fichier dans le répertoire NTDS ou accédé à la base SAM (Sysmon EID 11). La base NTDS.dit contient tous les hashes de mots de passe du domaine — une copie non autorisée permet l''extraction offline de tous les credentials. Les accès légitimes de lsass.exe et du système sont exclus. Next Steps: 1. Identifier le processus accédant à NTDS via log.data.Image. 2. Vérifier si le fichier créé est ntds.dit ou une copie de celui-ci. 3. Rechercher une tentative de Volume Shadow Copy (vssadmin, wmic shadowcopy) dans la même fenêtre temporelle. 4. Isoler immédiatement le DC si un accès non autorisé est confirmé. 5. Réinitialiser le mot de passe krbtgt et tous les comptes privilégiés.'
+where: |-
+  equals("log.eventCode", 11) &&
+  contains("log.channel", "Sysmon") &&
+  (
+    contains("log.data.TargetFilename", "\\NTDS\\") ||
+    contains("log.data.TargetFilename", "ntds.dit") ||
+    contains("log.data.TargetFilename", "\\SAM") ||
+    contains("log.data.TargetFilename", "\\SYSTEM") ||
+    contains("log.data.TargetFilename", "\\SECURITY")
+  ) &&
+  !contains("log.data.Image", "lsass.exe") &&
+  !contains("log.data.Image", "System")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

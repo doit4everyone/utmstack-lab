@@ -1,0 +1,27 @@
+name: S2 - Suspicious LSASS Process Access (VMware)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Credential Access
+technique: T1003.001 - OS Credential Dumping LSASS Memory
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1003/001/
+  - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+description: 'Variante de S2 pour environnements virtualisés VMware Workstation/ESXi. Identique à s2-lsass-access.yml avec exclusion supplémentaire de vmtoolsd.exe (VMware Tools) qui accède légitimement à LSASS pour collecter des informations sur les processus actifs. Utiliser cette variante à la place de S2 dans les labs et environnements VMware — ne pas importer les deux simultanément. Next Steps: 1. Identifier le processus source via log.data.SourceImage. 2. Vérifier les droits d''accès via log.data.GrantedAccess — 0x1010 et 0x1410 sont caractéristiques de Mimikatz. 3. Analyser log.data.CallTrace pour identifier les DLLs injectées (présence de UNKNOWN = DLL non mappée suspecte). 4. Isoler la machine si un outil de dumping est confirmé. 5. Réinitialiser tous les mots de passe si compromise confirmée.'
+where: |-
+  equals("log.eventCode", 10) &&
+  contains("log.channel", "Sysmon") &&
+  contains("log.data.TargetImage", "lsass.exe") &&
+  !contains("log.data.SourceImage", "Windows Defender Advanced Threat Protection") &&
+  !contains("log.data.SourceImage", "Windows Defender") &&
+  !contains("log.data.SourceImage", "UTMStack") &&
+  !contains("log.data.SourceImage", "MRT.exe") &&
+  !contains("log.data.SourceImage", "taskmgr.exe") &&
+  !contains("log.data.SourceImage", "VMware Tools")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
