@@ -30,7 +30,7 @@ rules/
 |---|---|---|---|---|
 | [w1-account-lockout.yml](windows/w1-account-lockout.yml) | 4740 | T1110 | ✅ DC01-MAIN-SITE | Exclusion comptes machine (suffixe `$`) |
 | [w2-local-admin-group.yml](windows/w2-local-admin-group.yml) | 4732 | T1098 | ✅ gest-srv | Filtre SID S-1-5-32-544 (langue-agnostique) |
-| [w3-privileged-domain-group.yml](windows/w3-privileged-domain-group.yml) | 4728/4756 | T1098 | ✅ DC01-MAIN-SITE | Groupes Domain/Schema/Enterprise Admins via RID |
+| [w3-privileged-group-member-added.yml](windows/w3-privileged-group-member-added.yml) | 4728/4756 | T1098 | ✅ DC01-MAIN-SITE | Groupes Domain/Schema/Enterprise Admins via RID |
 | [w4-scheduled-task.yml](windows/w4-scheduled-task.yml) | 4698 | T1053.005 | ✅ WIN11-AD-TESTS | Exclusion namespaces Microsoft/Windows/SoftLanding |
 | [w5a-service-installed-user-dir.yml](windows/w5a-service-installed-user-dir.yml) | 7045 | T1543.003 | ✅ gest-srv | Services installés depuis répertoires utilisateur/temp |
 | [w5b-service-installed-suspicious-name.yml](windows/w5b-service-installed-suspicious-name.yml) | 7045 | T1543.003 | ✅ logique validée | Noms de service générés aléatoirement |
