@@ -1,0 +1,25 @@
+name: W7 - Kerberoasting RC4 Encryption Detected
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Credential Access
+technique: T1558.003 - Steal or Forge Kerberos Tickets Kerberoasting
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1558/003/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4769
+description: 'Une demande de ticket Kerberos avec chiffrement RC4 (type 23) a été détectée (EID 4769). Dans un environnement moderne, les tickets légitimes utilisent AES256 (type 18). Une demande RC4 sur un compte de service avec SPN est le signal caractéristique d''une attaque Kerberoasting — l''attaquant récupère le hash RC4 pour le cracker hors ligne. Les comptes machine et les comptes Azure AD Connect sont exclus. Next Steps: 1. Identifier le compte demandeur via target.user et la machine source via origin.ip. 2. Vérifier si d''autres demandes RC4 ont été émises depuis la même source dans la même fenêtre temporelle (signe d''un scan de comptes SPN). 3. Contrôler si le compte de service ciblé (log.eventDataServiceName) dispose de droits élevés. 4. Réinitialiser le mot de passe du compte de service ciblé. 5. Envisager la migration vers des comptes gMSA (Group Managed Service Accounts) pour éliminer le vecteur.'
+where: |-
+  equals("log.eventCode", 4769) &&
+  equals("log.channel", "Security") &&
+  equals("log.eventDataTicketEncryptionType", 23) &&
+  equals("log.eventDataStatus", 0) &&
+  !regexMatch("log.eventDataServiceName", "(?i)\\$$") &&
+  !equals("log.eventDataServiceName", "krbtgt") &&
+  !regexMatch("target.user", "(?i)^(MSOL_|AAD_|AZUREADSSOACC)")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

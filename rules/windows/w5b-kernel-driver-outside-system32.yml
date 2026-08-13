@@ -1,0 +1,22 @@
+name: W5b - Kernel Driver Installed Outside System32
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Defense Evasion
+technique: T1014 - Rootkit
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1014/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-7045
+description: 'Un pilote en mode noyau a été installé depuis un chemin inhabituel hors de system32\drivers (EID 7045). Les drivers noyau légitimes résident dans system32\drivers — un driver installé ailleurs est un indicateur fort de rootkit ou de technique d''évasion avancée. Next Steps: 1. Examiner le chemin du driver via log.eventDataImagePath. 2. Vérifier la signature numérique du fichier .sys. 3. Analyser le driver (hash, VirusTotal, analyse statique). 4. Arrêter et supprimer le service : sc.exe stop "nom" ; sc.exe delete "nom". 5. Envisager une analyse forensique complète de la machine.'
+where: |-
+  equals("log.eventCode", 7045) &&
+  equals("log.channel", "System") &&
+  contains("log.eventDataServiceType", "noyau") &&
+  !regexMatch("log.eventDataImagePath", "(?i)system32\\\\drivers\\\\")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

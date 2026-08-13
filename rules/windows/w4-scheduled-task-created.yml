@@ -1,0 +1,24 @@
+name: W4 - Suspicious Scheduled Task Created
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 2
+category: Persistence
+technique: T1053.005 - Scheduled Task
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1053/005/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4698
+description: 'Une tâche planifiée a été créée en dehors des namespaces système légitimes (EID 4698). Les tâches planifiées sont un vecteur de persistance fréquemment utilisé par les attaquants. Les namespaces Microsoft, Windows, SoftLanding et les tâches créées par SYSTEM ou les comptes machine sont exclus. Next Steps: 1. Examiner le contenu XML de la tâche via log.data.TaskContent pour identifier la commande exécutée. 2. Vérifier le compte ayant créé la tâche via log.eventDataSubjectUserName. 3. Contrôler si la tâche pointe vers un exécutable dans un chemin inhabituel (temp, appdata, etc.). 4. Supprimer la tâche si non autorisée : Unregister-ScheduledTask -TaskName "nom" -Confirm:$false. 5. Investiguer les autres activités du compte créateur dans la même fenêtre temporelle.'
+where: |-
+  equals("log.eventCode", 4698) &&
+  equals("log.channel", "Security") &&
+  !equals("log.eventDataSubjectUserSid", "S-1-5-18") &&
+  !regexMatch("log.eventDataSubjectUserName", "(?i)\\$$") &&
+  !regexMatch("log.data.TaskName", "(?i)^\\\\(Microsoft|Windows|SoftLanding)\\\\") &&
+  !contains("log.data.TaskName", "CreateExplorerShellUnelevatedTask")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

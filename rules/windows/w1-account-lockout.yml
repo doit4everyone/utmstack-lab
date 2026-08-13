@@ -1,0 +1,22 @@
+name: W1 - Account Lockout Detected
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 3
+category: Authentication
+technique: T1110 - Brute Force
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1110/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4740
+description: 'Un compte utilisateur a été verrouillé suite à un nombre excessif d''échecs d''authentification (EID 4740). Peut indiquer une attaque par force brute ou par pulvérisation de mots de passe. L''event est généré sur le contrôleur de domaine effectuant le verrouillage. Next Steps: 1. Identifier la machine source du verrouillage via le champ target.domain. 2. Vérifier les events 4625 (échecs d''authentification) précédant le verrouillage sur la même machine. 3. Contrôler si plusieurs comptes sont verrouillés simultanément (signe de password spray). 4. Réinitialiser le compte après investigation. 5. Vérifier si le compte ciblé est un compte privilégié.'
+where: |-
+  equals("log.eventCode", 4740) &&
+  equals("log.channel", "Security") &&
+  exists("target.user") &&
+  !regexMatch("target.user", "(?i)\\$$")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

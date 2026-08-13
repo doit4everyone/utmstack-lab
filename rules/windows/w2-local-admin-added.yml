@@ -1,0 +1,21 @@
+name: W2 - Member Added to Local Administrators Group
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Privilege Escalation
+technique: T1098 - Account Manipulation
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1098/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4732
+description: 'Un compte a été ajouté au groupe Administrateurs local (EID 4732, SID S-1-5-32-544). Le filtre sur le SID universel S-1-5-32-544 garantit la détection indépendamment de la langue du système. Peut indiquer une tentative de persistance ou d''élévation de privilèges sur un serveur membre. Next Steps: 1. Identifier le compte ajouté via log.data.MemberSid. 2. Vérifier si un EID 4720 (création de compte local) précède cet event sur la même machine. 3. Contrôler qui a effectué l''opération via log.eventDataSubjectUserName. 4. Vérifier si l''ajout est légitime (GPO, script d''administration). 5. Supprimer le compte si non autorisé et investiguer le vecteur d''accès initial.'
+where: |-
+  equals("log.eventCode", 4732) &&
+  equals("log.channel", "Security") &&
+  equals("log.data.TargetSid", "S-1-5-32-544")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

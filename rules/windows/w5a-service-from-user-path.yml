@@ -1,0 +1,21 @@
+name: W5a - Service Installed from User or Temp Directory
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 3
+category: Persistence
+technique: T1543.003 - Create or Modify System Process Windows Service
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1543/003/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-7045
+description: 'Un nouveau service Windows a été installé depuis un répertoire utilisateur ou temporaire (EID 7045). Les services légitimes s''installent dans Program Files ou Windows — un service depuis Temp, AppData ou Public est un signal fort de persistance malveillante. Next Steps: 1. Examiner le chemin complet via log.eventDataImagePath. 2. Identifier le compte ayant installé le service via log.data.AccountName. 3. Analyser l''exécutable (hash, VirusTotal). 4. Arrêter et supprimer le service : Stop-Service "nom" ; sc.exe delete "nom". 5. Investiguer les autres activités sur la machine dans la même fenêtre temporelle.'
+where: |-
+  equals("log.eventCode", 7045) &&
+  equals("log.channel", "System") &&
+  regexMatch("log.eventDataImagePath", "(?i)(\\\\temp\\\\|\\\\appdata\\\\|\\\\public\\\\|\\\\users\\\\|%temp%|%appdata%)")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

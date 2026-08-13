@@ -1,0 +1,22 @@
+name: W3 - Member Added to Privileged Domain Group
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Privilege Escalation
+technique: T1098 - Account Manipulation
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1098/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4728
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4756
+description: 'Un compte a été ajouté à un groupe privilégié du domaine (EID 4728 ou 4756). La détection cible les groupes les plus sensibles via leur RID universel : Domain Admins (-512), Schema Admins (-518), Enterprise Admins (-519), Group Policy Creator Owners (-520). Ces events sont générés sur le contrôleur de domaine. Next Steps: 1. Identifier le compte ajouté via log.data.MemberSid et log.data.MemberName. 2. Vérifier qui a effectué l''opération via log.eventDataSubjectUserName. 3. Confirmer si l''ajout est autorisé (ticket de changement, procédure administrative). 4. Retirer immédiatement le compte si non autorisé. 5. Investiguer les connexions récentes du compte ayant effectué l''opération (EID 4624).'
+where: |-
+  oneOf("log.eventCode", [4728, 4756]) &&
+  equals("log.channel", "Security") &&
+  regexMatch("log.data.TargetSid", "-(512|518|519|520)$")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
