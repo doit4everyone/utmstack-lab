@@ -1,0 +1,21 @@
+name: Exchange - External or Admin Access to Mailbox Detected
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Collection
+technique: T1114.002 - Email Collection Remote Email Collection
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1114/002/
+  - https://learn.microsoft.com/en-us/purview/audit-mailitemsaccessed
+description: 'Un accès externe à une boîte Exchange a été détecté via les events MailItemsAccessed (RecordType 50). Deux patterns sont couverts : accès par délégation depuis une application tierce (LogonType 1) ou accès administrateur à la boîte d''un autre utilisateur (LogonType 2). Ces patterns peuvent indiquer une règle de redirection externe, un accès post-compromission via un token OAuth, ou un abus de droits administrateur. Next Steps: 1. Identifier l''application accédant à la boîte via log.AppId. 2. Vérifier si log.ExternalAccess est true (accès depuis hors organisation). 3. Identifier la boîte cible via log.MailboxOwnerUPN. 4. Contrôler les emails accédés dans les folders listés. 5. Vérifier si des règles inbox ont été créées depuis cet accès (action InboxRuleCreated).'
+where: |-
+  equals("action", "MailItemsAccessed") &&
+  contains("log.Workload", "Exchange") &&
+  equals("log.ExternalAccess", true)
+afterEvents: []
+groupBy: []
+deduplicateBy: []

@@ -1,0 +1,23 @@
+name: Purview - Sensitive Data Auto-Label Rule Match
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Data Loss Prevention
+technique: T1567 - Exfiltration Over Web Service
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1567/
+  - https://learn.microsoft.com/en-us/purview/apply-sensitivity-label-automatically
+  - https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp
+description: 'Une règle d''étiquetage automatique Microsoft Purview a détecté des données sensibles et a appliqué un label de confidentialité (AutoSensitivityLabelRuleMatch, mode Enforce). Cet event indique que des données protégées circulent dans Exchange ou SharePoint. Les emails de notification DLP internes (notifications-utmstack, MipLabelsAgent) sont exclus pour éviter les boucles d''alertes. Surveiller les flux inattendus — un email contenant des données RH ou financières envoyé vers une adresse externe est un signal fort. Next Steps: 1. Identifier la politique déclenchée via log.PolicyName et la règle via log.ExecutionRuleName. 2. Identifier le label appliqué via log.LabelName. 3. Vérifier si le destinataire ou le chemin de partage est approprié pour ce niveau de confidentialité. 4. Corréler avec les events DLPRuleMatch si une politique DLP couvre les mêmes données. 5. Vérifier si l''expéditeur est autorisé à manipuler des données de ce niveau de sensibilité.'
+where: |-
+  equals("action", "AutoSensitivityLabelRuleMatch") &&
+  contains("log.RuleMode", "Enforce") &&
+  !contains("origin.user", "notifications-") &&
+  !contains("origin.user", "MipLabelsAgent")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

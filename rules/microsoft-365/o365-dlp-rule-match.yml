@@ -12,9 +12,9 @@ references:
   - https://attack.mitre.org/techniques/T1567/
   - https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp
   - https://learn.microsoft.com/en-us/purview/dlp-policy-reference
-description: 'Une règle DLP Microsoft Purview a détecté des données sensibles (numéro AVS, données personnelles, informations confidentielles) dans un fichier OneDrive, SharePoint ou Exchange. L''événement indique qu''un utilisateur a tenté d''accéder ou partager un document contenant des informations protégées par les politiques nLPD/RGPD. Vérifier le fichier concerné via log.SharePointMetaData.FileName et la politique déclenchée via log.PolicyDetails.'
+description: 'Une règle DLP Microsoft Purview a détecté des données sensibles (numéro AVS, données personnelles, informations confidentielles) dans un fichier OneDrive, SharePoint ou Exchange. L''événement indique qu''un utilisateur a tenté d''accéder ou de partager un document contenant des informations protégées par les politiques nLPD/RGPD. Vérifier le fichier concerné via log.SharePointMetaData.FileName et la politique déclenchée via log.PolicyDetails. Next Steps: 1. Identifier la politique DLP déclenchée via log.PolicyDetails. 2. Identifier le fichier ou l''email source. 3. Vérifier si le partage était autorisé. 4. Contacter l''utilisateur si le partage semble involontaire. 5. Documenter l''incident dans le registre de traitement nLPD si des données personnelles sont impliquées.'
 where: |-
-  oneOf("action", ["DLPRuleMatch"])
+  regexMatch("action", "(?i)dlprulematch")
 afterEvents: []
 groupBy: []
 deduplicateBy: []

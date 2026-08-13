@@ -1,0 +1,21 @@
+name: Entra ID - User Account Created Outside Sync Process
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 1
+category: Persistence
+technique: T1136.003 - Create Account Cloud Account
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1136/003/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
+description: 'Un compte utilisateur a été créé directement dans Entra ID, hors du processus de synchronisation Entra Connect (Add user., Workload AzureActiveDirectory). La création manuelle d''un compte cloud contourne les contrôles IAM on-premise et peut indiquer une tentative de persistance post-compromission. Les créations via Entra Connect (ConnectSyncProvisioning) sont exclues car elles représentent le flux normal de synchronisation AD→Entra. Next Steps: 1. Identifier le compte créé via log.ObjectId. 2. Vérifier si le compte est autorisé dans le processus RH/IT. 3. Contrôler l''acteur ayant effectué la création via origin.user. 4. Vérifier si le compte a reçu des droits ou licences après sa création. 5. Désactiver le compte si non autorisé et investiguer le vecteur initial.'
+where: |-
+  equals("action", "Add user.") &&
+  contains("log.Workload", "AzureActiveDirectory") &&
+  !contains("origin.user", "ConnectSyncProvisioning")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

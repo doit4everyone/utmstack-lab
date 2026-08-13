@@ -1,0 +1,21 @@
+name: Entra ID - OAuth Application Consent Granted
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Persistence
+technique: T1550.001 - Use Alternate Authentication Material Application Access Token
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1550/001/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
+  - https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/consent-and-permissions-overview
+description: 'Un utilisateur ou un administrateur a accordé son consentement à une application OAuth tierce dans Entra ID. Les attaques par consentement OAuth malveillant (Consent Phishing, T1550.001) consistent à faire approuver par l''utilisateur une application légitime en apparence qui dispose en réalité de droits étendus (lecture des emails, accès OneDrive, envoi au nom de l''utilisateur). Ce vecteur est utilisé pour obtenir un accès persistant sans vol de mot de passe. Next Steps: 1. Identifier l''application via log.ObjectId. 2. Vérifier les permissions accordées dans le portail Entra ID (Entra ID → Applications d''entreprise). 3. Contrôler si l''application est connue et approuvée par l''IT. 4. Révoquer le consentement si l''application est suspecte. 5. Vérifier les activités post-consentement (accès Exchange, SharePoint) depuis l''AppId de l''application.'
+where: |-
+  equals("action", "Consent to application.") &&
+  contains("log.Workload", "AzureActiveDirectory")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

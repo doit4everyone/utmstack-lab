@@ -1,0 +1,21 @@
+name: Entra ID - Member Added to Group by User
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 1
+category: Privilege Escalation
+technique: T1098.003 - Account Manipulation Additional Cloud Roles
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1098/003/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
+description: 'Un compte utilisateur a été ajouté à un groupe Entra ID par un utilisateur humain (Add member to group., Workload AzureActiveDirectory). Les ajouts automatiques par des ServicePrincipals Microsoft (Microsoft Approval Management, Entra Connect) sont exclus. Un ajout non autorisé à un groupe de sécurité ou à un groupe M365 peut conférer des droits d''accès à des ressources sensibles. Next Steps: 1. Identifier le membre ajouté via log.ObjectId. 2. Identifier le groupe cible — rechercher Group.DisplayName dans log.ModifiedProperties. 3. Vérifier si l''acteur (origin.user) est autorisé à modifier ce groupe. 4. Contrôler les droits associés au groupe cible. 5. Retirer le membre si l''ajout n''est pas justifié.'
+where: |-
+  equals("action", "Add member to group.") &&
+  contains("log.Workload", "AzureActiveDirectory") &&
+  !contains("origin.user", "ServicePrincipal_")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

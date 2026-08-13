@@ -1,0 +1,21 @@
+name: Entra ID - MFA Required Interrupt on Sign-In
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Credential Access
+technique: T1078.004 - Valid Accounts Cloud Accounts
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1078/004/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
+description: 'Une tentative de connexion Entra ID a été interrompue par une demande MFA (LogonError UserStrongAuthClientAuthNRequiredInterrupt, ErrorNumber 50074). Ce signal est normal lors d''une première connexion depuis un nouvel appareil, mais devient suspect s''il est associé à une IP externe inconnue ou à un pays inhabituel. Dans un scénario AiTM (Adversary-in-the-Middle), le proxy malveillant relaie le token de session après que l''utilisateur a complété le MFA — l''interrupt lui-même reste visible dans les logs. Next Steps: 1. Vérifier si l''IP source (origin.ip) est habituelle pour cet utilisateur. 2. Contrôler le pays d''origine via origin.geolocation.countryCode. 3. Vérifier si une connexion réussie (UserLoggedIn) a suivi dans la même fenêtre temporelle depuis la même IP. 4. Révoquer les sessions actives via Entra ID si compromission suspectée. 5. Corréler avec les events o365-impossible-travel si le pays est inhabituel.'
+where: |-
+  equals("action", "UserLoginFailed") &&
+  contains("log.Workload", "AzureActiveDirectory") &&
+  equals("log.LogonError", "UserStrongAuthClientAuthNRequiredInterrupt")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
