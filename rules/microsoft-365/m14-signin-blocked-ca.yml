@@ -1,0 +1,20 @@
+name: O365 - Sign-In Blocked by Conditional Access Policy
+dataTypes:
+  - o365
+impact:
+  confidentiality: 2
+  integrity: 2
+  availability: 1
+category: Initial Access
+technique: T1078.004 - Valid Accounts Cloud Accounts
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1078/004/
+  - https://learn.microsoft.com/en-us/entra/identity/conditional-access/overview
+description: 'Une tentative de connexion a été bloquée par une politique d''Accès Conditionnel Entra ID (ErrorNumber 53003, LogonError BlockedByConditionalAccess). Dans ce lab, la politique CA-M14-SignIn-Outside-Hours-ReportOnly bloque les connexions en dehors des heures ouvrables (lundi-vendredi 07h00-19h00 CEST) et le week-end entier. Une connexion bloquée hors heures peut indiquer une tentative d''accès par un attaquant ayant compromis des credentials valides, ou un accès non autorisé depuis un fuseau horaire inhabituel. Note nLPD : cette règle s''appuie sur une politique CA temporelle dont le déploiement doit être documenté dans le registre des activités de traitement comme contrôle d''accès système, et communiqué aux utilisateurs dans la politique de sécurité IT. Next Steps: 1. Identifier le compte bloqué via origin.user. 2. Identifier l''IP source via origin.ip et la géolocalisation. 3. Vérifier si la connexion était légitime (employé en déplacement, décalage horaire) ou suspecte (pays inhabituel, IP de datacenter). 4. Corréler avec d''autres events du même compte (UserLoginFailed, MFA prompts) dans les 24h précédentes. 5. Si suspect, forcer la réinitialisation du mot de passe et révoquer les sessions actives.'
+where: |-
+  equals("action", "UserLoginFailed") &&
+  equals("log.LogonError", "BlockedByConditionalAccess")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

@@ -1,0 +1,20 @@
+name: O365 - Unified Audit Log Ingestion Disabled
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Defense Evasion
+technique: T1562.008 - Impair Defenses Disable Cloud Logs
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/008/
+  - https://learn.microsoft.com/en-us/powershell/module/exchange/set-adminauditlogconfig
+description: 'La commande Set-AdminAuditLogConfig a été exécutée sur le tenant Exchange Online. Cette commande permet de désactiver l''ingestion du journal d''audit unifié (UnifiedAuditLogIngestionEnabled), ce qui aveugle le SIEM en supprimant la collecte de tous les events O365. Toute exécution de cette commande est suspecte indépendamment du résultat — un attaquant ayant compromis un compte admin ou un ServicePrincipal Exchange peut l''utiliser pour effacer ses traces. Next Steps: 1. Identifier l''acteur via origin.user et origin.ip. 2. Vérifier si origin.user est un compte humain ou un ServicePrincipal non-Microsoft. 3. Contrôler log.Parameters pour identifier si l''audit a été désactivé (UnifiedAuditLogIngestionEnabled = False). 4. Vérifier l''état actuel de l''audit dans le portail Purview (Audit → Paramètres). 5. Réactiver immédiatement si désactivé et investiguer le vecteur d''accès.'
+where: |-
+  equals("action", "Set-AdminAuditLogConfig") &&
+  contains("log.Workload", "Exchange")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
