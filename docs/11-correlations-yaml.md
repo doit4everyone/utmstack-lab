@@ -1,6 +1,6 @@
 ---
 title: "Chapitre 11 — Règles de corrélation YAML personnalisées | DoIt4Everyone"
-description: "Création et validation de règles de corrélation YAML personnalisées pour UTMStack v11 CE : séries W (Windows natif), WD (Windows Defender), S (Sysmon via WEF), L (Linux auditd), M (Microsoft 365/Entra ID) et A (Azure Activity Log). 75 règles validées en live dans OpenSearch."
+description: "Création et validation de règles de corrélation YAML personnalisées pour UTMStack v11 CE : séries W (Windows natif), WD (Windows Defender), S (Sysmon via WEF), L (Linux auditd), M (Microsoft 365/Entra ID) et A (Azure Activity Log). 38 règles personnalisées validées en live dans OpenSearch, couvrant 28 techniques MITRE ATT&CK."
 lang: fr
 ---
 <style>
@@ -373,14 +373,14 @@ description: 'Un pilote en mode noyau a été installé depuis un chemin inhabit
 where: |-
   equals("log.eventCode", 7045) &&
   equals("log.channel", "System") &&
-  contains("log.eventDataServiceType", "noyau") &&
+  regexMatch("log.eventDataServiceType", "(?i)(noyau|kernel)") &&
   !regexMatch("log.eventDataImagePath", "(?i)system32\\\\drivers\\\\")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Note importante :** le champ `log.eventDataServiceType` contient `"pilote en mode noyau"` sur les systèmes Windows en français. Cette règle est à adapter pour les environnements en anglais (`"kernel mode driver"`).
+**Note :** le champ `log.eventDataServiceType` contient `"pilote en mode noyau"` sur les systèmes Windows en français et `"kernel mode driver"` en anglais. Le `regexMatch` avec alternance `(?i)(noyau|kernel)` couvre les deux langues sans modification supplémentaire.
 
 ---
 
@@ -493,12 +493,13 @@ Ces quatre règles ont été créées et validées lors des sessions précédent
 
 | Règle | EID | Description |
 |---|---|---|
-| WD1 - Tamper Protection Blocked | 5013 | Tentative de désactivation de la protection anti-altération |
-| WD2 - Real-Time Protection Disabled | 5001 | Désactivation de la protection temps réel |
-| WD3 - Malware Remediation Failed | 1118 | Échec de remédiation d'un malware détecté |
-| WD4 - Exclusion Added | 5007 | Ajout d'une exclusion Defender (vecteur d'évasion) |
+| WD1 - Malware Detected | 1116 | Malware détecté par Windows Defender avec ThreatName complet |
+| WD2 - Tamper Protection Blocked | 5013 | Tentative de désactivation de la protection anti-altération |
+| WD3 - Real-Time Protection Disabled | 5001 | Désactivation de la protection temps réel |
+| WD4 - Malware Remediation Failed | 1118 | Échec de remédiation d'un malware détecté |
+| WD5 - Exclusion Added | 5007 | Ajout d'une exclusion Defender (vecteur d'évasion) |
 
-**Note :** l'Event 1116 (Malware Detected) est couvert par la règle native UTMStack — aucune règle custom nécessaire.
+**Note :** l'Event 1116 (Malware Detected) est couvert par la règle custom `windows-defender-malware-detected.yml` — aucune règle native UTMStack ne couvre cet event.
 
 **Faux positif WD4 documenté :** les modifications de configuration Defender liées aux mises à jour Windows (`WdConfigHash`, `UX Configuration`, `DLP Configs`, `EcsConfigs`) génèrent des events EID 5007 légitimes. Ces patterns sont exclus dans la règle.
 
@@ -1149,48 +1150,6 @@ deduplicateBy: []
 
 ---
 
-### M12 — Exchange External Access to Mailbox
-
-Un accès externe à une boîte Exchange a été détecté via les events `MailItemsAccessed` (`log.ExternalAccess = true`). Ce pattern peut indiquer un accès post-compromission via un token OAuth délégué depuis un tenant tiers.
-
-**Note sur la validation :** dans le lab, aucun event avec `ExternalAccess = true` n'a été généré en conditions normales. Les 47 events `MailItemsAccessed` présents en base sont tous des accès internes (`ExternalAccess = false`). `ExternalAccess = true` se génère uniquement quand une application d'un autre tenant Microsoft accède à la boîte via l'API Graph — ce qui nécessite un consentement OAuth cross-tenant. La règle est validée logiquement sur la structure des champs confirmée en OpenSearch : `log.ExternalAccess` est bien un booléen natif et la syntaxe `equals("log.ExternalAccess", true)` est correcte. Le déclenchement se produira lors d'un accès réel depuis une application d'un tenant externe.
-
-**Technique MITRE :** T1114.002 — Email Collection: Remote Email Collection
-
-```yaml
-name: Exchange - External Access to Mailbox Detected
-dataTypes:
-  - o365
-impact:
-  confidentiality: 3
-  integrity: 2
-  availability: 1
-category: Collection
-technique: T1114.002 - Email Collection Remote Email Collection
-adversary: origin
-references:
-  - https://attack.mitre.org/techniques/T1114/002/
-  - https://learn.microsoft.com/en-us/purview/audit-mailitemsaccessed
-description: 'Un accès externe à une boîte Exchange a été détecté via les events MailItemsAccessed (RecordType 50, ExternalAccess true). Ce pattern peut indiquer une règle de redirection externe, un accès post-compromission via un token OAuth délégué, ou un abus de droits. Dans un scénario de compromission de compte, l''attaquant accède à la boîte via une application tierce disposant du consentement OAuth. Next Steps: 1. Identifier l''application accédant à la boîte via log.AppId. 2. Identifier la boîte cible via log.MailboxOwnerUPN. 3. Vérifier si le consentement OAuth de l''application est légitime (Entra ID → Applications d''entreprise). 4. Contrôler les emails accédés. 5. Vérifier si des règles inbox ont été créées depuis cet accès.'
-where: |-
-  equals("action", "MailItemsAccessed") &&
-  contains("log.Workload", "Exchange") &&
-  equals("log.ExternalAccess", true)
-afterEvents: []
-groupBy: []
-deduplicateBy: []
-```
-
-### Limitation Purview Audit Premium
-
-La détection des tentatives d'accès à un fichier chiffré par Azure Information Protection avec l'IP de l'attaquant nécessite les events `AipProtectionAction` (RecordType 96). Ces events contiennent les champs `ClientIP`, `UserId`, `DeviceName`, `ApplicationName` et `Operation = SensitivityLabeledFileOpened`.
-
-Ces events sont absents dans l'index `v11-log-o365-*` de ce lab. Lors d'un test en conditions réelles — copie d'un fichier protégé AIP vers un appareil non géré, tentative d'ouverture — le chiffrement AIP a bien bloqué l'accès, mais aucun event avec l'IP source n'a remonté dans UTMStack. Les events `AipProtectionAction` nécessitent **Microsoft Purview Audit Premium** (E5 ou add-on), non inclus dans Business Premium.
-
-Le chiffrement AIP fonctionne et protège les fichiers avec Business Premium — c'est uniquement le logging détaillé des tentatives d'accès avec IP source qui nécessite Audit Premium. Cette distinction est importante : ne pas avoir Audit Premium ne signifie pas que les fichiers sont moins protégés, seulement que la visibilité sur les tentatives d'accès non autorisées est limitée.
-
----
-
 ## Série A — Azure Activity Log
 
 Les règles A couvrent les événements Azure Activity Log collectés via l'Event Hub et indexés dans `v11-log-azure-*` avec `dataType = azure`. Deux structures coexistent dans l'index : Activity Log (`log.operationName`, en majuscules) et Event Grid (`log.data.operationName`, en casse mixte). Les règles A ciblent principalement Activity Log. Les fichiers YAML sont disponibles dans [`rules/azure/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/azure).
@@ -1454,6 +1413,443 @@ deduplicateBy: []
 ```
 
 **Test de déclenchement :** créer n'importe quelle ressource Azure via le portail (NSG, VM, IP publique) — le déploiement ARM implicite déclenche automatiquement A6. Pour un déploiement ARM explicite, utiliser Azure → Déployer un modèle personnalisé avec un template JSON minimal.
+
+---
+
+### A7 — Role Assignment Created or Deleted
+
+Une attribution de rôle Azure a été créée ou supprimée sur un abonnement ou un groupe de ressources. Cette opération modifie directement les droits d'accès aux ressources Azure et constitue un vecteur d'escalade de privilèges documenté dans plusieurs incidents majeurs. Le groupe Lapsus$ et APT10 (Cloud Hopper) utilisaient systématiquement ce mécanisme pour s'attribuer le rôle Owner sur des subscriptions entières après avoir compromis un premier compte — obtenant ainsi un accès illimité à toutes les ressources Azure de leurs victimes.
+
+**Particularité du champ auteur :** `origin.user` n'est pas mappé pour les events Azure Role Assignment. L'UPN de l'auteur se trouve dans `log.identity.claims` (champ imbriqué non filtrable par le moteur). Pour identifier l'auteur lors d'une investigation, consulter `log.identity.authorization.evidence.role` (rôle de l'auteur) et `origin.ip`. Le champ `log.properties.responseBody` contient le détail complet de l'attribution — rôle attribué, `principalId` et `principalType` de la cible.
+
+**Technique MITRE :** T1078.004 — Valid Accounts: Cloud Accounts
+
+```yaml
+name: Azure - Role Assignment Created or Deleted
+dataTypes:
+  - azure
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Privilege Escalation
+technique: T1078.004 - Valid Accounts Cloud Accounts
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1078/004/
+  - https://learn.microsoft.com/en-us/azure/role-based-access-control/overview
+description: 'Une attribution de rôle Azure a été créée ou supprimée. Vecteur d''escalade documenté dans les attaques Lapsus$ et Cloud Hopper/APT10. Next Steps: 1. Identifier la ressource via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims. 3. Vérifier si le rôle attribué est Owner ou Contributor. 4. Confirmer si l''opération était autorisée. 5. Vérifier les opérations suspectes suivantes (DEPLOYMENTS/WRITE, LOCKS/DELETE).'
+where: |-
+  contains("log.operationName", "ROLEASSIGNMENTS") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** Azure → groupe de ressources `tests-events-utmstack` → Contrôle d'accès (IAM) → Ajouter une attribution de rôle → rôle Lecteur → utilisateur de test → Attribuer, puis retirer. Deux alertes déclenchent : `ROLEASSIGNMENTS/WRITE` et `ROLEASSIGNMENTS/DELETE`.
+
+---
+
+### A8 — Diagnostic Settings Modified or Deleted
+
+Un paramètre de diagnostic Azure a été créé, modifié ou supprimé. Les paramètres de diagnostic contrôlent l'envoi des logs vers Log Analytics, Event Hub ou Storage Account. Leur suppression peut aveugler le SIEM en interrompant la collecte des logs Azure Activity.
+
+**Observation importante :** le rôle minimum requis est **Log Analytics Contributor** — pas Owner. Un attaquant avec des droits apparemment limités peut compromettre la visibilité SOC complète.
+
+**Technique MITRE :** T1562.008 — Impair Defenses: Disable Cloud Logs
+
+```yaml
+name: Azure - Diagnostic Settings Modified or Deleted
+dataTypes:
+  - azure
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Defense Evasion
+technique: T1562.008 - Impair Defenses Disable Cloud Logs
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/008/
+  - https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/diagnostic-settings
+description: 'Un paramètre de diagnostic Azure a été créé, modifié ou supprimé. Note : le rôle Log Analytics Contributor suffit — aucun droit Owner requis. Next Steps: 1. Identifier la ressource via log.resourceId. 2. Identifier l''acteur via origin.ip. 3. Vérifier si l''opération était autorisée. 4. Contrôler les opérations suspectes suivantes. 5. Restaurer le paramètre si supprimé de manière non autorisée.'
+where: |-
+  contains("log.operationName", "DIAGNOSTICSETTINGS") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** Azure → ressource existante → Paramètres de diagnostic → Ajouter → `allLogs` → Diffuser vers Event Hub `utmstack-azure` → Enregistrer, puis supprimer. Deux alertes déclenchent.
+
+---
+
+### A9 — Key Vault Created or Deleted
+
+Un coffre de clés Azure (Key Vault) a été créé ou supprimé. Les Key Vaults contiennent les secrets les plus sensibles d'une infrastructure cloud — chaînes de connexion, clés API, certificats. La suppression d'un Key Vault efface l'ensemble de ces secrets en une seule opération.
+
+**Limitation documentée :** les accès aux secrets individuels transitent par les logs de diagnostic Key Vault (`AuditEvent`) et non par l'Activity Log — le connecteur UTMStack v11 ne parse pas ces logs de diagnostic. Cette règle couvre uniquement les opérations sur le coffre lui-même. En cas de suppression, vérifier immédiatement l'état soft-delete via le portail Azure.
+
+**Technique MITRE :** T1485 — Data Destruction
+
+```yaml
+name: Azure - Key Vault Created or Deleted
+dataTypes:
+  - azure
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Impact
+technique: T1485 - Data Destruction
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1485/
+  - https://learn.microsoft.com/en-us/azure/key-vault/general/logging
+description: 'Un coffre de clés Azure a été créé ou supprimé. Note : les accès aux secrets individuels ne sont pas visibles dans l''Activity Log. Next Steps: 1. Identifier le Key Vault via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims. 3. Pour une suppression : vérifier l''état soft-delete et initier une restauration. 4. Pour une création non autorisée : vérifier les secrets créés via le portail. 5. Corréler avec ROLEASSIGNMENTS/WRITE et DIAGNOSTICSETTINGS/DELETE.'
+where: |-
+  contains("log.operationName", "KEYVAULT/VAULTS") &&
+  !contains("log.operationName", "REGISTER") &&
+  regexMatch("log.resultType", "(?i)(Success|Accept)")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** Azure → Key Vaults → Créer dans `tests-events-utmstack` → Créer. Puis supprimer le coffre. Deux alertes déclenchent : création (`resultType = Accept`) et suppression (`resultType = Success`). La création via le portail déclenche également A6 (ARM Deployment implicite).
+
+---
+
+### A10 — Resource Lock Deleted or Modified
+
+Un verrou de ressource Azure (Resource Lock) a été supprimé ou modifié. Les locks `CanNotDelete` ou `ReadOnly` protègent les ressources critiques contre la suppression malveillante.
+
+**Contexte d'attaque réel :** le groupe **Scattered Spider** l'a utilisé lors des attaques contre MGM Resorts et Caesars Entertainment en 2023. Après avoir compromis le helpdesk par ingénierie sociale, les attaquants supprimaient systématiquement les locks avant de détruire les ressources et les sauvegardes Azure. Le coût pour MGM Resorts seul dépasse 100 millions de dollars. La corrélation entre A10 et A2/A3/A11 dans une courte fenêtre temporelle constitue un indicateur fort d'intention malveillante.
+
+**Technique MITRE :** T1562.007 — Impair Defenses: Disable or Modify Cloud Firewall
+
+```yaml
+name: Azure - Resource Lock Deleted or Modified
+dataTypes:
+  - azure
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 3
+category: Defense Evasion
+technique: T1562.007 - Impair Defenses Disable or Modify Cloud Firewall
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/007/
+  - https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/lock-resources
+description: 'Un verrou de ressource Azure a été supprimé ou modifié. Technique documentée chez Scattered Spider (MGM Resorts, Caesars Entertainment, 2023, coût estimé +100M USD). Next Steps: 1. Identifier la ressource via log.resourceId. 2. Identifier l''acteur via origin.ip. 3. Vérifier si des opérations destructrices ont suivi (A2, A3, A11). 4. Confirmer si l''opération était autorisée. 5. Restaurer le lock si supprimé de manière non autorisée.'
+where: |-
+  contains("log.operationName", "AUTHORIZATION/LOCKS") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** Azure → groupe de ressources `tests-events-utmstack` → Verrous → Ajouter → nom `test-lock` → type `CanNotDelete` → OK. Puis supprimer le verrou. Deux alertes déclenchent.
+
+---
+
+### A11 — Deletion Attempt Blocked by Resource Lock
+
+Une tentative de suppression d'une ressource Azure a été bloquée par un verrou. Le champ `log.properties.statusMessage` contenant `ScopeLocked` est le discriminant précis qui distingue ce blocage d'autres conflits Azure.
+
+Ce signal est particulièrement significatif corrélé avec A10 : la séquence `LOCKS/DELETE → DELETE/Failure/ScopeLocked → LOCKS/DELETE → DELETE/Success` est le pattern exact d'un attaquant contournant méthodiquement les protections. La détection conjointe de A10 et A11 dans une fenêtre courte est un signal d'urgence.
+
+**Technique MITRE :** T1485 — Data Destruction
+
+```yaml
+name: Azure - Deletion Attempt Blocked by Resource Lock
+dataTypes:
+  - azure
+impact:
+  confidentiality: 1
+  integrity: 3
+  availability: 3
+category: Impact
+technique: T1485 - Data Destruction
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1485/
+  - https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/lock-resources
+description: 'Une tentative de suppression a été bloquée par un verrou (ScopeLocked). Corrélé avec A10 dans les minutes qui précèdent — la séquence LOCKS/DELETE + DELETE/Failure + DELETE/Success est le pattern d''un attaquant contournant les protections. Documenté chez Scattered Spider (MGM Resorts, 2023). Next Steps: 1. Identifier la ressource via log.resourceId. 2. Identifier l''acteur via origin.ip. 3. Vérifier si un lock a été supprimé sur cette ressource (chercher A10). 4. Vérifier si une tentative réussie a suivi. 5. Maintenir le lock et investiguer le compte source.'
+where: |-
+  contains("log.operationName", "DELETE") &&
+  contains("log.resultType", "Failure") &&
+  contains("log.resultSignature", "Conflict") &&
+  contains("log.properties.statusMessage", "ScopeLocked")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** créer un verrou `CanNotDelete` sur une VM ou un groupe de ressources, puis tenter de la supprimer via le portail Azure. L'event `DELETE` avec `resultType = Failure`, `resultSignature = Failed.Conflict` et `statusMessage` contenant `ScopeLocked` est généré dans l'Activity Log.
+
+---
+
+### M8 — Unified Audit Log Ingestion Disabled
+
+La commande PowerShell Exchange Online `Set-AdminAuditLogConfig` a été exécutée sur le tenant. Cette commande permet de désactiver l'ingestion du journal d'audit unifié, aveuglant immédiatement le SIEM. Toute exécution mérite une investigation, quelle que soit la valeur — un administrateur légitime n'exécute cette commande que très rarement.
+
+**Pourquoi ne pas filtrer sur la valeur `False` ?** Le champ `log.Parameters` est un tableau d'objets imbriqués non filtrable par le moteur UTMStack v11.
+
+**Comportement asymétrique documenté :** l'event de désactivation apparaît avec l'IP WAN réelle de la session PowerShell, tandis que l'event de réactivation provient d'une IPv6 Microsoft interne — Exchange Online gère la réactivation depuis ses propres serveurs.
+
+**Faux positif connu :** le service `NT SERVICE\MSExchangeAdminApiNetCore` peut générer cet event lors de maintenances automatiques — non exclu volontairement, car un ServicePrincipal compromis génère le même signal.
+
+**Technique MITRE :** T1562.008 — Impair Defenses: Disable Cloud Logs
+
+```yaml
+name: O365 - Unified Audit Log Ingestion Disabled
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Defense Evasion
+technique: T1562.008 - Impair Defenses Disable Cloud Logs
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/008/
+  - https://learn.microsoft.com/en-us/powershell/module/exchange/set-adminauditlogconfig
+description: 'La commande Set-AdminAuditLogConfig a été exécutée sur le tenant Exchange Online. Toute exécution est suspecte — un attaquant ayant compromis un compte admin ou un ServicePrincipal Exchange peut l''utiliser pour effacer ses traces. Next Steps: 1. Identifier l''acteur via origin.user et origin.ip. 2. Vérifier si origin.user est un ServicePrincipal non-Microsoft. 3. Contrôler log.Parameters (UnifiedAuditLogIngestionEnabled = False). 4. Vérifier l''état de l''audit dans Purview. 5. Réactiver si désactivé et investiguer.'
+where: |-
+  equals("action", "Set-AdminAuditLogConfig") &&
+  contains("log.Workload", "Exchange")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** se connecter à Exchange Online PowerShell (`Connect-ExchangeOnline -UserPrincipalName admin@lan.local`) puis exécuter :
+
+```powershell
+Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $false
+Start-Sleep -Seconds 10
+Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true
+Disconnect-ExchangeOnline -Confirm:$false
+```
+
+Deux alertes déclenchent. La valeur de `UnifiedAuditLogIngestionEnabled` est visible dans `log.Parameters`.
+
+---
+
+### M11 — DLP Rule Match (Purview Data Loss Prevention)
+
+Une politique de prévention contre la perte de données Microsoft Purview a détecté et bloqué le partage de données sensibles.
+
+**Contexte de la politique DLP dans ce lab :** `DLP-Protection-nLPD-demo` est configurée pour détecter les données personnelles au sens de la nLPD (nouvelle Loi fédérale sur la Protection des Données, en vigueur en Suisse depuis septembre 2023) — numéros AVS, IBAN suisses, données médicales RH — sur les workloads Exchange, SharePoint et Teams en mode Enforce. La configuration complète est documentée dans le guide [Configuration Microsoft Purview 2026](https://doit4everyone.github.io/microsoft-purview-configuration-2026-nLPD/).
+
+**Pourquoi couvrir les deux casses ?** Le payload O365 peut indexer l'action en `DLPRuleMatch` ou `DlpRuleMatch` selon le workload source. Un filtre `equals()` strict raterait l'une des deux formes — `regexMatch` avec le flag `(?i)` couvre les deux.
+
+**Voir section "La boucle DLP"** — sans correction de l'adresse de notification UTMStack vers une adresse interne, chaque alerte M11 peut générer une nouvelle alerte M11 en boucle.
+
+**Technique MITRE :** T1567 — Exfiltration Over Web Service
+
+```yaml
+name: Purview - DLP Rule Match Detected
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Data Loss Prevention
+technique: T1567 - Exfiltration Over Web Service
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1567/
+  - https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp
+description: 'Une politique DLP Microsoft Purview a détecté et bloqué le partage de données sensibles (DLPRuleMatch / DlpRuleMatch). La casse variable est couverte par regexMatch. Next Steps: 1. Identifier la politique via log.PolicyName. 2. Identifier les données sensibles via log.SensitiveInfoDetectionIsIncluded. 3. Vérifier l''expéditeur via origin.user. 4. Confirmer si le partage était intentionnel. 5. Escalader si destinataire externe et données classifiées.'
+where: |-
+  regexMatch("action", "(?i)dlprulematch") &&
+  contains("log.Workload", "Exchange")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** envoyer depuis `demo@lan.local` vers une adresse externe un email contenant des numéros AVS couverts par `DLP-Protection-nLPD-demo`. L'alerte contient `log.PolicyName`, `log.RuleName` et `log.ExchangeMetaData`.
+
+---
+
+### M12 — Exchange External Mailbox Access
+
+Un accès externe à une boîte aux lettres Exchange Online a été détecté. L'event `MailItemsAccessed` avec `log.ExternalAccess = true` indique qu'un compte ou une application externe au tenant a accédé aux emails d'un utilisateur. **Midnight Blizzard (APT29)** a utilisé ce vecteur pour exfiltrer les emails de cibles diplomatiques via des applications OAuth malveillantes en 2023-2024.
+
+**Validation dans ce lab :** aucun event `MailItemsAccessed` avec `ExternalAccess = true` n'est présent en base — la règle est validée logiquement et déclenchera dès qu'un accès externe effectif se produira.
+
+**Technique MITRE :** T1114.002 — Email Collection: Remote Email Collection
+
+```yaml
+name: Exchange - External Mailbox Access Detected
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Collection
+technique: T1114.002 - Email Collection Remote Email Collection
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1114/002/
+  - https://learn.microsoft.com/en-us/microsoft-365/compliance/audit-log-activities
+description: 'Un accès externe à une boîte aux lettres Exchange Online a été détecté (MailItemsAccessed + ExternalAccess = true). Midnight Blizzard (APT29) utilisait ce vecteur via des applications OAuth malveillantes (2023-2024). Next Steps: 1. Identifier la boîte aux lettres via log.MailboxOwnerUPN. 2. Identifier l''application externe via log.ClientInfoString. 3. Vérifier si l''accès délégué est légitime. 4. Révoquer les accès OAuth suspects via Entra ID. 5. Examiner les emails accédés via log.Folders.'
+where: |-
+  equals("action", "MailItemsAccessed") &&
+  equals("log.ExternalAccess", true)
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** accéder à la boîte aux lettres d'un utilisateur depuis un compte externe au tenant via l'API Graph ou EWS avec des droits délégués. Dans ce lab, la règle est validée logiquement — aucun accès externe effectif n'a été généré.
+
+---
+
+### M13 — Téléchargement massif SharePoint (non implémentable — investigation documentée)
+
+La règle M13 visait à détecter un volume anormal de téléchargements depuis SharePoint Online — signal d'une exfiltration en préparation d'un chiffrement par ransomware. Après une investigation approfondie, cette règle ne peut pas être implémentée dans UTMStack v11 en l'état.
+
+**Investigation menée :** des téléchargements effectifs ont été réalisés depuis l'interface web SharePoint depuis deux postes distincts (avec et sans OneDrive Sync). Ni `FileDownloaded` ni `FileAccessed` (RecordType 6) n'ont été indexés par UTMStack malgré la souscription `Audit.SharePoint` active et la collecte confirmée des blobs (un `SignInEvent` du même blob est présent dans l'index, preuve que la collecte fonctionne).
+
+**Cause identifiée :** les events de type opération de fichier (RecordType 6) sont perdus après la collecte au stade ETL ou parsing — limitation du pipeline ETL d'UTMStack v11, non liée à Microsoft ni à la configuration tenant.
+
+**À vérifier après chaque mise à jour d'UTMStack :** tester si `FileDownloaded` avec `Workload = SharePoint` apparaît dans `v11-log-o365-*`. Si oui, la règle devient immédiatement implémentable.
+
+Pour la détection d'exfiltration SharePoint, les solutions appropriées sont **Microsoft Purview Insider Risk Management** et **DSPM**, documentées dans le guide [Configuration Microsoft Purview 2026](https://doit4everyone.github.io/microsoft-purview-configuration-2026-nLPD/).
+
+---
+
+### M14 — Sign-In Blocked by Conditional Access Policy
+
+Une tentative de connexion a été bloquée par une politique d'Accès Conditionnel Entra ID. Dans ce lab, la politique `CA-M14-SignIn-Outside-Hours-ReportOnly` bloque les connexions en dehors des heures ouvrables — lundi au vendredi de 07h00 à 19h00 CEST, week-end entier bloqué.
+
+**Note sur la portée :** M14 alerte sur **tout** blocage CA — politique temporelle, conformité des appareils, pays bloqués, authentification héritée. Une seule règle couvre l'ensemble des blocages CA.
+
+**Configuration de la CA temporelle via Graph API :** la condition temporelle n'est pas disponible dans l'interface graphique Entra ID — elle se configure via Microsoft Graph API (Entra ID P1 inclus dans Business Premium). Procédure :
+
+1. Créer la politique CA dans le portail Entra ID (mode Rapport uniquement, Bloquer l'accès, **exclure impérativement le compte break-glass**)
+2. Récupérer l'ID via `GET https://graph.microsoft.com/beta/identity/conditionalAccess/policies`
+3. Ajouter la condition via `PATCH` sur l'endpoint beta (UTC uniquement — 05h00-17h00 UTC = 07h00-19h00 CEST en été) :
+
+```json
+{
+  "conditions": {
+    "times": {
+      "includeAllTimes": true,
+      "excludeDays": {
+        "daysOfWeek": ["monday","tuesday","wednesday","thursday","friday"],
+        "timeZone": "UTC",
+        "startTime": "05:00:00",
+        "endTime": "17:00:00",
+        "allDay": false
+      }
+    }
+  }
+}
+```
+
+**Note nLPD :** une politique CA temporelle doit être documentée dans le registre des activités de traitement comme contrôle d'accès système (et non évaluation des employés), communiquée aux utilisateurs dans la politique de sécurité IT, et appliquée de manière proportionnée au risque identifié.
+
+**Lacune documentée :** `ConditionalAccessStatus` des Sign-in logs Entra ID n'est pas collecté par le connecteur O365 d'UTMStack. La règle M14 contourne cette limitation via `log.LogonError = BlockedByConditionalAccess`, présent dans les events `Audit.AzureActiveDirectory` collectés.
+
+**Technique MITRE :** T1078.004 — Valid Accounts: Cloud Accounts
+
+```yaml
+name: O365 - Sign-In Blocked by Conditional Access Policy
+dataTypes:
+  - o365
+impact:
+  confidentiality: 2
+  integrity: 2
+  availability: 1
+category: Initial Access
+technique: T1078.004 - Valid Accounts Cloud Accounts
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1078/004/
+  - https://learn.microsoft.com/en-us/entra/identity/conditional-access/overview
+description: 'Une tentative de connexion a été bloquée par une politique d''Accès Conditionnel (ErrorNumber 53003, LogonError BlockedByConditionalAccess). Note nLPD : le déploiement d''une CA temporelle doit être documenté dans le registre des activités de traitement et communiqué aux utilisateurs. Next Steps: 1. Identifier le compte via origin.user. 2. Identifier l''IP via origin.ip et géolocalisation. 3. Vérifier si la connexion était légitime (déplacement, décalage horaire). 4. Corréler avec d''autres events du même compte dans les 24h. 5. Si suspect, réinitialiser le mot de passe et révoquer les sessions.'
+where: |-
+  equals("action", "UserLoginFailed") &&
+  equals("log.LogonError", "BlockedByConditionalAccess")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** créer la politique CA, ajouter la condition temporelle via Graph API (procédure ci-dessus), passer en mode Activé. Se connecter depuis un compte non exclu en dehors des heures autorisées. L'alerte contient `log.LogonError = BlockedByConditionalAccess`, `log.ErrorNumber = 53003`, et le compte bloqué dans `origin.user`.
+
+---
+
+### Annexe W8 — Run Key via audit natif registre (EID 4657) — non implémentable
+
+Cette annexe documente la tentative d'implémentation d'une règle de détection de persistance via les clés Run/RunOnce sur Windows 11, où l'agent UTMStack ne collecte pas Sysmon (limitation confirmée, GitHub issue #2446).
+
+**Deux GPOs en place dans ce lab :**
+- `Audit HKCU RunKeys` (Configuration Utilisateur) — couvre `HKCU\...\Run` et `HKCU\...\RunOnce`
+- `Audit RUN KEY local machine` (Configuration Ordinateur) — couvre `HKLM\...\Run` et `HKLM\...\RunOnce`
+
+**L'EID 4657 est bien collecté** par UTMStack. Le champ `ObjectName` (chemin de la clé modifiée) est présent dans le champ `raw` mais **n'est pas mappé** dans `log.data`. Le moteur de corrélation n'évalue pas `raw` — confirmé empiriquement.
+
+**Faux positif documenté :** Edge et EdgeWebView écrivent dans les clés RunOnce lors de leurs mises à jour.
+
+**Deux voies de résolution dans les versions futures :**
+1. Mapping de `ObjectName` dans `log.data` pour EID 4657
+2. Levée de la limitation Sysmon sur Windows 11 (issue #2446) — S5 couvrirait alors ce vecteur automatiquement
+
+**Alternative actuelle :** MDE Plan 1 détecte nativement T1547.001 via son moteur ASEP — confirmé en conditions réelles lors des tests de ce lab.
+
+---
+
+## Matrice de couverture MITRE ATT&CK
+
+Le tableau suivant récapitule les techniques ATT&CK couvertes par l'ensemble des règles de ce chapitre. Les règles non implémentables (M13, W8) figurent pour mémoire avec la mention *(annexe)*.
+
+| Technique | ID | Règles |
+|---|---|---|
+| Brute Force | T1110 | W1, L1 |
+| Brute Force — Password Guessing | T1110.001 | W1, L1, `o365-entra-brute-force.yml` |
+| Brute Force — Password Spraying | T1110.003 | `o365-entra-password-spray.yml` |
+| Boot/Logon Autostart — Run Keys | T1547.001 | S5, W8 *(annexe)* |
+| Scheduled Task/Job | T1053.005 | W4 |
+| Create Account — Cloud | T1136.003 | M7 |
+| Valid Accounts — Cloud | T1078.004 | M14, A7, `o365-impossible-travel.yml` |
+| Steal or Forge Kerberos Tickets — Kerberoasting | T1558.003 | W7 |
+| OS Credential Dumping — NTDS | T1003.003 | S4 |
+| Pass the Hash | T1550.002 | W6 |
+| Process Injection | T1055 | S3 |
+| Create or Modify System Process — Windows Service | T1543.003 | W5a, W5b |
+| Signed Binary Proxy Execution — LOLBAS | T1218 | S1 |
+| Account Manipulation | T1098 | W2, W3 |
+| Account Manipulation — Additional Cloud Roles | T1098.003 | M6, A7 |
+| Steal Application Access Token | T1528 | M2 |
+| Modify Authentication Process | T1556 | M5 |
+| Impair Defenses — Disable Cloud Logs | T1562.008 | M8, A8 |
+| Impair Defenses — Disable or Modify Cloud Firewall | T1562.007 | A4a, A4b, A10 |
+| Malware Detection | T1587.001 | WD1 |
+| Impair Defenses — Tamper with Security Tools | T1562.001 | WD2, WD3, WD4, WD5 |
+| Exfiltration Over Web Service | T1567 | M10, M11, M13 *(annexe)* |
+| Email Collection — Remote | T1114.002 | M12 |
+| Data Destruction | T1485 | A2, A9, A11 |
+| System Shutdown / Reboot | T1529 | A3 |
+| Exploit Public-Facing Application | T1190 | L1 |
+| Abuse Elevation Control — Sudo | T1548.003 | L2 |
+| Unsecured Credentials — Cloud Instance Metadata | T1552.005 | A1, A5 |
+| Software Deployment Tools | T1072 | A6 |
+| Indicator Removal | T1070 | M8 |
+| Named Pipe — Interprocess Communication | T1559.001 | S3 |
+
 
 ---
 
