@@ -1,0 +1,20 @@
+name: Azure - Role Assignment Created or Deleted
+dataTypes:
+  - azure
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Privilege Escalation
+technique: T1078.004 - Valid Accounts Cloud Accounts
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1078/004/
+  - https://learn.microsoft.com/en-us/azure/role-based-access-control/overview
+description: 'Une attribution de rôle Azure a été créée ou supprimée sur l''abonnement ou un resource group. Cette opération modifie les droits d''accès aux ressources Azure et constitue un vecteur d''escalade de privilèges documenté — notamment dans les attaques Lapsus$ et Cloud Hopper où les attaquants s''attribuaient le rôle Owner pour prendre le contrôle de subscriptions entières. Next Steps: 1. Identifier le resource group ou la subscription ciblés via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims (UPN dans le payload brut). 3. Vérifier si le rôle attribué est Owner ou Contributor — particulièrement sensibles. 4. Confirmer si l''opération était planifiée et autorisée. 5. Vérifier si d''autres opérations suspectes ont suivi (DEPLOYMENTS/WRITE, LOCKS/DELETE).'
+where: |-
+  contains("log.operationName", "ROLEASSIGNMENTS") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

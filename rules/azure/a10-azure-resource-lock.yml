@@ -1,0 +1,20 @@
+name: Azure - Resource Lock Deleted or Modified
+dataTypes:
+  - azure
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 3
+category: Defense Evasion
+technique: T1562.007 - Impair Defenses Disable or Modify Cloud Firewall
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/007/
+  - https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/lock-resources
+description: 'Un verrou de ressource Azure (Resource Lock) a été supprimé ou modifié. Les locks de type CanNotDelete ou ReadOnly protègent les ressources critiques contre la suppression ou la modification accidentelle ou malveillante. La suppression d''un lock est une technique documentée dans les attaques de destruction d''infrastructure cloud — notamment par le groupe Scattered Spider lors des attaques MGM Resorts et Caesars Entertainment en 2023, où les attaquants supprimaient les locks avant de détruire les ressources et les sauvegardes. Toute suppression de lock doit être corrélée avec les opérations qui suivent immédiatement (RESOURCEGROUPS/DELETE, VIRTUALMACHINES/DELETE, STORAGEACCOUNTS/DELETE). Next Steps: 1. Identifier la ressource protégée via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims dans le payload brut. 3. Vérifier immédiatement si des opérations destructrices ont suivi sur la même ressource. 4. Confirmer si l''opération était planifiée et autorisée. 5. Restaurer le lock si supprimé de manière non autorisée.'
+where: |-
+  contains("log.operationName", "AUTHORIZATION/LOCKS") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

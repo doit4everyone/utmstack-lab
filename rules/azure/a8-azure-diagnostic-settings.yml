@@ -1,0 +1,20 @@
+name: Azure - Diagnostic Settings Modified or Deleted
+dataTypes:
+  - azure
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Defense Evasion
+technique: T1562.008 - Impair Defenses Disable Cloud Logs
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/008/
+  - https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/diagnostic-settings
+description: 'Un paramètre de diagnostic Azure a été créé, modifié ou supprimé. Les paramètres de diagnostic contrôlent l''envoi des logs de ressources vers Log Analytics, Event Hub ou Storage Account. La suppression ou la modification d''un paramètre existant peut aveugler le SIEM en interrompant la collecte des logs Azure Activity — technique documentée dans les attaques de type "defense evasion" avant destruction d''infrastructure. Next Steps: 1. Identifier la ressource ciblée via log.resourceId — noter si c''est un paramètre de diagnostic sur la subscription entière (impact maximal) ou sur une ressource isolée. 2. Identifier l''acteur via origin.ip. 3. Vérifier si l''opération était planifiée et autorisée. 4. Contrôler si d''autres opérations suspectes ont suivi (ROLEASSIGNMENTS/WRITE, LOCKS/DELETE, RESOURCEGROUPS/DELETE). 5. Restaurer le paramètre de diagnostic si supprimé de manière non autorisée.'
+where: |-
+  contains("log.operationName", "DIAGNOSTICSETTINGS") &&
+  contains("log.resultType", "Success")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

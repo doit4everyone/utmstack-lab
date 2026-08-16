@@ -1,0 +1,21 @@
+name: Azure - Key Vault Created or Deleted
+dataTypes:
+  - azure
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Impact
+technique: T1485 - Data Destruction
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1485/
+  - https://learn.microsoft.com/en-us/azure/key-vault/general/logging
+description: 'Un coffre de clés Azure (Key Vault) a été créé ou supprimé. Les Key Vaults contiennent les secrets les plus sensibles d''une infrastructure cloud — connection strings, clés API, certificats de service. La suppression d''un Key Vault efface l''ensemble de ces secrets en une seule opération et constitue un acte destructeur majeur. La création d''un Key Vault non autorisé peut indiquer une préparation à l''exfiltration de credentials. Note : les accès aux secrets individuels (lecture, écriture, suppression de secrets) transitent par les logs de diagnostic Key Vault (AuditEvent) et ne sont pas visibles dans l''Activity Log — cette règle couvre uniquement les opérations sur le coffre lui-même. Next Steps: 1. Identifier le Key Vault concerné via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims dans le payload brut. 3. Pour une suppression : vérifier immédiatement si le Key Vault est en état de suppression réversible (soft-delete) et initier une restauration si nécessaire. 4. Pour une création non autorisée : vérifier les secrets créés dans ce Key Vault via le portail Azure → Key Vault → Secrets. 5. Correler avec d''autres opérations suspectes (ROLEASSIGNMENTS/WRITE, DIAGNOSTICSETTINGS/DELETE).'
+where: |-
+  contains("log.operationName", "KEYVAULT/VAULTS") &&
+  !contains("log.operationName", "REGISTER") &&
+  regexMatch("log.resultType", "(?i)(Success|Accept)")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

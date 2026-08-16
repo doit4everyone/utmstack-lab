@@ -1,0 +1,22 @@
+name: Azure - Deletion Attempt Blocked by Resource Lock
+dataTypes:
+  - azure
+impact:
+  confidentiality: 1
+  integrity: 3
+  availability: 3
+category: Impact
+technique: T1485 - Data Destruction
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1485/
+  - https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/lock-resources
+description: 'Une tentative de suppression d''une ressource Azure a été bloquée par un verrou de ressource (Resource Lock). Le statusCode Conflict indique que la ressource est protégée par un lock CanNotDelete. Ce signal est particulièrement significatif lorsqu''il est corrélé avec une suppression de lock (A10) dans les minutes qui précèdent ou qui suivent — la séquence LOCKS/DELETE puis DELETE/Failure puis LOCKS/DELETE puis DELETE/Success est le pattern typique d''un attaquant qui cherche à contourner les protections avant de détruire l''infrastructure. Documenté dans les attaques Scattered Spider (MGM Resorts, Caesars Entertainment, 2023). Next Steps: 1. Identifier la ressource ciblée via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims dans le payload brut. 3. Vérifier immédiatement si un lock a été supprimé sur cette ressource (chercher A10 sur le même resourceId). 4. Vérifier si une nouvelle tentative de suppression a réussi après la suppression du lock. 5. Si le lock est toujours en place, le maintenir et investiguer le compte source.'
+where: |-
+  contains("log.operationName", "DELETE") &&
+  contains("log.resultType", "Failure") &&
+  contains("log.resultSignature", "Conflict") &&
+  contains("log.properties.statusMessage", "ScopeLocked")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
