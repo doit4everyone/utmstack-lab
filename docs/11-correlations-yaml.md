@@ -35,7 +35,7 @@ Les règles couvrent six sources de logs : Windows natif (wineventlog), Sysmon v
 
 ## Veille CVE et règles de détection compensatoires
 
-Un SIEM custom n'est pas qu'un outil de détection comportementale — c'est aussi un filet de sécurité pendant la fenêtre de vulnérabilité qui sépare la publication d'une CVE critique de son déploiement en production. Dans une PME suisse, cette fenêtre dure en moyenne deux à quatre semaines : le temps de tester le patch, de planifier la maintenance, et de l'appliquer sans interrompre les opérations. Pendant ce temps, la CVE est publique, les exploits sont disponibles, et les attaquants sont actifs.
+Un SIEM custom n'est pas qu'un outil de détection comportementale — c'est aussi un filet de sécurité pendant la fenêtre de vulnérabilité qui sépare la publication d'une CVE critique de son déploiement en production. Dans une PME, cette fenêtre dure en moyenne deux à quatre semaines : le temps de tester le patch, de planifier la maintenance, et de l'appliquer sans interrompre les opérations. Pendant ce temps, la CVE est publique, les exploits sont disponibles, et les attaquants sont actifs.
 
 Les règles de corrélation personnalisées permettent de combler partiellement cette fenêtre. Une CVE qui exploite un mécanisme d'authentification sera souvent détectée par une règle comportementale existante — W6 (Pass-the-Hash), W7 (Kerberoasting), M5 (MFA Interrupt) — même si aucune règle dédiée à la CVE n'a été écrite. C'est la valeur de l'approche comportementale : elle reste pertinente indépendamment des CVE publiées, car les techniques ATT&CK sous-jacentes ne changent pas.
 
@@ -1871,7 +1871,7 @@ Ce chapitre illustre une approche de détection en trois axes :
 
 **Tuning continu** — les faux positifs identifiés lors des tests font partie du processus normal. Quelques exemples concrets issus de ce lab : VMware Tools qui accède légitimement à LSASS (S2), `PcaSvc.dll` qui charge rundll32 lors de diagnostics système (S1), la différence entre `Administrateurs` et `Administrators` selon la langue du système (W2), les services automatiques Azure qui listent régulièrement les clés de stockage (A1), et la boucle DLP/notification décrite en détail dans la section M ci-dessus. Chaque exclusion documentée améliore la précision sans sacrifier la couverture. L'approche défensive retenue — capturer large, exclure chirurgicalement — est préférable à une liste blanche de patterns dangereux.
 
-**Complémentarité MDE et UTMStack** — MDE bloque en temps réel (S1 LOLBAS, S3 named pipes, S4 NTDS), UTMStack contextualise, corrèle et conserve la trace pour l'investigation. Les deux couches se sont illustrées tout au long de ce chapitre : un alert MDE sans corrélation SIEM perd son contexte ; une règle SIEM sans EDR ne bloque rien. La valeur du lab est précisément de faire fonctionner ces deux systèmes ensemble sur des événements réels, pas en simulation.
+**Complémentarité MDE et UTMStack** — MDE bloque en temps réel (S1 LOLBAS, S3 named pipes, S4 NTDS), UTMStack contextualise, corrèle et conserve la trace pour l'investigation. Les deux couches se sont illustrées tout au long de ce chapitre, une alerte MDE sans corrélation SIEM perd son contexte ; une règle SIEM sans EDR ne bloque rien. La valeur du lab est précisément de faire fonctionner ces deux systèmes ensemble sur des événements réels, pas en simulation.
 
 ---
 
