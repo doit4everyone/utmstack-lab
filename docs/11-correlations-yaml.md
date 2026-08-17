@@ -141,7 +141,7 @@ deduplicateBy: []
 Depuis une machine membre du domaine, créer un compte de test et provoquer son verrouillage :
 
 ```powershell
-# Sur DC01 — création du compte de test
+# Sur DC01-MAIN-SITE (contrôleur de domaine) — création du compte de test
 New-ADUser -Name "test-lockout" -SamAccountName "test-lockout" `
   -UserPrincipalName "test-lockout@lan.local" `
   -AccountPassword (ConvertTo-SecureString "TestLab2026!" -AsPlainText -Force) `
@@ -149,8 +149,8 @@ New-ADUser -Name "test-lockout" -SamAccountName "test-lockout" `
 
 # Depuis n'importe quelle machine membre — verrouillage par tentatives répétées
 1..10 | ForEach-Object {
-    net use \\DC01\IPC$ /user:lan\test-lockout MauvaisMDP
-    net use \\DC01\IPC$ /delete 2>$null
+    net use \\DC01-MAIN-SITE\IPC$ /user:lan\test-lockout MauvaisMDP
+    net use \\DC01-MAIN-SITE\IPC$ /delete 2>$null
 }
 
 # Nettoyage
@@ -193,7 +193,7 @@ deduplicateBy: []
 
 **Test de déclenchement**
 
-Sur un serveur membre (gest-srv) en PowerShell admin. Attention : sur les systèmes Windows Server 2025 en français, le groupe s'appelle `Administrateurs` et non `Administrators`. Utiliser le nom localisé ou passer par le SID.
+Sur un serveur membre (gest-srv, serveur membre du domaine) en PowerShell admin. Attention : sur les systèmes Windows Server 2025 en français, le groupe s'appelle `Administrateurs` et non `Administrators`. Utiliser le nom localisé ou passer par le SID.
 
 ```powershell
 New-LocalUser -Name "testlocal-w2" `
@@ -244,7 +244,7 @@ deduplicateBy: []
 
 **Test de déclenchement**
 
-Sur DC01 en PowerShell admin. Sur les systèmes en français, le groupe s'appelle `Admins du domaine`.
+Sur DC01-MAIN-SITE (contrôleur de domaine) en PowerShell admin. Sur les systèmes en français, le groupe s'appelle `Admins du domaine`.
 
 ```powershell
 # Créer un compte de test si nécessaire
@@ -415,14 +415,14 @@ where: |-
   !regexMatch("target.user", "(?i)^(MSOL_|AAD_|AZUREADSSOACC)") &&
   !equals("origin.ip", "127.0.0.1") &&
   !equals("origin.ip", "::1") &&
-  !equals("origin.host", "BLAISE-LAB") &&
+  !equals("origin.host", "ADMIN-WS") &&
   exists("origin.ip")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Note d'adaptation :** remplacer `BLAISE-LAB` par le nom de la station d'administration de votre environnement. Dans un environnement où NTLM est correctement désactivé, tout hit est suspect. Le compte `MSOL_` est le compte de synchronisation Entra Connect — son exclusion est indispensable dans les environnements hybrides pour éviter des faux positifs en rafale.
+**Note d'adaptation :** remplacer `ADMIN-WS` par le nom de la station d'administration de votre environnement. Dans un environnement où NTLM est correctement désactivé, tout hit est suspect. Le compte `MSOL_` est le compte de synchronisation Entra Connect — son exclusion est indispensable dans les environnements hybrides pour éviter des faux positifs en rafale.
 
 **Test de déclenchement**
 
@@ -466,7 +466,7 @@ deduplicateBy: []
 
 **Test de déclenchement**
 
-La règle W7 nécessite un compte de service avec SPN configuré en RC4 uniquement (pas AES). Sur DC01 en PowerShell admin :
+La règle W7 nécessite un compte de service avec SPN configuré en RC4 uniquement (pas AES). Sur DC01-MAIN-SITE (contrôleur de domaine) en PowerShell admin :
 
 ```powershell
 # Créer un compte de service avec SPN et forcer RC4
@@ -739,7 +739,7 @@ deduplicateBy: []
 
 **Test de déclenchement**
 
-Sur DC01 depuis une invite de commande (`cmd.exe` — pas PowerShell) :
+Sur DC01-MAIN-SITE (contrôleur de domaine) depuis une invite de commande (`cmd.exe` — pas PowerShell) :
 
 ```cmd
 echo test > C:\Temp\ntds.dit
@@ -845,7 +845,7 @@ Depuis n'importe quelle machine du lab, tenter une connexion SSH avec des creden
 ```bash
 ssh utilisateur_inexistant@10.100.1.10
 # ou plusieurs tentatives avec mauvais mot de passe
-for i in $(seq 1 5); do sshpass -p "mauvais" ssh -o StrictHostKeyChecking=no blaise@10.100.1.10; done
+for i in $(seq 1 5); do sshpass -p "mauvais" ssh -o StrictHostKeyChecking=no demo@10.100.1.10; done
 ```
 
 ---
@@ -940,7 +940,7 @@ La boucle tourne toutes les 5 minutes (cycle de réévaluation du moteur UTMStac
 - `MipLabelsAgent` — service Exchange Online qui applique les labels automatiquement
 - Des ID numériques (ex: `1153801140139386071`) — l'identifiant interne du service Exchange MipLabels
 
-**La solution :** configurer les notifications d'alerte UTMStack vers une adresse interne au tenant (`blaise@bsculier.ch` plutôt que `bsculier@bluewin.ch`). Les emails internes ne sont pas soumis aux politiques DLP "externe" et la boucle disparaît immédiatement. Le changement se fait dans UTMStack → Settings → Notifications → Email destination.
+**La solution :** configurer les notifications d'alerte UTMStack vers une adresse interne au tenant (`demo@lan.local` plutôt qu'une adresse externe). Les emails internes ne sont pas soumis aux politiques DLP "externe" et la boucle disparaît immédiatement. Le changement se fait dans UTMStack → Settings → Notifications → Email destination.
 
 **Ce que ça révèle sur la configuration DLP :** une politique DLP bien configurée exclut les emails de rapport d'incident de son propre scope. La boucle est un symptôme d'une politique qui s'applique à tous les emails sortants sans exception, y compris ses propres rapports. C'est un anti-pattern de configuration courant dans les environnements Purview nouvellement déployés.
 
@@ -1044,7 +1044,7 @@ deduplicateBy: []
 
 Un compte utilisateur a été créé directement dans Entra ID, hors du processus de synchronisation Entra Connect. La règle exclut les créations via `ConnectSyncProvisioning` car elles représentent le flux normal de synchronisation AD→Entra.
 
-**Contexte de l'exclusion :** dans ce tenant, tous les comptes passent par Entra Connect (gest-srv héberge le connecteur). L'unique event `Add user.` présent en base avant le test était la création de `ch11-test@bsculier.ch` par `ConnectSyncProvisioning_GEST-SRV_...` — un ServicePrincipal Entra Connect. Sans l'exclusion, chaque nouvel utilisateur créé dans l'AD on-premise génèrerait une alerte lors de sa synchronisation vers Entra ID.
+**Contexte de l'exclusion :** dans ce tenant, tous les comptes passent par Entra Connect (gest-srv (serveur membre du domaine) héberge le connecteur). L'unique event `Add user.` présent en base avant le test était la création de `ch11-test@bsculier.ch` par `ConnectSyncProvisioning_GEST-SRV_...` — un ServicePrincipal Entra Connect. Sans l'exclusion, chaque nouvel utilisateur créé dans l'AD on-premise génèrerait une alerte lors de sa synchronisation vers Entra ID.
 
 **Technique MITRE :** T1136.003 — Create Account: Cloud Account
 
@@ -1110,7 +1110,7 @@ groupBy: []
 deduplicateBy: []
 ```
 
-**Test de déclenchement :** envoyer depuis `blaise@bsculier.ch` vers une adresse externe un email contenant un document avec des données sensibles couvertes par la politique d'auto-labeling (dans ce lab : un document Word contenant un numéro AVS). Exchange Online applique automatiquement le label `4 — RH-Confidentiel` et génère l'event. L'alerte contient `log.PolicyName`, `log.ExecutionRuleName`, `log.LabelName` et `log.ExchangeMetaData`.
+**Test de déclenchement :** envoyer depuis `demo@lan.local` vers une adresse externe un email contenant un document avec des données sensibles couvertes par la politique d'auto-labeling (dans ce lab : un document Word contenant un numéro AVS). Exchange Online applique automatiquement le label `4 — RH-Confidentiel` et génère l'event. L'alerte contient `log.PolicyName`, `log.ExecutionRuleName`, `log.LabelName` et `log.ExchangeMetaData`.
 
 **Voir section "La boucle DLP" ci-dessus** pour comprendre pourquoi les exclusions `!contains("origin.user", "notifications-")` et `!contains("origin.user", "MipLabelsAgent")` sont indispensables.
 
