@@ -921,22 +921,22 @@ Les cinq règles suivantes ont été créées lors des sessions initiales et son
 
 Lors de la validation des règles M10 (Auto-Label) et M11 (DLP Rule Match), un phénomène de boucle d'alertes a été observé et mérite d'être expliqué en détail car il peut rapidement noyer un SOC sous des centaines d'alertes sans qu'une vraie menace soit présente.
 
-**Le contexte :** les notifications d'alerte UTMStack sont configurées pour envoyer un email vers `bsculier@bluewin.ch` — une adresse personnelle externe au tenant Microsoft 365. Quand une règle DLP se déclenche, UTMStack génère un email de notification vers cette adresse externe.
+**Le contexte :** les notifications d'alerte UTMStack sont configurées pour envoyer un email vers `demo.externe@gmail.com` — une adresse personnelle externe au tenant Microsoft 365. Quand une règle DLP se déclenche, UTMStack génère un email de notification vers cette adresse externe.
 
 **La chaîne de causalité :**
 
-1. Un email avec un document contenant des numéros AVS (numéro de sécurité sociale suisse) est envoyé vers `bsculier@bluewin.ch`
+1. Un email avec un document contenant des numéros AVS (numéro de sécurité sociale suisse) est envoyé vers `demo.externe@gmail.com`
 2. La politique DLP `DLP-Protection-nLPD-demo` bloque l'email et génère un rapport d'incident
-3. Ce rapport d'incident est lui-même envoyé par Exchange vers `bsculier@bluewin.ch` — il contient en pièce jointe un fichier ZIP avec un CSV listant les données sensibles détectées, soit 480 occurrences de numéros AVS
+3. Ce rapport d'incident est lui-même envoyé par Exchange vers `demo.externe@gmail.com` — il contient en pièce jointe un fichier ZIP avec un CSV listant les données sensibles détectées, soit 480 occurrences de numéros AVS
 4. La politique DLP scanne ce rapport et le bloque également — il contient les mêmes données sensibles
-5. UTMStack génère une alerte sur ce nouveau blocage DLP et envoie une nouvelle notification vers `bsculier@bluewin.ch`
+5. UTMStack génère une alerte sur ce nouveau blocage DLP et envoie une nouvelle notification vers `demo.externe@gmail.com`
 6. Cette notification contient à nouveau des références aux données sensibles → retour à l'étape 4
 
 La boucle tourne toutes les 5 minutes (cycle de réévaluation du moteur UTMStack), générant une paire d'alertes à chaque cycle. En parallèle, la règle M10 (AutoSensitivityLabelRuleMatch) s'active car Exchange tente d'appliquer automatiquement un label de confidentialité sur ces emails de rapport avant de les bloquer.
 
 **Les acteurs visibles dans les alertes :**
 
-- `notifications-utmstack@bsculier.ch` — adresse d'expéditeur des notifications UTMStack
+- `notifications-utmstack@lan.local` — adresse d'expéditeur des notifications UTMStack
 - `MipLabelsAgent` — service Exchange Online qui applique les labels automatiquement
 - Des ID numériques (ex: `1153801140139386071`) — l'identifiant interne du service Exchange MipLabels
 
@@ -1044,7 +1044,7 @@ deduplicateBy: []
 
 Un compte utilisateur a été créé directement dans Entra ID, hors du processus de synchronisation Entra Connect. La règle exclut les créations via `ConnectSyncProvisioning` car elles représentent le flux normal de synchronisation AD→Entra.
 
-**Contexte de l'exclusion :** dans ce tenant, tous les comptes passent par Entra Connect (gest-srv (serveur membre du domaine) héberge le connecteur). L'unique event `Add user.` présent en base avant le test était la création de `ch11-test@bsculier.ch` par `ConnectSyncProvisioning_GEST-SRV_...` — un ServicePrincipal Entra Connect. Sans l'exclusion, chaque nouvel utilisateur créé dans l'AD on-premise génèrerait une alerte lors de sa synchronisation vers Entra ID.
+**Contexte de l'exclusion :** dans ce tenant, tous les comptes passent par Entra Connect (gest-srv (serveur membre du domaine) héberge le connecteur). L'unique event `Add user.` présent en base avant le test était la création de `ch11-test@lan.local` par `ConnectSyncProvisioning_GEST-SRV_...` — un ServicePrincipal Entra Connect. Sans l'exclusion, chaque nouvel utilisateur créé dans l'AD on-premise génèrerait une alerte lors de sa synchronisation vers Entra ID.
 
 **Technique MITRE :** T1136.003 — Create Account: Cloud Account
 
@@ -1072,7 +1072,7 @@ groupBy: []
 deduplicateBy: []
 ```
 
-**Test de déclenchement :** dans le portail Entra ID → Utilisateurs → Nouvel utilisateur → Créer un utilisateur → saisir un UPN cloud (`test-m7@bsculier.ch`). Ce compte est créé directement dans Entra ID sans passer par l'AD on-premise — `origin.user` sera l'administrateur humain, pas `ConnectSyncProvisioning`. Supprimer le compte après validation.
+**Test de déclenchement :** dans le portail Entra ID → Utilisateurs → Nouvel utilisateur → Créer un utilisateur → saisir un UPN cloud (`test-m7@lan.local`). Ce compte est créé directement dans Entra ID sans passer par l'AD on-premise — `origin.user` sera l'administrateur humain, pas `ConnectSyncProvisioning`. Supprimer le compte après validation.
 
 ---
 
