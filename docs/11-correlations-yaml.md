@@ -27,7 +27,7 @@ lang: fr
 
 > [← Retour à l'index](../)
 
-Ce chapitre documente la création et la validation de règles de corrélation personnalisées pour UTMStack v11. Chaque règle est validée en live dans OpenSearch avant d'être publiée — aucune règle n'est documentée sans déclenchement confirmé.
+Ce chapitre documente la création et la validation de règles de corrélation personnalisées pour UTMStack v11. Chaque règle est validée en live dans OpenSearch avant d'être publiée, aucune règle n'est documentée sans déclenchement confirmé.
 
 Les règles couvrent six sources de logs : Windows natif (wineventlog), Sysmon via WEF, Linux (auditd), Windows Defender, Microsoft 365 et Azure Activity Log. Elles sont organisées en séries : W (Windows), WD (Windows Defender), S (Sysmon), L (Linux), M (M365/Entra ID) et A (Azure).
 
@@ -35,11 +35,11 @@ Les règles couvrent six sources de logs : Windows natif (wineventlog), Sysmon v
 
 ## Veille CVE et règles de détection compensatoires
 
-Un SIEM custom n'est pas qu'un outil de détection comportementale — c'est aussi un filet de sécurité pendant la fenêtre de vulnérabilité qui sépare la publication d'une CVE critique de son déploiement en production. Dans une PME, cette fenêtre dure en moyenne deux à quatre semaines : le temps de tester le patch, de planifier la maintenance, et de l'appliquer sans interrompre les opérations. Pendant ce temps, la CVE est publique, les exploits sont disponibles, et les attaquants sont actifs.
+Un SIEM custom n'est pas qu'un outil de détection comportementale, c'est aussi un filet de sécurité pendant la fenêtre de vulnérabilité qui sépare la publication d'une CVE critique de son déploiement en production. Dans une PME, cette fenêtre dure en moyenne deux à quatre semaines : le temps de tester le patch, de planifier la maintenance, et de l'appliquer sans interrompre les opérations. Pendant ce temps, la CVE est publique, les exploits sont disponibles, et les attaquants sont actifs.
 
-Les règles de corrélation personnalisées permettent de combler partiellement cette fenêtre. Une CVE qui exploite un mécanisme d'authentification sera souvent détectée par une règle comportementale existante — W6 (Pass-the-Hash), W7 (Kerberoasting), M5 (MFA Interrupt) — même si aucune règle dédiée à la CVE n'a été écrite. C'est la valeur de l'approche comportementale : elle reste pertinente indépendamment des CVE publiées, car les techniques ATT&CK sous-jacentes ne changent pas.
+Les règles de corrélation personnalisées permettent de combler partiellement cette fenêtre. Une CVE qui exploite un mécanisme d'authentification sera souvent détectée par une règle comportementale existante, W6 (Pass-the-Hash), W7 (Kerberoasting), M5 (MFA Interrupt) même si aucune règle dédiée à la CVE n'a été écrite. C'est la valeur de l'approche comportementale: elle reste pertinente indépendamment des CVE publiées car les techniques ATT&CK sous-jacentes ne changent pas.
 
-Pour les CVE qui sortent du cadre comportemental couvert, la réponse peut être une règle ciblée et temporaire — active jusqu'au patch, puis désactivée. Ce chapitre illustre cette philosophie à travers les deux axes qui se complètent : détection comportementale pérenne et réponse événementielle aux CVE critiques.
+Pour les CVE qui sortent du cadre comportemental couvert, la réponse peut être une règle ciblée et temporaire active jusqu'au patch, puis désactivée. Ce chapitre illustre cette philosophie à travers les deux axes qui se complètent: détection comportementale pérenne et réponse événementielle aux CVE critiques.
 
 ---
 
