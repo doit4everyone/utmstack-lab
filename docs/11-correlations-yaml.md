@@ -946,15 +946,23 @@ La boucle tourne toutes les 5 minutes (cycle de réévaluation du moteur UTMStac
 
 ---
 
-### Protection contre le vol de session — Token Protection CA-04
+### Protection contre le vol de session — Token Protection (Accès Conditionnel Entra ID)
 
 Avant de documenter les règles de détection M3 et M5, il est utile de situer leur rôle dans l'architecture de défense globale face aux attaques AiTM (Adversary-in-the-Middle).
 
 Dans une attaque AiTM, un proxy malveillant se positionne entre l'utilisateur et le service Microsoft. L'utilisateur complète le MFA normalement, mais le proxy intercepte le cookie de session post-authentification. L'attaquant utilise ensuite ce cookie depuis un autre appareil pour accéder aux ressources sans jamais connaître le mot de passe ni posséder le facteur MFA.
 
-La politique d'accès conditionnel **CA-04 Token Protection** (Entra ID P1) lie cryptographiquement le token de session au TPM de l'appareil d'origine. Un cookie volé devient inutilisable depuis un appareil différent car la liaison TPM ne peut pas être reproduite. C'est une mesure préventive qui rend l'exploitation du token volé techniquement impossible, indépendamment du fait que le MFA a été complété ou non.
+La **Token Protection** est une politique d'Accès Conditionnel Entra ID (disponible avec Entra ID P1, inclus dans Business Premium) qui lie cryptographiquement le token de session au TPM de l'appareil d'origine. Un cookie volé devient inutilisable depuis un appareil différent car la liaison TPM ne peut pas être reproduite. C'est une mesure préventive qui rend l'exploitation du token volé techniquement impossible, indépendamment du fait que le MFA a été complété ou non.
 
-Les règles M3 (Impossible Travel) et M5 (MFA Required Interrupt) opèrent sur un plan complémentaire : elles détectent les signaux comportementaux de la tentative, indépendamment de son succès. M3 détecte une connexion depuis un pays géographiquement impossible après une connexion récente. M5 détecte l'interrupt MFA lui-même — visible dans les logs même quand CA-04 est en place et que le token volé a été rejeté. Cette trace est précieuse pour l'investigation post-incident : elle permet de reconstituer la timeline et d'identifier le vecteur d'attaque même si aucune donnée n'a été compromise.
+**Mise en place :** dans le portail Entra ID → Protection → Accès conditionnel → Nouvelle politique :
+- **Utilisateurs** : Tous les utilisateurs (exclure le compte break-glass)
+- **Ressources cibles** : Exchange Online + SharePoint Online (commencer par ces deux avant d'élargir)
+- **Session** → Exiger une protection des tokens : **Oui**
+- **Mode** : Rapport uniquement dans un premier temps, puis Activé une fois les appareils non conformes identifiés
+
+**Prérequis :** les appareils doivent être joints à Entra ID (Hybrid ou natif) et disposer d'un TPM 2.0. Les appareils sans TPM ou non joints verront leur accès bloqué — tester en mode Rapport uniquement avant d'activer.
+
+Les règles M3 (Impossible Travel) et M5 (MFA Required Interrupt) opèrent sur un plan complémentaire : elles détectent les signaux comportementaux de la tentative, indépendamment de son succès. M3 détecte une connexion depuis un pays géographiquement impossible après une connexion récente. M5 détecte l'interrupt MFA lui-même — visible dans les logs même quand la Token Protection est en place et que le token volé a été rejeté. Cette trace est précieuse pour l'investigation post-incident : elle permet de reconstituer la timeline et d'identifier le vecteur d'attaque même si aucune donnée n'a été compromise.
 
 ---
 
