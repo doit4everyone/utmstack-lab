@@ -11,13 +11,16 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1003/001/
   - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
-description: 'Un processus a accédé à la mémoire de lsass.exe avec des droits suspects (Sysmon EID 10). LSASS contient les credentials des sessions actives — un accès non autorisé peut permettre l''extraction de hashes NTLM, tickets Kerberos et mots de passe en clair. Les accès légitimes de MDE, Defender et des processus système sont exclus. Pour les environnements VMware, utiliser s2-lsass-access-vmware.yml qui exclut vmtoolsd.exe. Next Steps: 1. Identifier le processus source via log.data.SourceImage. 2. Vérifier les droits d''accès via log.data.GrantedAccess — 0x1010 et 0x1410 sont caractéristiques de Mimikatz. 3. Analyser log.data.CallTrace pour identifier les DLLs injectées (présence de UNKNOWN = DLL non mappée suspecte). 4. Isoler la machine si un outil de dumping est confirmé. 5. Réinitialiser tous les mots de passe si compromise confirmée.'
+description: 'Un processus a accédé à la mémoire de lsass.exe avec des droits suspects (Sysmon EID 10). LSASS contient les credentials des sessions actives — un accès non autorisé peut permettre l''extraction de hashes NTLM, tickets Kerberos et mots de passe en clair. Les accès légitimes de MDE, Defender, de l''agent Azure AD Connect Health et les accès de type query-only (sans lecture mémoire) sont exclus. Pour les environnements VMware, utiliser s2-lsass-access-vmware.yml qui exclut vmtoolsd.exe. Next Steps: 1. Identifier le processus source via log.data.SourceImage. 2. Vérifier les droits d''accès via log.data.GrantedAccess — les valeurs 4112 (0x1010) et 5136 (0x1410) sont caractéristiques de Mimikatz et des outils de dumping. Attention : UTMStack stocke ce champ en décimal, pas en hexadécimal. 3. Analyser log.data.CallTrace pour identifier les modules chargés — la présence de frames UNKNOWN indique une DLL non mappée sur disque, signe possible d''injection. 4. Isoler la machine si un outil de dumping est confirmé. 5. Réinitialiser tous les mots de passe si compromise confirmée.'
 where: |-
   equals("log.eventCode", 10) &&
   contains("log.channel", "Sysmon") &&
   contains("log.data.TargetImage", "lsass.exe") &&
+  !equals("log.data.GrantedAccess", 5120) &&
+  !equals("log.data.GrantedAccess", 5200) &&
   !contains("log.data.SourceImage", "Windows Defender Advanced Threat Protection") &&
   !contains("log.data.SourceImage", "Windows Defender") &&
+  !contains("log.data.SourceImage", "Azure AD Connect Health Agent") &&
   !contains("log.data.SourceImage", "UTMStack") &&
   !contains("log.data.SourceImage", "MRT.exe") &&
   !contains("log.data.SourceImage", "taskmgr.exe")
