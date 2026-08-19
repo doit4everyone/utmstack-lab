@@ -597,7 +597,7 @@ Un processus a accédé à la mémoire de `lsass.exe` avec des droits suspects. 
 
 **Variante universelle (`s2-lsass-access.yml`) :** pour les environnements sans VMware.
 
-**Variante VMware (`s2-lsass-access-vmware.yml`) :** pour les labs et environnements virtualisés VMware. Ajoute l'exclusion de `vmtoolsd.exe` qui accède légitimement à LSASS pour collecter des informations sur les processus actifs. Ne pas importer les deux simultanément.
+**Variante VMware (`s2-lsass-access-vmware.yml`) :** pour les labs et environnements virtualisés VMware. Ajoute l'exclusion de `vmtoolsd.exe` qui accède légitimement à LSASS pour collecter des informations sur les processus actifs. Les accès de type query-only (sans lecture mémoire) et l'agent Azure AD Connect Health sont également exclus. Ne pas importer les deux simultanément.
 
 ```yaml
 name: S2 - Suspicious LSASS Process Access (VMware)
@@ -613,13 +613,16 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1003/001/
   - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
-description: 'Variante de S2 pour environnements virtualisés VMware. Un processus a accédé à la mémoire de lsass.exe avec des droits suspects (Sysmon EID 10). Next Steps: 1. Identifier le processus source via log.data.SourceImage. 2. Vérifier les droits d''accès via log.data.GrantedAccess — 0x1010 et 0x1410 sont caractéristiques de Mimikatz. 3. Analyser log.data.CallTrace pour identifier les DLLs injectées (UNKNOWN = DLL non mappée suspecte). 4. Isoler la machine si un outil de dumping est confirmé. 5. Réinitialiser tous les mots de passe si compromise confirmée.'
+description: 'Variante de S2 pour environnements virtualisés VMware Workstation/ESXi. Identique à s2-lsass-access.yml avec exclusion supplémentaire de vmtoolsd.exe (VMware Tools) qui accède légitimement à LSASS pour collecter des informations sur les processus actifs. Les accès de type query-only (sans lecture mémoire) et l''agent Azure AD Connect Health sont également exclus. Utiliser cette variante à la place de S2 dans les labs et environnements VMware — ne pas importer les deux simultanément. Next Steps: 1. Identifier le processus source via log.data.SourceImage. 2. Vérifier les droits d''accès via log.data.GrantedAccess — les valeurs 4112 (0x1010) et 5136 (0x1410) sont caractéristiques de Mimikatz et des outils de dumping. Attention : UTMStack stocke ce champ en décimal, pas en hexadécimal. 3. Analyser log.data.CallTrace pour identifier les modules chargés — la présence de frames UNKNOWN indique une DLL non mappée sur disque, signe possible d''injection. 4. Isoler la machine si un outil de dumping est confirmé. 5. Réinitialiser tous les mots de passe si compromise confirmée.'
 where: |-
   equals("log.eventCode", 10) &&
   contains("log.channel", "Sysmon") &&
   contains("log.data.TargetImage", "lsass.exe") &&
+  !equals("log.data.GrantedAccess", 5120) &&
+  !equals("log.data.GrantedAccess", 5200) &&
   !contains("log.data.SourceImage", "Windows Defender Advanced Threat Protection") &&
   !contains("log.data.SourceImage", "Windows Defender") &&
+  !contains("log.data.SourceImage", "Azure AD Connect Health Agent") &&
   !contains("log.data.SourceImage", "UTMStack") &&
   !contains("log.data.SourceImage", "MRT.exe") &&
   !contains("log.data.SourceImage", "taskmgr.exe") &&
@@ -629,22 +632,54 @@ groupBy: []
 deduplicateBy: []
 ```
 
+**Note sur les masques d'accès :** UTMStack stocke `log.data.GrantedAccess` en décimal. Les masques couramment cités dans la littérature Sysmon en hexadécimal correspondent aux valeurs décimales suivantes :
+
+| Décimal | Hexadécimal | Signification | Verdict |
+|---|---|---|---|
+| 5120 | `0x1400` | QUERY_LIMITED_INFORMATION + QUERY_INFORMATION | ✅ bénin — exclus |
+| 5200 | `0x1450` | 0x1400 + DUP_HANDLE | ✅ bénin — exclus |
+| 4112 | `0x1010` | QUERY_INFORMATION + VM_READ | 🔴 Mimikatz classique |
+| 5136 | `0x1410` | 0x1400 + VM_READ | 🔴 suspect |
+| 2097151 | `0x1FFFFF` | PROCESS_ALL_ACCESS | ⚠️ selon contexte |
+
+Le discriminant est le bit `VM_READ (0x0010)` : sans lui, la lecture de la mémoire de lsass est structurellement impossible. Les masques `5120` et `5200` ne le contiennent pas — ils sont exclus par la règle.
+
 **Test de déclenchement**
 
-Depuis WIN11-AD-TESTS, en PowerShell admin (MDE interceptera et bloquera) :
+Sur les machines équipées de MDE Plan 1, les outils de dump connus (`comsvcs.dll MiniDump`, `procdump.exe`) sont interceptés avant que Sysmon génère l'EID 10. La validation se fait par vérification des events déjà présents en base.
 
-```powershell
-# Accès LSASS via l'API Windows — simuler le comportement d'un dumper
-$proc = Get-Process lsass
-$handle = [System.Runtime.InteropServices.Marshal]::AllocHGlobal(1)
-# L'accès à la mémoire de lsass.exe via OpenProcess génère l'EID 10 Sysmon
+Vérifier les events EID 10 récents avec un masque suspect dans OpenSearch :
+
+```bash
+docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
+  -u 'admin:s2X9K_t8!W0eF=ux' \
+  'https://localhost:9200/v11-log-*/_search' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "size": 5,
+  "query": {
+    "bool": {
+      "filter": [
+        { "term": { "log.eventCode": 10 } },
+        { "match_phrase": { "log.data.TargetImage": "lsass.exe" } },
+        { "range": { "timestamp": { "gte": "now-24h" } } }
+      ]
+    }
+  },
+  "sort": [{ "timestamp": "desc" }],
+  "_source": ["log.data.SourceImage", "log.data.GrantedAccess", "host.hostname", "timestamp"]
+}' | python3 -m json.tool
 ```
 
-En pratique, utiliser ProcDump de Sysinternals en environnement contrôlé isolé de MDE :
+Un event avec `log.data.GrantedAccess` à `4112` ou `5136` depuis un `SourceImage` inattendu doit déclencher l'alerte. Un event à `5120` ou `5200` ne doit pas déclencher — ce sont les masques query-only exclus par la règle.
+
+Sur une VM de test **isolée de MDE et du domaine**, ProcDump de Sysinternals permet de générer un event EID 10 contrôlé :
 
 ```cmd
-procdump.exe -ma lsass.exe lsass.dmp
+procdump.exe -ma lsass.exe C:\Temp\lsass.dmp
 ```
+
+> ⚠️ **Environnement isolé obligatoire.** ProcDump crée un dump complet contenant les credentials de toutes les sessions actives. Cette commande ne doit jamais être exécutée sur une machine domain-joined ou avec des sessions utilisateur actives.
 
 ---
 
