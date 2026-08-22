@@ -51,12 +51,14 @@ rules/
 | Fichier | Event ID | Technique MITRE | Testé | Notes |
 |---|---|---|---|---|
 | [s1-lolbas-execution.yml](sysmon/s1-lolbas-execution.yml) | 4688 | T1218 | ✅ WIN11-AD-TESTS | EID 4688 + GPO ligne de commande (EID 1 filtré par UTMStack) |
-| [s2-suspicious-parent-child.yml](sysmon/s2-suspicious-parent-child.yml) | 4688 | T1059 | ✅ WIN11-AD-TESTS | Exclusion VMware Tools (faux positif confirmé) |
-| [s3-process-injection.yml](sysmon/s3-process-injection.yml) | 8 | T1055 | ✅ WIN11-AD-TESTS | Sysmon EID 8 CreateRemoteThread |
+| [s2-lsass-access.yml](sysmon/s2-lsass-access.yml) / [s2-lsass-access-vmware.yml](sysmon/s2-lsass-access-vmware.yml) | 10 | T1003.001 | ✅ gest-srv | Exclusion masques query-only (5120/5200) + AAD Health Agent — variante VMware exclut vmtoolsd.exe |
+| [s3-suspicious-named-pipe.yml](sysmon/s3-suspicious-named-pipe.yml) | 17 | T1559.001 | ✅ WIN11-AD-TESTS | Named pipes C2 (Cobalt Strike, Metasploit, Mimikatz) |
 | [s4-ntds-sam-access.yml](sysmon/s4-ntds-sam-access.yml) | 11 | T1003.003 | ✅ DC01-MAIN-SITE | Sysmon EID 11 FileCreate sur NTDS/SAM |
-| [s5-registry-run-key.yml](sysmon/s5-registry-run-key.yml) | 12/13 | T1547.001 | ✅ WIN11-AD-TESTS | Sysmon EID 12/13 Run/RunOnce |
+| [s5-registry-run-persistence.yml](sysmon/s5-registry-run-persistence.yml) | 12/13 | T1547.001 | ✅ WIN11-AD-TESTS | Sysmon EID 12/13 Run/RunOnce |
 
 > ⚠️ **Prérequis Sysmon** : la règle S1 requiert l'activation de la GPO "Inclure la ligne de commande dans les événements de création de processus" (Configuration ordinateur → Stratégies → Modèles d'administration → Système → Création de processus d'audit). Sans cette GPO, `log.data.CommandLine` est absent.
+
+> ℹ️ **S2 — deux variantes** : utiliser `s2-lsass-access-vmware.yml` dans les environnements VMware, `s2-lsass-access.yml` dans les autres. Ne pas importer les deux simultanément. UTMStack stocke `log.data.GrantedAccess` en **décimal** — les valeurs hexadécimales des règles publiques Sysmon (0x1010, 0x1410) doivent être converties (4112, 5136).
 
 ### Linux (auditd)
 
@@ -144,6 +146,7 @@ Chaque exclusion ajoutée est documentée dans le champ `where:` avec un comment
 | Events Linux : `log.message` et `raw` non évalués | Utiliser uniquement les champs auditd structurés |
 | Sysmon EID 1 filtré par l'agent UTMStack | Utiliser EID 4688 + GPO ligne de commande |
 | Champ `raw` non évalué par le moteur de corrélation | Utiliser uniquement les champs structurés mappés dans `log.*` |
+| `log.data.GrantedAccess` stocké en **décimal** (pas hexadécimal) | Convertir les valeurs hex des règles publiques Sysmon avant usage |
 | Règles non rétroactives | Déclenchent uniquement sur les nouveaux events après import |
 
 ## Références
