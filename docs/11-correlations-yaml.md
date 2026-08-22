@@ -1895,7 +1895,7 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1098/001/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
-description: 'Un secret ou certificat a été ajouté sur un service principal Entra ID existant (Add service principal credentials., Workload AzureActiveDirectory). Vecteur de persistance documenté post-CVE-2026-69836 : un attaquant ayant obtenu un accès temporaire ajoute ses propres credentials sur un service principal existant pour maintenir un accès persistant même après réinitialisation des mots de passe utilisateur. Le service principal concerné est visible dans log.ObjectId. Note : cette règle est validée logiquement — l''action Add service principal credentials. est confirmée dans les journaux Entra ID mais n''était pas présente dans OpenSearch au moment de la rédaction. À vérifier après la prochaine rotation de secrets. Next Steps: 1. Identifier le service principal concerné via log.ObjectId. 2. Vérifier l''acteur via origin.user — un acteur inconnu ou un ServicePrincipal non Microsoft est suspect. 3. Auditer les permissions du service principal concerné. 4. Supprimer les credentials non autorisés via Entra ID → Applications d''entreprise → Certificats et secrets. 5. Investiguer les connexions effectuées via ce service principal depuis l''ajout des credentials.'
+description: 'Un secret ou certificat a été ajouté sur un service principal Entra ID existant via API Graph (Add service principal credentials., Workload AzureActiveDirectory). Vecteur de persistance documenté post-CVE-2026-69836 : un attaquant ayant obtenu un accès temporaire ajoute ses propres credentials sur un service principal existant pour maintenir un accès persistant même après réinitialisation des mots de passe utilisateur. Attention : cette règle couvre uniquement les ajouts via API Graph (addPassword) — l''interface graphique Entra ID génère un libellé différent (Update application – Certificates and secrets management) et ne déclenche pas cette règle. Validée en live le 22 août 2026. Next Steps: 1. Identifier le service principal concerné via log.ObjectId et log.Target. 2. Vérifier l''acteur via origin.user — un acteur inconnu ou un accès via Graph Explorer non autorisé est suspect. 3. Identifier le credential ajouté via log.ModifiedProperties (KeyDescription). 4. Supprimer le credential non autorisé via Entra ID → Applications d''entreprise → Certificats et secrets. 5. Investiguer les connexions effectuées via ce service principal depuis l''ajout des credentials.'
 where: |-
   equals("action", "Add service principal credentials.") &&
   contains("log.Workload", "AzureActiveDirectory")
@@ -1904,9 +1904,38 @@ groupBy: []
 deduplicateBy: []
 ```
 
-**Note de validation :** l'action `Add service principal credentials.` est confirmée dans les journaux d'audit Entra ID (visible lors de l'audit rétrospectif CVE-2026-69836 du 22 août 2026, entrées du 06/08). Elle n'était pas présente dans l'index OpenSearch `v11-log-o365-*` au moment de la rédaction — les rotations de secrets apparaissent dans les journaux Entra ID sous `Update application – Certificates and secrets management`, pas sous `Add service principal credentials.`. La règle déclenchera lors du prochain ajout explicite de credentials sur un service principal.
+**Note de validation :** validée en live le 22 août 2026 via API Graph (`addPassword`) sur le service principal `Portals-Docs divers`. Latence O365 → UTMStack : ~4 minutes. Champs confirmés : `action = "Add service principal credentials."` (filtre YAML exact), `log.ObjectId` (URI du service principal ciblé), `log.ModifiedProperties` avec `KeyDescription` (nom du credential ajouté visible), `origin.user` (acteur), `log.Target` (nom de l'application ciblée).
 
-**Test de déclenchement :** dans Entra ID → Applications d'entreprise → sélectionner une application → Certificats et secrets → Nouveau secret client → Ajouter. L'event `Add service principal credentials.` est généré avec `log.ObjectId` (ObjectId du service principal). Retirer le secret après validation.
+**Point critique — deux libellés distincts selon le vecteur d'ajout :**
+- Via **API Graph** (`addPassword`) → génère `Add service principal credentials.` → **déclenche M-new-2** ✅
+- Via **portail Entra ID** (Applications d'entreprise → Certificats et secrets → Nouveau secret) → génère `Update application – Certificates and secrets management` → **ne déclenche pas M-new-2**
+
+Un attaquant sophistiqué utilise l'API Graph directement pour ajouter ses credentials — c'est précisément ce vecteur que M-new-2 couvre. L'interface graphique génère un libellé différent hors du scope de cette règle.
+
+**Test de déclenchement :** via Graph Explorer (`https://developer.microsoft.com/en-us/graph/graph-explorer`) :
+
+```
+# Étape 1 — Trouver le servicePrincipal ID de l'app à tester
+GET https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '{appId}'&$select=id,displayName
+
+# Étape 2 — Ajouter un credential temporaire
+POST https://graph.microsoft.com/v1.0/servicePrincipals/{id}/addPassword
+Content-Type: application/json
+{
+  "passwordCredential": {
+    "displayName": "test-m-new-2-validation"
+  }
+}
+
+# Étape 3 — Retirer le credential après validation
+DELETE https://graph.microsoft.com/v1.0/servicePrincipals/{id}/removePassword
+Content-Type: application/json
+{
+  "keyId": "{keyId retourné à l'étape 2}"
+}
+```
+
+L'alerte contient `log.ModifiedProperties` avec `KeyDescription` (nom et identifiant du credential ajouté) et `log.Target` avec le nom de l'application ciblée.
 
 ---
 
