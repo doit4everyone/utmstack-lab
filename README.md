@@ -31,13 +31,13 @@
 | [09 — Pipeline SOC augmenté par IA locale](docs/09-pipeline-llm.md) | Ollama + n8n, tri déterministe, threat intelligence, comparatif LLM |
 | [10 — Intégrations agents et sources de logs](docs/10-integrations-agents.md) | Agents Windows/Linux, M365, Azure Event Hub, SOC AI natif |
 | [10b — Sysmon — Déploiement et configuration](docs/10-sysmon.md) | Sysmon v15.21, méthode registre ANSSI, WEF self-subscription → UTMStack |
-| [11 — Règles de corrélation YAML](docs/11-correlations-yaml.md) | 38 règles custom validées en live — séries W, WD, S, L, M, A — 28 techniques MITRE ATT&CK |
+| [11 — Règles de corrélation YAML](docs/11-correlations-yaml.md) | 40 règles custom validées en live — séries W, WD, S, L, M, A — 29 techniques MITRE ATT&CK |
 
 | Annexe | Description |
 |--------|-------------|
 | [Checklist Migration OPNsense 26.1](docs/06-migration-checklist.md) | Points de vigilance post-migration OPNsense 25.7 → 26.1 |
 | [Réduction du bruit — Règles de corrélation](docs/correlation-rules-tuning.md) | Alert fatigue, diagnostic OpenSearch/PostgreSQL, automatisation post-restart |
-| [Bibliothèque de règles custom](rules/) | 38 règles YAML (séries W, WD, S, L, M, A) — 28 techniques MITRE ATT&CK |
+| [Bibliothèque de règles custom](rules/) | 40 règles YAML (séries W, WD, S, L, M, A) — 29 techniques MITRE ATT&CK |
 | [Workflows Pipeline IA](scripts/) | JSON n8n, scripts heartbeat systemd, Modelfiles Ollama |
 | [Scripts WEF NTLM](scripts/) | Deploy-WEF-NTLM-GPO.ps1, Intune, Detect, ntlm-subscription.xml |
 | [Configurations Sysmon](configs/sysmon/) | sysmon-workstation.xml, sysmon-dc.xml, sysmon-wef-subscription.xml — schéma 4.91 |
@@ -46,15 +46,15 @@
 
 ## 🎯 Règles de corrélation YAML custom
 
-38 règles validées en live dans OpenSearch, organisées par source de logs :
+40 règles validées en live dans OpenSearch, organisées par source de logs :
 
 | Série | Dossier | Règles | Techniques MITRE |
 |-------|---------|--------|-----------------|
 | W — Windows natif | [rules/windows/](rules/windows/) | W1→W7 | Lockout, Pass-the-Hash, Kerberoasting, tâches planifiées, services suspects |
 | WD — Windows Defender | [rules/windows-defender/](rules/windows-defender/) | WD1→WD5 | Détection malware, tamper protection, exclusions |
-| S — Sysmon via WEF | [rules/sysmon/](rules/sysmon/) | S1→S5 | LOLBAS, injection de processus, NTDS, Run keys |
+| S — Sysmon via WEF | [rules/sysmon/](rules/sysmon/) | S1→S5 | LOLBAS, accès LSASS, named pipes C2, NTDS, Run keys |
 | L — Linux auditd | [rules/linux/](rules/linux/) | L1→L2 | Brute force SSH, sudo |
-| M — Microsoft 365/Entra ID | [rules/microsoft-365/](rules/microsoft-365/) | M2,M5→M8,M10→M12,M14 | OAuth consent, MFA, audit désactivé, DLP, Accès Conditionnel |
+| M — Microsoft 365/Entra ID | [rules/microsoft-365/](rules/microsoft-365/) | M2,M5→M8,M10→M12,M14,M-new-1,M-new-2 | OAuth consent, MFA, audit désactivé, DLP, Accès Conditionnel, attribution de rôle privilégié, credentials SP |
 | A — Azure Activity Log | [rules/azure/](rules/azure/) | A1→A11 | Attribution de rôle, Key Vault, resource locks, destruction bloquée |
 
 → [README détaillé de la bibliothèque](rules/README.md)
@@ -89,7 +89,7 @@
 - **SOC AI** : module natif UTMStack + pipeline n8n custom (Ollama local)
 - **Pipeline IA** : Ollama (Llama 3.1 8B) + n8n — tri déterministe, enrichissement AbuseIPDB/GreyNoise/OTX/ThreatFox
 - **Sysmon** : v15.21 schéma 4.91 — méthode registre ANSSI, collecte WEF → UTMStack
-- **Règles custom** : 38 règles YAML — 28 techniques MITRE ATT&CK, validées en live dans OpenSearch
+- **Règles custom** : 40 règles YAML — 29 techniques MITRE ATT&CK, validées en live dans OpenSearch
 
 ---
 
