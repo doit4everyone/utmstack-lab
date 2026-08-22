@@ -1,6 +1,6 @@
 ---
 title: "Intégrations agents et sources de logs — UTMStack v11 | DoIt4Everyone"
-description: "Guide complet des intégrations UTMStack v11 : agent Windows, agent Linux, collecteur UTMStack, Microsoft 365, Azure Event Hub, SOC AI natif. Règles de corrélation custom Windows Defender et O365 avec tuning des faux positifs."
+description: "Guide complet des intégrations UTMStack v11 : agent Windows, agent Linux, collecteur UTMStack, Microsoft 365, Azure Event Hub, SOC AI natif. Sources de logs et architecture de collecte — les règles de corrélation custom sont documentées dans le chapitre 11."
 ---
 <style>
   header, footer { display: none !important; }
@@ -158,16 +158,30 @@ La règle native UTMStack **"Windows Defender - Malware Detected (Event 1116)"**
 
 #### Règles custom créées
 
-Quatre règles custom ont été développées pour compléter la couverture native. Elles sont disponibles dans le [dépôt GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/windows-defender).
+Quatre règles custom ont été développées pour compléter la couverture native. Elles sont documentées en détail dans le **[Chapitre 11 — Règles de corrélation YAML personnalisées](11-correlations-yaml.md)** (série WD) et disponibles dans le [dépôt GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/windows-defender).
 
 **Philosophie de tuning appliquée :** approche défensive — la règle capture large, les faux positifs connus sont exclus chirurgicalement. Cette approche minimise le risque de rater une vraie menace, au prix d'un tuning itératif en production.
 
-| Règle | Event | FP exclus documentés |
-|---|---|---|
-| windows-defender-exclusion-added.yml | 5007 | WdConfigHash, UX Configuration, DLP Configs, EcsConfigs |
-| windows-defender-realtime-disabled.yml | 5001 | — |
-| windows-defender-remediation-failed.yml | 1118 | — |
-| windows-defender-tamper-protection.yml | 5013 | Changed Type = Ignoré |
+| Règle | Event | Série ch.11 | FP exclus documentés |
+|---|---|---|---|
+| windows-defender-tamper-protection.yml | 5013 | WD2 | Changed Type = Ignoré |
+| windows-defender-realtime-disabled.yml | 5001 | WD3 | — |
+| windows-defender-remediation-failed.yml | 1118 | WD4 | — |
+| windows-defender-exclusion-added.yml | 5007 | WD5 | Sous-répertoire Diagnostics (WdConfigHash, UX Configuration, DLP Configs, EcsConfigs) |
+
+**Procédure d'import :**
+
+1. Dans UTMStack → **Threat Management** → **Correlation Rules** → **Import**
+2. Sélectionner le fichier `.yml`
+3. Redémarrer les event-processors — **obligatoire**, sans ce redémarrage la règle apparaît dans la liste mais ne déclenche pas :
+
+```bash
+docker service update --force utmstack_event-processor-worker
+sleep 30
+docker service update --force utmstack_event-processor-manager
+```
+
+> ℹ️ **Stabilité** : les règles importées via l'UI (`system_owner = false`) ne sont **pas** réinitialisées au redémarrage des conteneurs UTMStack — contrairement aux règles natives. Le redémarrage ci-dessus n'est nécessaire qu'une seule fois, au moment de l'import.
 
 **Faux positifs documentés sur Event 5007 :**
 
@@ -353,7 +367,7 @@ UTMStack inclut 15 règles de corrélation natives pour les logs O365, couvrant 
 | Impossible Travel natif Entra | ❌ | ✅ |
 | Privileged Identity Management | ❌ | ✅ |
 
-Les règles custom O365 développées dans ce lab comblent partiellement ces gaps pour les environnements P1 — voir [Bibliothèque de règles](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/microsoft-365).
+Les règles custom O365 développées dans ce lab comblent partiellement ces gaps pour les environnements P1 — documentées en détail dans le **[Chapitre 11 — Série M](11-correlations-yaml.md#série-m--microsoft-365-et-entra-id)** et disponibles sur [GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/microsoft-365).
 
 ---
 
@@ -606,6 +620,7 @@ Le SOC AI natif est un complément rapide pour les équipes sans ressources pour
 | `v11-log-utmstack-*` | Collecteur UTMStack | `utmstack` | `log.containerName`, `log.args.*` |
 | `v11-log-o365-*` | Microsoft 365 | `o365` | `action`, `log.Workload`, `log.RecordType`, `origin.user` |
 | `v11-log-azure-*` | Azure Event Hub | `azure` | `log.operationName`, `log.resultType`, `log.category` |
+| `v11-log-sysmon-*` | Sysmon via WEF | `sysmon` | `log.data.Image`, `log.data.CommandLine`, `log.data.ParentImage` |
 | `v11-log-generic-*` | Syslog générique | `generic` | `log.message`, `dataSource` |
 
 **Champs communs à tous les index :**
@@ -627,13 +642,13 @@ Le SOC AI natif est un complément rapide pour les équipes sans ressources pour
 ## Ressources
 
 - [Bibliothèque de règles de corrélation (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/rules)
-- [Chapitre 11 — Règles de corrélation custom](https://doit4everyone.github.io/utmstack-lab/docs/11-correlation-rules.html) *(à venir)*
+- [Chapitre 11 — Règles de corrélation YAML personnalisées](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html)
 - [Réduction du bruit — Tuning des règles natives](https://doit4everyone.github.io/utmstack-lab/docs/correlation-rules-tuning.html)
 - [Chapitre 09 — Pipeline SOC augmenté par IA locale](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html)
 
 ---
 
-> [← Retour à l'index](../) | [→ Chapitre 11 — Règles de corrélation custom](11-correlation-rules.md)
+> [← Retour à l'index](../) | [→ Chapitre 11 — Règles de corrélation YAML personnalisées](11-correlations-yaml.md)
 
 *Procédures testées et validées sur UTMStack v11.2.12 CE — Infrastructure lab PME Suisse*
 
