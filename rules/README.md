@@ -101,7 +101,7 @@ rules/
 
 > ℹ️ **M-new-1 vs M6** : M6 couvre `Add member to group.` (groupes Entra ID), M-new-1 couvre `Add member to role.` (rôles d'administration). Les deux règles sont complémentaires. M-new-1 validé en live le 22 août 2026.
 
-> ⚠️ **M-new-2 — validation partielle** : l'action `Add service principal credentials.` est confirmée dans les journaux Entra ID mais n'était pas présente dans OpenSearch au moment de la rédaction. À valider lors du prochain ajout explicite de credentials sur un service principal (renouvellement de secret applicatif).
+> ⚠️ **M-new-2 — vecteur spécifique** : déclenche uniquement sur les ajouts de credentials via API Graph (`addPassword`). L'interface graphique Entra ID génère un libellé différent (`Update application – Certificates and secrets management`) et ne déclenche pas cette règle. Validée en live le 22 août 2026 via Graph Explorer.
 
 > ⚠️ **Boucle DLP** : dans les environnements où les notifications UTMStack sont envoyées vers une adresse externe, les règles M10 et M11 peuvent déclencher en boucle. Configurer les notifications vers une adresse interne au tenant.
 
