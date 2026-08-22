@@ -27,6 +27,22 @@ lang: fr
 
 > [← Retour à l'index](../)
 
+## Sommaire
+
+- [Veille CVE et règles compensatoires](#veille-cve-et-règles-de-détection-compensatoires)
+- [Prérequis et architecture](#prérequis-et-architecture)
+- [Série W — Windows natif](#série-w--windows-natif-wineventlog) : W1 · W2 · W3 · W4 · W5a · W5b · W6 · W7
+- [Série WD — Windows Defender](#série-wd--windows-defender) : WD1 · WD2 · WD3 · WD4 · WD5
+- [Série S — Sysmon via WEF](#série-s--sysmon-via-wef) : S1 · S2 · S3 · S4 · S5
+- [Série L — Linux auditd](#série-l--linux-auditd) : L1 · L2
+- [Série M — Microsoft 365 et Entra ID](#série-m--microsoft-365-et-entra-id) : Brute Force · Password Spray · Impossible Travel · DLP · MDE · Token Protection · M5 · M6 · M7 · M10 · M2 · M11 · M12 · M13 · M14 · M-new-1 · M-new-2
+- [Série A — Azure Activity Log](#série-a--azure-activity-log) : A1 · A2 · A3 · A4a · A4b · A5 · A6 · A7 · A8 · A9 · A10 · A11
+- [Annexe W8 — non implémentable](#annexe-w8--run-key-via-audit-natif-registre-eid-4657--non-implémentable)
+- [Matrice de couverture MITRE ATT&CK](#matrice-de-couverture-mitre-attck)
+- [Note finale](#note-finale--détection-comportementale-cve-et-complémentarité-des-outils)
+
+---
+
 Ce chapitre documente la création et la validation de règles de corrélation personnalisées pour UTMStack v11. Chaque règle est validée en live dans OpenSearch avant d'être publiée, aucune règle n'est documentée sans déclenchement confirmé.
 
 Les règles couvrent six sources de logs : Windows natif (wineventlog), Sysmon via WEF, Linux (auditd), Windows Defender, Microsoft 365 et Azure Activity Log. Elles sont organisées en séries : W (Windows), WD (Windows Defender), S (Sysmon), L (Linux), M (M365/Entra ID) et A (Azure).
@@ -489,23 +505,186 @@ Remove-ADUser -Identity "svc-test-w7" -Confirm:$false
 
 ## Série WD — Windows Defender
 
-Ces quatre règles ont été créées et validées lors des sessions précédentes. Les fichiers YAML correspondants sont disponibles dans le répertoire [`rules/windows-defender/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/windows-defender) du dépôt.
+Ces cinq règles couvrent les événements Windows Defender sur les endpoints. Elles utilisent les journaux `Microsoft-Windows-Windows Defender` collectés par l'agent UTMStack. Les fichiers YAML sont disponibles dans [`rules/windows-defender/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/windows-defender).
 
-| Règle | EID | Description |
-|---|---|---|
-| WD1 - Malware Detected | 1116 | Malware détecté par Windows Defender avec ThreatName complet |
-| WD2 - Tamper Protection Blocked | 5013 | Tentative de désactivation de la protection anti-altération |
-| WD3 - Real-Time Protection Disabled | 5001 | Désactivation de la protection temps réel |
-| WD4 - Malware Remediation Failed | 1118 | Échec de remédiation d'un malware détecté |
-| WD5 - Exclusion Added | 5007 | Ajout d'une exclusion Defender (vecteur d'évasion) |
+### WD1 — Malware Detected (EID 1116)
 
-**Note :** l'Event 1116 (Malware Detected) est couvert par la règle custom `windows-defender-malware-detected.yml` — aucune règle native UTMStack ne couvre cet event.
+Windows Defender a détecté un malware sur un endpoint. Aucune règle native UTMStack ne couvre l'EID 1116 — cette règle custom est indispensable pour remonter les détections Defender dans le SIEM. Le champ `log.data.ThreatName` contient le nom complet de la menace (ex : `Trojan:Win32/Meterpreter.gen!A`).
 
-**Faux positif WD4 documenté :** les modifications de configuration Defender liées aux mises à jour Windows (`WdConfigHash`, `UX Configuration`, `DLP Configs`, `EcsConfigs`) génèrent des events EID 5007 légitimes. Ces patterns sont exclus dans la règle.
+**Technique MITRE :** T1587.001 — Develop Capabilities: Malware
 
-**Test WD1 :** depuis un endpoint Intune géré, tenter de désactiver la protection Tamper via PowerShell — `Set-MpPreference -DisableTamperProtection $true`. L'opération échoue et génère l'EID 5013.
+```yaml
+name: Windows Defender - Malware Detected
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Malware Defense
+technique: T1587.001 - Develop Capabilities Malware
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1587/001/
+  - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
+description: 'Windows Defender a détecté un malware sur un endpoint (EID 1116). Le champ log.data.ThreatName contient le nom complet de la menace détectée. Aucune règle native UTMStack ne couvre cet event. Next Steps: 1. Identifier le fichier détecté via log.data.Path. 2. Identifier le nom complet de la menace via log.data.ThreatName. 3. Vérifier si la remédiation automatique a réussi — consulter l''EID 1117 (remédiation réussie) ou EID 1118 (remédiation échouée) sur le même host dans les minutes suivantes. 4. Si remédiation échouée (WD4), isoler le poste immédiatement. 5. Corréler avec les events Sysmon sur le même host pour identifier le vecteur d''infection.'
+where: |-
+  equals("log.eventCode", 1116) &&
+  exists("log.data.ThreatName")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
 
-**Test WD4 :** ajouter une exclusion de chemin via PowerShell — `Add-MpPreference -ExclusionPath "C:\Temp"`. L'opération réussit (si Tamper Protection est désactivée) et génère l'EID 5007.
+**Test de déclenchement :** télécharger le fichier de test EICAR (`https://www.eicar.org/download/eicar.com.txt`) sur un endpoint Windows. Defender détecte la signature EICAR comme `Virus:DOS/EICAR_Test_File` et génère l'EID 1116 immédiatement, suivi de l'EID 1117 (remédiation réussie). MDE génère également une alerte dans `security.microsoft.com`.
+
+---
+
+### WD2 — Tamper Protection Blocked (EID 5013)
+
+La Tamper Protection de Windows Defender a bloqué une tentative de modification des paramètres de sécurité. Signal fort d'une tentative d'évasion de défense — un ransomware ou malware avancé tente systématiquement de désactiver Defender avant son déploiement.
+
+**Faux positif documenté :** certains events EID 5013 ont `log.data.Changed Type = "Ignoré"` — Defender loggue des changements de configuration interne qu'il a lui-même ignorés (non appliqués). Ces events bénins sont exclus par le filtre.
+
+**Technique MITRE :** T1562.001 — Impair Defenses: Disable or Modify Tools
+
+```yaml
+name: Windows Defender - Tamper Protection Blocked (Event 5013)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Defense Evasion
+technique: T1562.001 - Impair Defenses Disable or Modify Tools
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/001/
+  - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/prevent-changes-to-security-settings-with-tamper-protection
+description: 'La Tamper Protection de Windows Defender a bloqué une tentative de modification des paramètres de sécurité (Event 5013). Signal fort d''une tentative d''évasion de défense. Les events de type "Ignoré" (changements internes Defender non appliqués) sont exclus. Next Steps: 1. Identifier le processus ayant tenté la modification via les logs de sécurité (Event 4688). 2. Vérifier l''utilisateur connecté au moment de l''event. 3. Contrôler les events 1116/1117 récents sur la même machine. 4. Investiguer si d''autres techniques d''évasion ont été tentées simultanément.'
+where: |-
+  equals("log.eventCode", 5013) &&
+  equals("log.providerName", "Microsoft-Windows-Windows Defender") &&
+  !equals("log.data.Changed Type", "Ignoré")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** depuis MDM-BLAISE-871 (Intune, Tamper Protection active), tenter en PowerShell admin : `Set-MpPreference -DisableTamperProtection $true`. L'opération est bloquée et génère l'EID 5013 avec `log.data.Changed Type` différent de `"Ignoré"`.
+
+---
+
+### WD3 — Real-Time Protection Disabled (EID 5001)
+
+La protection en temps réel de Windows Defender a été désactivée. Action classique des ransomwares et malwares avant leur déploiement. **Non testé en live dans ce lab** — Tamper Protection active sur MDM-BLAISE-871 bloque toute désactivation, empêchant la génération de l'EID 5001.
+
+**Technique MITRE :** T1562.001 — Impair Defenses: Disable or Modify Tools
+
+```yaml
+name: Windows Defender - Real-Time Protection Disabled (Event 5001)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Defense Evasion
+technique: T1562.001 - Impair Defenses Disable or Modify Tools
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/001/
+  - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
+description: 'La protection en temps réel de Windows Defender a été désactivée sur un endpoint (EID 5001). Technique d''évasion classique utilisée par les ransomwares avant leur déploiement. Next Steps: 1. Vérifier si la désactivation est planifiée et autorisée. 2. Identifier le processus ou l''utilisateur ayant désactivé la protection. 3. Vérifier les events 1116/1117 récents sur la même machine. 4. Contrôler les connexions réseau sortantes. 5. Réactiver immédiatement si non autorisée.'
+where: |-
+  equals("log.eventCode", 5001) &&
+  equals("log.providerName", "Microsoft-Windows-Windows Defender")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** sur une machine **sans Tamper Protection active**, exécuter `Set-MpPreference -DisableRealtimeMonitoring $true` en PowerShell admin. Ne pas tester sur une machine Intune avec Tamper Protection — l'opération sera bloquée et générera WD2 (EID 5013) à la place.
+
+---
+
+### WD4 — Malware Remediation Failed (EID 1118)
+
+Windows Defender a détecté un malware mais n'a pas pu effectuer la remédiation. Le malware est toujours présent — intervention manuelle immédiate requise. **Non testé en live** — nécessite un malware résistant à la remédiation automatique, non reproductible de façon contrôlée.
+
+**Technique MITRE :** T1204 — User Execution
+
+```yaml
+name: Windows Defender - Malware Remediation Failed (Event 1118)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Malware Defense
+technique: T1204 - User Execution
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1204/
+  - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
+description: 'Windows Defender a détecté un logiciel malveillant mais n''a pas pu effectuer l''action de remédiation (EID 1118). Le malware est toujours présent — intervention manuelle requise immédiatement. Next Steps: 1. Isoler immédiatement la machine du réseau. 2. Identifier le fichier via log.data.Path. 3. Tenter une remédiation manuelle depuis security.microsoft.com. 4. Analyser les connexions réseau sortantes. 5. Vérifier si d''autres machines sont affectées.'
+where: |-
+  equals("log.eventCode", 1118) &&
+  equals("log.providerName", "Microsoft-Windows-Windows Defender")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** non reproductible de façon contrôlée. En pratique, corréler avec WD1 (EID 1116) sur le même host — l'absence d'EID 1117 (remédiation réussie) après WD1 dans une fenêtre de quelques minutes est un signal indirect de WD4.
+
+---
+
+### WD5 — Defender Exclusion Added (EID 5007)
+
+La configuration de Windows Defender a été modifiée — spécifiquement l'ajout d'une exclusion. Technique couramment utilisée post-compromise pour masquer des outils malveillants. Les modifications dans le sous-répertoire `Diagnostics` (maintenance Defender) sont exclues.
+
+> **Note syntaxique :** le YAML utilise `not(contains(...))` au lieu de `!contains(...)`. Les deux syntaxes sont équivalentes dans le moteur UTMStack v11.
+
+**Technique MITRE :** T1562.001 — Impair Defenses: Disable or Modify Tools
+
+```yaml
+name: Windows Defender - Exclusion Added (Event 5007)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Defense Evasion
+technique: T1562.001 - Impair Defenses Disable or Modify Tools
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1562/001/
+  - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
+description: 'La configuration de Windows Defender a été modifiée (Event 5007). Les exclusions ajoutées sont le vecteur principal — technique post-compromise pour masquer des outils malveillants. Les modifications de sous-configuration Diagnostics sont exclues. Next Steps: 1. Identifier la modification via log.data.New Value et log.data.Old Value. 2. Vérifier si la modification est autorisée. 3. Contrôler les events de connexion récents sur cette machine. 4. Vérifier si d''autres modifications de sécurité ont eu lieu dans la même fenêtre. 5. Supprimer l''exclusion si non autorisée.'
+where: |-
+  equals("log.eventCode", 5007) &&
+  equals("log.providerName", "Microsoft-Windows-Windows Defender") &&
+  not(contains("log.data.New Value", "Diagnostics")) &&
+  not(contains("log.data.Old Value", "Diagnostics"))
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Faux positifs documentés :** les mises à jour de configuration Defender via Intune génèrent des EID 5007 avec `WdConfigHash`, `UX Configuration`, `DLP Configs`, `EcsConfigs` dans `log.data.New Value` sous le sous-chemin `Diagnostics` — exclus par le filtre.
+
+**Test de déclenchement :** depuis WIN11-AD-TESTS en PowerShell admin :
+
+```powershell
+Add-MpPreference -ExclusionPath "C:\Temp\test-wd5"
+Remove-MpPreference -ExclusionPath "C:\Temp\test-wd5"
+```
+
+L'alerte contient `log.data.New Value` avec le chemin exclu et `log.data.Old Value` vide pour l'ajout.
 
 ---
 
@@ -940,17 +1119,210 @@ Les règles M couvrent les événements Microsoft 365 collectés via l'API Offic
 
 **`log.ExternalAccess`** — booléen natif dans OpenSearch. Utiliser `equals("log.ExternalAccess", true)` sans guillemets sur la valeur booléenne.
 
-### Règles existantes en dépôt
+### Règles existantes en dépôt — documentation complète
 
-Les cinq règles suivantes ont été créées lors des sessions initiales et sont disponibles dans [`rules/microsoft-365/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/microsoft-365) :
+Les cinq règles suivantes ont été créées lors des sessions initiales et sont disponibles dans [`rules/microsoft-365/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/microsoft-365).
 
-| Fichier | Signal | Technique |
-|---|---|---|
-| `o365-entra-brute-force.yml` | `UserLoginFailed` + `log.LogonError = InvalidUserNameOrPassword` | T1110.001 |
-| `o365-entra-password-spray.yml` | `UserLoginFailed` + `log.LogonError = InvalidUserNameOrPassword` sur comptes distincts | T1110.003 |
-| `o365-impossible-travel.yml` | `UserLoggedIn` depuis deux pays distincts dans une fenêtre temporelle courte | T1078 |
-| `o365-dlp-rule-match.yml` | `regexMatch("action", "(?i)dlprulematch")` — couvre `DLPRuleMatch` et `DlpRuleMatch` | T1567 |
-| `o365-mde-malware-deleted.yml` | `FileDeleted` + Workload Endpoint (MDE) | T1070 |
+---
+
+### Entra ID — Brute Force Password Attack
+
+Détecte plusieurs tentatives de connexion échouées sur un compte Entra ID avec le code d'erreur `InvalidUserNameOrPassword` (ErrorNumber 50126). Signal d'une attaque par force brute ciblant un compte spécifique.
+
+**Distinction avec le password spray :** le brute force cible un compte unique avec de nombreux mots de passe. Le password spray cible de nombreux comptes avec un seul mot de passe courant pour éviter le verrouillage. Les deux règles partagent le même filtre YAML — le discriminant est dans l'investigation : brute force = concentration sur un seul `origin.user`, password spray = dispersion sur plusieurs `origin.user` depuis un même `origin.ip`.
+
+**Technique MITRE :** T1110.001 — Brute Force: Password Guessing
+
+```yaml
+name: Entra ID - Brute Force Password Attack
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Credential Access
+technique: T1110.001 - Brute Force Password Guessing
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1110/001/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
+description: 'Détecte plusieurs tentatives de connexion échouées sur un même compte Entra ID avec le code d''erreur InvalidUserNameOrPassword (ErrorNumber 50126). Un nombre élevé d''échecs successifs indique une attaque par force brute sur le mot de passe. Vérifier si les tentatives proviennent d''une IP externe inconnue et si le compte a été compromis.'
+where: |-
+  oneOf("action", ["UserLoginFailed"]) &&
+  oneOf("log.Workload", ["AzureActiveDirectory"]) &&
+  oneOf("log.LogonError", ["InvalidUserNameOrPassword"])
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Note sur `oneOf()` :** la syntaxe `oneOf("champ", ["valeur"])` avec un seul élément dans la liste est équivalente à `equals()`. Elle a été retenue ici pour cohérence avec des règles qui pourraient étendre la liste à plusieurs valeurs.
+
+**Test de déclenchement :** depuis WIN11-AD-TESTS, ouvrir une fenêtre de navigation privée et se connecter à `portal.office.com` avec `demo@lan.local` et un mauvais mot de passe plusieurs fois de suite. L'event `UserLoginFailed` avec `log.LogonError = InvalidUserNameOrPassword` est généré dans les logs O365 (latence ~5-10 minutes).
+
+---
+
+### Entra ID — Password Spray Attack
+
+Détecte une attaque par password spray — un même mot de passe testé sur de nombreux comptes depuis la même IP source pour éviter le verrouillage de compte. Contrairement au brute force, le password spray passe souvent sous le seuil de verrouillage par compte.
+
+**Note :** le filtre YAML est identique à la règle brute force. La distinction est dans l'investigation : chercher dans l'alerte si plusieurs `origin.user` distincts ont échoué depuis le même `origin.ip` dans une courte fenêtre temporelle.
+
+**Technique MITRE :** T1110.003 — Brute Force: Password Spraying
+
+```yaml
+name: Entra ID - Password Spray Attack
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Credential Access
+technique: T1110.003 - Brute Force Password Spraying
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1110/003/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
+description: 'Détecte une attaque par password spray — un même mot de passe testé sur plusieurs comptes distincts depuis la même IP source. Vérifier si plusieurs utilisateurs distincts ont échoué depuis la même origin.ip dans une courte fenêtre temporelle.'
+where: |-
+  oneOf("action", ["UserLoginFailed"]) &&
+  oneOf("log.Workload", ["AzureActiveDirectory"]) &&
+  oneOf("log.LogonError", ["InvalidUserNameOrPassword"])
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** depuis une même machine, tenter de se connecter successivement avec plusieurs comptes distincts (`demo@lan.local`, `test-m7@lan.local`) avec un mauvais mot de passe commun. L'investigation post-alerte confirme le pattern spray via la concentration d'`origin.ip` identique sur des `origin.user` multiples.
+
+---
+
+### Entra ID — Impossible Travel Detection
+
+Connexion réussie depuis un pays différent de la connexion précédente dans une fenêtre de 2 heures pour le même utilisateur. Signal d'un vol de cookie de session (AiTM) ou d'une connexion depuis un pays étranger non autorisé.
+
+Cette règle est la seule du lab à utiliser le mécanisme `afterEvents` de corrélation temporelle d'UTMStack — elle corrèle deux events `UserLoggedIn` depuis des pays distincts dans une fenêtre glissante de 2 heures sur le même `origin.user`.
+
+**Technique MITRE :** T1078 — Valid Accounts
+
+```yaml
+name: Entra ID - Impossible Travel Detection
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Initial Access
+technique: T1078 - Valid Accounts
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1078/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
+  - https://learn.microsoft.com/en-us/entra/id-protection/concept-identity-protection-risks
+description: 'Détecte une connexion réussie depuis un pays différent du pays de la connexion précédente dans une fenêtre de 2 heures pour le même utilisateur. Indique soit un vol de token de session (attaque AiTM), soit une connexion non autorisée depuis un pays étranger. Avec Entra ID P1, cette détection est réalisée par UTMStack via corrélation des logs O365. Entra ID P2 offre une détection native avec scoring de risque. Next Steps: 1. Vérifier si le déplacement géographique est physiquement possible. 2. Contacter l''utilisateur pour confirmer les deux connexions. 3. Si compromission suspectée : révoquer toutes les sessions actives. 4. Vérifier les activités post-connexion. 5. Contrôler si des règles inbox ou des modifications de compte ont été effectuées.'
+where: |-
+  oneOf("action", ["UserLoggedIn"]) &&
+  oneOf("log.Workload", ["AzureActiveDirectory"]) &&
+  exists("origin.geolocation.countryCode")
+afterEvents:
+  - indexPattern: v11-log-o365-*
+    with:
+      - field: origin.user
+        operator: filter_term
+        value: "{{.origin.user}}"
+      - field: action
+        operator: filter_term
+        value: UserLoggedIn
+      - field: origin.geolocation.countryCode
+        operator: must_not_term
+        value: "{{.origin.geolocation.countryCode}}"
+    or: null
+    within: 2h
+    count: 1
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** se connecter à `portal.office.com` depuis un VPN positionné dans un pays différent du pays habituel de connexion, dans les 2 heures suivant une connexion normale. La règle déclenche quand deux `UserLoggedIn` avec des `origin.geolocation.countryCode` distincts apparaissent dans la fenêtre `afterEvents` pour le même `origin.user`.
+
+---
+
+### Purview DLP — Sensitive Data Policy Match
+
+Une règle DLP Microsoft Purview a détecté des données sensibles dans un fichier OneDrive, SharePoint ou un email Exchange. Couvre tous les workloads DLP (Exchange, SharePoint, Teams) via le `regexMatch` insensible à la casse qui capture les deux formes du libellé O365 (`DLPRuleMatch` et `DlpRuleMatch`).
+
+> **Voir section "La boucle DLP" ci-dessous** — sans correction de l'adresse de notification UTMStack, chaque alerte peut générer une nouvelle alerte en boucle.
+
+**Technique MITRE :** T1567 — Exfiltration Over Web Service
+
+```yaml
+name: Purview DLP - Sensitive Data Policy Match
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Data Loss Prevention
+technique: T1567 - Exfiltration Over Web Service
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1567/
+  - https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp
+  - https://learn.microsoft.com/en-us/purview/dlp-policy-reference
+description: 'Une règle DLP Microsoft Purview a détecté des données sensibles dans un fichier OneDrive, SharePoint ou Exchange. Vérifier la politique déclenchée via log.PolicyDetails et le fichier ou email source. Next Steps: 1. Identifier la politique DLP déclenchée via log.PolicyDetails. 2. Identifier le fichier ou l''email source. 3. Vérifier si le partage était autorisé. 4. Contacter l''utilisateur si le partage semble involontaire. 5. Documenter l''incident dans le registre de traitement nLPD si des données personnelles sont impliquées.'
+where: |-
+  regexMatch("action", "(?i)dlprulematch")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Note :** contrairement à M11 (`Purview - DLP Rule Match Detected`) qui filtre sur `Workload Exchange`, cette règle ne filtre pas sur le workload — elle couvre Exchange, SharePoint et Teams simultanément. Le `regexMatch` avec `(?i)` est le discriminant principal.
+
+**Test de déclenchement :** envoyer depuis `demo@lan.local` vers une adresse externe un email contenant des données couvertes par la politique DLP active (dans ce lab : numéros AVS). Exchange génère l'event `DLPRuleMatch` (ou `DlpRuleMatch` selon la version) avec `log.PolicyDetails` contenant la politique déclenchée.
+
+---
+
+### MDE Endpoint — Malware File Deleted by Defender
+
+MDE a supprimé un fichier suspect sur un endpoint enrollé. Les suppressions manuelles (Explorer, OneDrive, Teams) et les nettoyages système (WER, MeasuredBoot) sont exclus. Seules les suppressions effectuées directement par MDE (sans application connue comme vecteur) déclenchent l'alerte.
+
+**Technique MITRE :** T1070 — Indicator Removal
+
+```yaml
+name: MDE Endpoint - Malware File Deleted by Defender
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Malware Defense
+technique: T1070 - Indicator Removal
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1070/
+  - https://learn.microsoft.com/en-us/microsoft-365/compliance/audit-log-activities
+description: 'MDE a supprimé un fichier suspect sur un endpoint enrollé via l''API Office 365 Management (Workload: Endpoint, RecordType: 63). Les suppressions manuelles via Explorer, les nettoyages système (WER, MeasuredBoot) et les suppressions par OneDrive et Teams sont exclus. Consulter security.microsoft.com pour les détails de la détection. Next Steps: 1. Identifier le fichier supprimé via log.ObjectId. 2. Identifier le device via log.DeviceName et log.MDATPDeviceId. 3. Consulter l''alerte correspondante dans security.microsoft.com. 4. Vérifier si d''autres fichiers suspects ont été détectés sur le même device. 5. Isoler le device si une compromission active est suspectée.'
+where: |-
+  oneOf("action", ["FileDeleted"]) &&
+  oneOf("log.Workload", ["Endpoint"]) &&
+  !contains("log.ObjectId", "\\WER\\Temp\\") &&
+  !contains("log.ObjectId", "\\Windows\\Logs\\MeasuredBoot\\") &&
+  !equals("log.Application", "explorer.exe") &&
+  !equals("log.Application", "OneDrive.exe") &&
+  !equals("log.Application", "Teams.exe") &&
+  !equals("log.Application", "taskhostw.exe")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** télécharger le fichier EICAR sur un endpoint MDE enrollé. MDE détecte la menace, la met en quarantaine (suppression effective du fichier), et génère l'event `FileDeleted` avec `log.Workload = Endpoint` dans les logs O365 (latence ~5 minutes). Corréler avec WD1 (EID 1116) sur le même host pour la vue complète de l'incident.
 
 ### La boucle DLP — un anti-pattern de configuration documenté
 
