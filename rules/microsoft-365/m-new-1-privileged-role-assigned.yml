@@ -1,0 +1,21 @@
+name: Entra ID - Privileged Role Assigned
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Privilege Escalation
+technique: T1098.003 - Account Manipulation Additional Cloud Roles
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1098/003/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
+description: 'Un compte utilisateur a été assigné à un rôle Entra ID (Add member to role., Workload AzureActiveDirectory). Contrairement à M6 qui couvre les groupes, cette règle cible les rôles d''administration Entra ID — Global Administrator, Security Administrator, Privileged Role Administrator, etc. Dans un scénario post-CVE-2026-69836 ou post-compromission AiTM, l''attribution d''un rôle privilégié est le vecteur de persistance le plus critique. Le nom du rôle attribué est visible dans log.ModifiedProperties (Role.DisplayName). Les attributions automatiques par ServicePrincipals Microsoft sont exclues. Next Steps: 1. Identifier le compte assigné via log.ObjectId. 2. Identifier le rôle attribué via log.ModifiedProperties (Role.DisplayName). 3. Vérifier si origin.user est autorisé à attribuer ce rôle. 4. Retirer l''attribution si non autorisée via Entra ID → Rôles et administrateurs. 5. Révoquer toutes les sessions actives du compte assigné si compromission suspectée.'
+where: |-
+  equals("action", "Add member to role.") &&
+  contains("log.Workload", "AzureActiveDirectory") &&
+  !contains("origin.user", "ServicePrincipal_")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
