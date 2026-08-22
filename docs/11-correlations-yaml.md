@@ -1835,6 +1835,81 @@ deduplicateBy: []
 
 ---
 
+### M-new-1 — Privileged Role Assigned in Entra ID
+
+Un compte utilisateur a été assigné à un rôle Entra ID. Contrairement à M6 qui couvre les groupes, cette règle cible les rôles d'administration Entra ID — Global Administrator, Security Administrator, Privileged Role Administrator, etc. Dans un scénario post-compromission (AiTM, CVE-2026-69836), l'attribution d'un rôle privilégié est le vecteur de persistance le plus critique : il confère des droits d'administration permanents indépendamment de toute rotation de mot de passe utilisateur.
+
+Le nom du rôle attribué est visible dans `log.ModifiedProperties` (champ `Role.DisplayName`) — non filtrable par le moteur UTMStack mais lisible dans l'alerte pour l'investigation.
+
+**Technique MITRE :** T1098.003 — Account Manipulation: Additional Cloud Roles
+
+```yaml
+name: Entra ID - Privileged Role Assigned
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Privilege Escalation
+technique: T1098.003 - Account Manipulation Additional Cloud Roles
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1098/003/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
+description: 'Un compte utilisateur a été assigné à un rôle Entra ID (Add member to role., Workload AzureActiveDirectory). Contrairement à M6 qui couvre les groupes, cette règle cible les rôles d''administration Entra ID — Global Administrator, Security Administrator, Privileged Role Administrator, etc. Dans un scénario post-CVE-2026-69836 ou post-compromission AiTM, l''attribution d''un rôle privilégié est le vecteur de persistance le plus critique. Le nom du rôle attribué est visible dans log.ModifiedProperties (Role.DisplayName). Les attributions automatiques par ServicePrincipals Microsoft sont exclues. Next Steps: 1. Identifier le compte assigné via log.ObjectId. 2. Identifier le rôle attribué via log.ModifiedProperties (Role.DisplayName). 3. Vérifier si origin.user est autorisé à attribuer ce rôle. 4. Retirer l''attribution si non autorisée via Entra ID → Rôles et administrateurs. 5. Révoquer toutes les sessions actives du compte assigné si compromission suspectée.'
+where: |-
+  equals("action", "Add member to role.") &&
+  contains("log.Workload", "AzureActiveDirectory") &&
+  !contains("origin.user", "ServicePrincipal_")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Discriminant M6 vs M-new-1 :** M6 filtre sur `Add member to group.` (groupes Entra ID), M-new-1 sur `Add member to role.` (rôles d'administration). Les deux actions coexistent dans les logs O365 avec des libellés distincts.
+
+**Test de déclenchement :** dans le portail Entra ID → Rôles et administrateurs → sélectionner un rôle (ex : Lecteur de sécurité) → Ajouter des attributions → sélectionner un compte de test. L'alerte contient `log.ObjectId` (UPN du compte assigné) et `log.ModifiedProperties` avec `Role.DisplayName` (nom du rôle attribué). Validé en live le 22 août 2026 sur ce lab.
+
+---
+
+### M-new-2 — Credentials Added to Existing Service Principal
+
+Un secret ou certificat a été ajouté sur un service principal Entra ID existant. Vecteur de persistance documenté dans les incidents post-compromission d'infrastructure d'identité : un attaquant ayant obtenu un accès temporaire ajoute ses propres credentials sur un service principal disposant déjà de droits étendus, pour maintenir un accès persistant même après réinitialisation des mots de passe utilisateurs.
+
+Ce vecteur est explicitement cité dans les recommandations post-CVE-2026-69836 : les credentials ajoutés sur un service principal permettent une authentification application directe, sans MFA, sans Conditional Access, et survivent à toute rotation de mot de passe humain.
+
+**Technique MITRE :** T1098.001 — Account Manipulation: Additional Email Delegate Permissions
+
+```yaml
+name: Entra ID - Credentials Added to Service Principal
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 2
+category: Persistence
+technique: T1098.001 - Account Manipulation Additional Email Delegate Permissions
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1098/001/
+  - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
+description: 'Un secret ou certificat a été ajouté sur un service principal Entra ID existant (Add service principal credentials., Workload AzureActiveDirectory). Vecteur de persistance documenté post-CVE-2026-69836 : un attaquant ayant obtenu un accès temporaire ajoute ses propres credentials sur un service principal existant pour maintenir un accès persistant même après réinitialisation des mots de passe utilisateur. Le service principal concerné est visible dans log.ObjectId. Note : cette règle est validée logiquement — l''action Add service principal credentials. est confirmée dans les journaux Entra ID mais n''était pas présente dans OpenSearch au moment de la rédaction. À vérifier après la prochaine rotation de secrets. Next Steps: 1. Identifier le service principal concerné via log.ObjectId. 2. Vérifier l''acteur via origin.user — un acteur inconnu ou un ServicePrincipal non Microsoft est suspect. 3. Auditer les permissions du service principal concerné. 4. Supprimer les credentials non autorisés via Entra ID → Applications d''entreprise → Certificats et secrets. 5. Investiguer les connexions effectuées via ce service principal depuis l''ajout des credentials.'
+where: |-
+  equals("action", "Add service principal credentials.") &&
+  contains("log.Workload", "AzureActiveDirectory")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Note de validation :** l'action `Add service principal credentials.` est confirmée dans les journaux d'audit Entra ID (visible lors de l'audit rétrospectif CVE-2026-69836 du 22 août 2026, entrées du 06/08). Elle n'était pas présente dans l'index OpenSearch `v11-log-o365-*` au moment de la rédaction — les rotations de secrets apparaissent dans les journaux Entra ID sous `Update application – Certificates and secrets management`, pas sous `Add service principal credentials.`. La règle déclenchera lors du prochain ajout explicite de credentials sur un service principal.
+
+**Test de déclenchement :** dans Entra ID → Applications d'entreprise → sélectionner une application → Certificats et secrets → Nouveau secret client → Ajouter. L'event `Add service principal credentials.` est généré avec `log.ObjectId` (ObjectId du service principal). Retirer le secret après validation.
+
+---
+
 ### Annexe W8 — Run Key via audit natif registre (EID 4657) — non implémentable
 
 Cette annexe documente la tentative d'implémentation d'une règle de détection de persistance via les clés Run/RunOnce sur Windows 11, où l'agent UTMStack ne collecte pas Sysmon (limitation confirmée, GitHub issue #2446).
@@ -1874,8 +1949,10 @@ Le tableau suivant récapitule les techniques ATT&CK couvertes par l'ensemble de
 | Process Injection | T1055 | S3 |
 | Create or Modify System Process — Windows Service | T1543.003 | W5a, W5b |
 | Signed Binary Proxy Execution — LOLBAS | T1218 | S1 |
+| OS Credential Dumping — LSASS Memory | T1003.001 | S2 |
 | Account Manipulation | T1098 | W2, W3 |
-| Account Manipulation — Additional Cloud Roles | T1098.003 | M6, A7 |
+| Account Manipulation — Additional Cloud Roles | T1098.003 | M6, A7, M-new-1 |
+| Account Manipulation — Credentials | T1098.001 | M-new-2 |
 | Steal Application Access Token | T1528 | M2 |
 | Modify Authentication Process | T1556 | M5 |
 | Impair Defenses — Disable Cloud Logs | T1562.008 | M8, A8 |
@@ -1902,7 +1979,7 @@ Ce chapitre illustre une approche de détection en trois axes :
 
 **Détection comportementale pérenne** — les règles W1 à A6 documentées ici couvrent des techniques ATT&CK qui restent pertinentes indépendamment des CVE publiées. Une attaque par Kerberoasting (W7), par Pass-the-Hash (W6), par consentement OAuth malveillant (M2) ou par listing de clés Azure (A1) utilise les mêmes mécanismes depuis des années. Ces règles constituent le socle de détection permanent, indépendamment du calendrier des patchs.
 
-**Réponse événementielle aux CVE critiques** — certaines vulnérabilités nécessitent une réponse immédiate dans la fenêtre entre publication et déploiement du patch. CVE-2026-41089 (Netlogon RCE, CVSS 9.8, août 2026) affectait les DCs du lab sous Windows Server 2025 : WD3 couvrait déjà les signatures Defender associées. CVE-2026-62869 (Entra ID Spoofing) a été corrigée côté Microsoft sans action requise : M5 et M3 assurent la détection compensatoire. La bonne pratique est d'évaluer si une règle existante couvre déjà le comportement exploité par la CVE avant d'en créer une nouvelle.
+**Réponse événementielle aux CVE critiques** — certaines vulnérabilités nécessitent une réponse immédiate dans la fenêtre entre publication et déploiement du patch. CVE-2026-41089 (Netlogon RCE, CVSS 9.8, août 2026) affectait les DCs du lab sous Windows Server 2025 : WD3 couvrait déjà les signatures Defender associées. CVE-2026-62869 (Entra ID Spoofing) a été corrigée côté Microsoft sans action requise : M5 et M3 assurent la détection compensatoire. CVE-2026-69836 (Entra ID RCE, CVSS 10.0, exploitation confirmée avant patch) illustre un cas différent : la vulnérabilité est dans l'infrastructure Microsoft elle-même, indétectable côté client. La réponse adaptée est un audit rétrospectif des journaux Entra ID (role assignments, credentials ajoutés sur des service principals, modifications de Conditional Access) et des règles comportementales couvrant les actions post-exploitation — M-new-1 et M-new-2 ont été ajoutées à cette fin. La bonne pratique est d'évaluer si une règle existante couvre déjà le comportement exploité par la CVE avant d'en créer une nouvelle.
 
 **Tuning continu** — les faux positifs identifiés lors des tests font partie du processus normal. Quelques exemples concrets issus de ce lab : VMware Tools qui accède légitimement à LSASS (S2), `PcaSvc.dll` qui charge rundll32 lors de diagnostics système (S1), la différence entre `Administrateurs` et `Administrators` selon la langue du système (W2), les services automatiques Azure qui listent régulièrement les clés de stockage (A1), et la boucle DLP/notification décrite en détail dans la section M ci-dessus. Chaque exclusion documentée améliore la précision sans sacrifier la couverture. L'approche défensive retenue — capturer large, exclure chirurgicalement — est préférable à une liste blanche de patterns dangereux.
 
