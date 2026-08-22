@@ -97,7 +97,7 @@ rules/
 | [m12-exchange-external-mailbox-access.yml](microsoft-365/m12-exchange-external-mailbox-access.yml) | MailItemsAccessed + ExternalAccess | T1114.002 | ✅ logique validée | Audit Exchange activé — aucun event ExternalAccess=true en base (tenant single-user) |
 | [m14-signin-blocked-ca.yml](microsoft-365/m14-signin-blocked-ca.yml) | UserLoginFailed + BlockedByConditionalAccess | T1078.004 | ✅ M365 Lab | CA temporelle via Graph API — couvre tous les blocages CA (ErrorNumber 53003) |
 | [m-new-1-privileged-role-assigned.yml](microsoft-365/m-new-1-privileged-role-assigned.yml) | Add member to role. | T1098.003 | ✅ M365 Lab | Rôles Entra ID (Global Admin, Security Admin…) — distinct de M6 qui couvre les groupes |
-| [m-new-2-service-principal-credentials.yml](microsoft-365/m-new-2-service-principal-credentials.yml) | Add service principal credentials. | T1098.001 | ⚠️ Validé logiquement | Persistance post-compromission — credentials ajoutés sur SP existant |
+| [m-new-2-service-principal-credentials.yml](microsoft-365/m-new-2-service-principal-credentials.yml) | Add service principal credentials. | T1098.001 | ✅ M365 Lab | Ajout via API Graph (addPassword) uniquement — l'interface graphique génère "Update application – Certificates and secrets management" et ne déclenche pas |
 
 > ℹ️ **M-new-1 vs M6** : M6 couvre `Add member to group.` (groupes Entra ID), M-new-1 couvre `Add member to role.` (rôles d'administration). Les deux règles sont complémentaires. M-new-1 validé en live le 22 août 2026.
 
