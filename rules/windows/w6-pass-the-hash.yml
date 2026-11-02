@@ -1,4 +1,4 @@
-name: W6 - Pass-the-Hash Attack Detected
+name: W6 - NTLM Network Logon (possible Pass-the-Hash)
 dataTypes:
   - wineventlog
 impact:
@@ -11,7 +11,7 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1550/002/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4624
-description: 'Un logon réseau NTLM (LogonType 3) a été détecté depuis un compte utilisateur (EID 4624). Dans un environnement Active Directory correctement configuré, les logons réseau légitimes utilisent Kerberos. Un logon NTLM réseau depuis un compte utilisateur réel peut indiquer une attaque Pass-the-Hash ou une connexion par adresse IP directe. Les comptes machine et les logons locaux sont exclus. Next Steps: 1. Identifier la machine source via origin.ip et origin.host. 2. Vérifier si la connexion a été établie par IP (forçant NTLM) plutôt que par nom. 3. Contrôler les autres activités du compte target.user dans la même fenêtre temporelle. 4. Vérifier si des outils de type Mimikatz ont été exécutés sur la machine source (EID 4688, Sysmon EID 1). 5. Investiguer les mouvements latéraux depuis origin.ip vers d''autres machines.'
+description: 'Un logon réseau NTLM (LogonType 3) a été détecté depuis un compte utilisateur (EID 4624). Dans un environnement Active Directory où NTLM est réduit au minimum, les logons réseau légitimes utilisent Kerberos. Un logon NTLM réseau depuis un compte utilisateur réel peut indiquer une attaque Pass-the-Hash ou une connexion par adresse IP directe. Les comptes machine et les logons locaux sont exclus. Next Steps: 1. Identifier la machine source via origin.ip et origin.host. 2. Vérifier si la connexion a été établie par IP (forçant NTLM) plutôt que par nom. 3. Contrôler les autres activités du compte target.user dans la même fenêtre temporelle. 4. Vérifier si des outils de type Mimikatz ont été exécutés sur la machine source (EID 4688, Sysmon EID 1). 5. Investiguer les mouvements latéraux depuis origin.ip vers d''autres machines.'
 where: |-
   equals("log.eventCode", 4624) &&
   equals("log.channel", "Security") &&

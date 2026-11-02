@@ -11,7 +11,7 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1110/001/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
-description: 'Détecte plusieurs tentatives de connexion échouées sur un même compte Entra ID avec le code d''erreur InvalidUserNameOrPassword (ErrorNumber 50126). Un nombre élevé d''échecs successifs indique une attaque par force brute sur le mot de passe. Vérifier si les tentatives proviennent d''une IP externe inconnue et si le compte a été compromis.'
+description: 'Alerte sur chaque échec de connexion Entra ID avec le code d''erreur InvalidUserNameOrPassword (ErrorNumber 50126). Plusieurs alertes successives sur un même compte indiquent une attaque par force brute sur le mot de passe. Filtre identique à la règle Password Spray : la distinction se fait à l''investigation. Vérifier si les tentatives proviennent d''une IP externe inconnue et si le compte a été compromis.'
 where: |-
   oneOf("action", ["UserLoginFailed"]) &&
   oneOf("log.Workload", ["AzureActiveDirectory"]) &&
