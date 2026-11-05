@@ -11,14 +11,12 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1562/001/
   - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
-description: 'La configuration de Windows Defender a été modifiée sur un endpoint (Event 5007). Les modifications les plus critiques sont l''ajout d''exclusions de fichiers, dossiers ou processus, technique couramment utilisée post-compromise pour masquer des outils malveillants et empêcher leur détection. La règle se déclenche sur toute modification de configuration 5007, à l''exception des mises à jour de configuration poussées par Intune (WdConfigHash, UX Configuration, DLP Configs, EcsConfigs). Vérifier le champ log.data.New Value pour identifier la modification effectuée. Next Steps: 1. Identifier la modification via log.data.New Value (exclusion ajoutée, paramètre modifié). 2. Vérifier si la modification est autorisée et planifiée. 3. Contrôler les events de connexion récents sur cette machine (Event 4624/4625). 4. Vérifier si d''autres modifications de sécurité ont eu lieu dans la même fenêtre temporelle. 5. Supprimer l''exclusion si non autorisée et investiguer l''origine de la modification.'
+description: 'La configuration de Windows Defender a été modifiée sur un endpoint (Event 5007). Les modifications les plus critiques sont l''ajout d''exclusions de fichiers, dossiers ou processus, technique couramment utilisée post-compromise pour masquer des outils malveillants et empêcher leur détection. La règle se déclenche sur toute modification de configuration 5007, à l''exception des mises à jour de configuration poussées par Intune (WdConfigHash, UX Configuration, DLP Configs, EcsConfigs). Vérifier le champ event.data.New Value pour identifier la modification effectuée. Next Steps: 1. Identifier la modification via event.data.New Value (exclusion ajoutée, paramètre modifié). 2. Vérifier si la modification est autorisée et planifiée. 3. Contrôler les events de connexion récents sur cette machine (Event 4624/4625). 4. Vérifier si d''autres modifications de sécurité ont eu lieu dans la même fenêtre temporelle. 5. Supprimer l''exclusion si non autorisée et investiguer l''origine de la modification.'
 where: |-
-  equals("log.eventCode", 5007) &&
-  equals("log.providerName", "Microsoft-Windows-Windows Defender") &&
-  !contains("log.data.New Value", "WdConfigHash") &&
-  !contains("log.data.New Value", "UX Configuration") &&
-  !contains("log.data.New Value", "DLP Configs") &&
-  !contains("log.data.New Value", "EcsConfigs")
+  equals("event.eventCode", 5007) &&
+  equals("event.providerName", "Microsoft-Windows-Windows Defender") &&
+  exists("event.data.New Value") &&
+  contains("event.data.New Value", "\\Exclusions\\")
 afterEvents: []
 groupBy: []
 deduplicateBy: []

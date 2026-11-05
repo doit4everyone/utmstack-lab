@@ -1,0 +1,25 @@
+name: S5b - Registry Run Key Persistence (Security 4657)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 2
+category: Persistence
+technique: T1547.001 - Boot or Logon Autostart Execution Registry Run Keys
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1547/001/
+  - https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4657
+description: 'Une valeur a été écrite dans une clé de démarrage automatique du registre (Run ou RunOnce), détectée par l''audit natif Windows (Security 4657). Variante de S5 sans dépendance à Sysmon : elle fonctionne sur toute machine où l''audit du registre est actif et où une SACL est posée sur les clés Run. Les modifications effectuées par des processus système légitimes sont exclues. Next Steps: 1. Identifier la valeur ajoutée via event.data.ObjectValueName et la commande persistée via event.data.NewValue. 2. Vérifier le chemin de l''exécutable référencé, un chemin dans Temp ou AppData est très suspect. 3. Identifier le processus ayant effectué la modification via event.eventDataProcessName et le compte via event.eventDataSubjectUserName. 4. Supprimer la valeur si non autorisée. 5. Analyser l''exécutable référencé (hash, VirusTotal).'
+where: |-
+  equals("event.eventCode", 4657) &&
+  equals("event.channel", "Security") &&
+  regexMatch("event.eventDataObjectName", "(?i)\\\\(Run|RunOnce)$") &&
+  !equals("event.eventDataOperationType", "%%1906") &&
+  !regexMatch("event.eventDataProcessName", "(?i)\\\\(services|svchost|msiexec|trustedinstaller|tiworker)[.]exe$") &&
+  !contains("event.eventDataProcessName", "Windows Defender") &&
+  !contains("event.eventDataProcessName", "UTMStack")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

@@ -11,11 +11,25 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1110/001/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
-description: 'Alerte sur chaque échec de connexion Entra ID avec le code d''erreur InvalidUserNameOrPassword (ErrorNumber 50126). Plusieurs alertes successives sur un même compte indiquent une attaque par force brute sur le mot de passe. Filtre identique à la règle Password Spray : la distinction se fait à l''investigation. Vérifier si les tentatives proviennent d''une IP externe inconnue et si le compte a été compromis.'
+description: 'Au moins 5 échecs de connexion Entra ID avec le code d''erreur InvalidUserNameOrPassword (ErrorNumber 50126) sur un même compte en 10 minutes. Ce volume sur un seul compte indique une attaque par force brute sur le mot de passe, une faute de frappe isolée ne déclenche pas la règle. Next Steps: 1. Identifier le compte ciblé via origin.user. 2. Vérifier l''IP source via origin.ip, une IP externe inconnue est suspecte. 3. Vérifier si une connexion réussie (UserLoggedIn) a suivi les échecs. 4. Contrôler l''état de verrouillage du compte dans Entra ID. 5. Réinitialiser le mot de passe et révoquer les sessions si une compromission est suspectée.'
 where: |-
   oneOf("action", ["UserLoginFailed"]) &&
-  oneOf("log.Workload", ["AzureActiveDirectory"]) &&
-  oneOf("log.LogonError", ["InvalidUserNameOrPassword"])
-afterEvents: []
+  oneOf("event.Workload", ["AzureActiveDirectory"]) &&
+  oneOf("event.LogonError", ["InvalidUserNameOrPassword"])
+afterEvents:
+  - indexPattern: v11-log-o365-*
+    with:
+      - field: origin.user.keyword
+        operator: filter_term
+        value: "{{.origin.user}}"
+      - field: action.keyword
+        operator: filter_term
+        value: UserLoginFailed
+      - field: event.LogonError
+        operator: filter_term
+        value: InvalidUserNameOrPassword
+    or: null
+    within: 10m
+    count: 5
 groupBy: []
 deduplicateBy: []

@@ -12,17 +12,13 @@ references:
   - https://attack.mitre.org/techniques/T1559/001/
   - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
   - https://www.cobaltstrike.com/blog/learn-pipe-fitting-for-all-of-your-offense-projects
-description: 'Un named pipe avec un nom caractéristique d''un framework offensif a été créé (Sysmon EID 17). Les frameworks C2 comme Cobalt Strike, Metasploit et Mimikatz utilisent des named pipes pour leurs communications inter-processus et leurs techniques de post-exploitation. Les pipes légitimes Windows (services.exe, etc.) sont exclus. Next Steps: 1. Identifier le processus créateur via log.data.Image. 2. Vérifier le nom exact du pipe via log.data.PipeName et le comparer aux patterns connus. 3. Rechercher d''autres activités suspectes depuis le même ProcessGuid. 4. Corréler avec les connexions réseau sortantes depuis la même machine. 5. Isoler la machine si un framework C2 est confirmé.'
+description: 'Un named pipe avec un nom caractéristique d''un framework offensif a été créé (Sysmon EID 17). Les frameworks C2 comme Cobalt Strike, Metasploit et Mimikatz utilisent des named pipes pour leurs communications inter-processus et leurs techniques de post-exploitation. Les pipes légitimes Windows (services.exe, etc.) sont exclus. Next Steps: 1. Identifier le processus créateur via event.data.Image. 2. Vérifier le nom exact du pipe via event.data.PipeName et le comparer aux patterns connus. 3. Rechercher d''autres activités suspectes depuis le même ProcessGuid. 4. Corréler avec les connexions réseau sortantes depuis la même machine. 5. Isoler la machine si un framework C2 est confirmé.'
 where: |-
-  equals("log.eventCode", 17) &&
-  contains("log.channel", "Sysmon") &&
-  equals("log.data.EventType", "CreatePipe") &&
-  (
-    regexMatch("log.data.PipeName", "(?i)\\\\(msagent_|mojo\.|postex_|status_|MSSE-|psexec|paexec|remcom|csexec)") ||
-    regexMatch("log.data.PipeName", "(?i)\\\\pipe\\\\pipe\\\\") ||
-    contains("log.data.PipeName", "lsadump")
-  ) &&
-  !contains("log.data.Image", "services.exe")
+  equals("event.eventCode", 17) &&
+  contains("event.channel", "Sysmon") &&
+  equals("event.data.EventType", "CreatePipe") &&
+  regexMatch("event.data.PipeName", "(?i)(\\\\(msagent_|mojo[.]|postex_|status_|MSSE-|psexec|paexec|remcom|csexec)|\\\\pipe\\\\pipe\\\\|lsadump)") &&
+  !contains("event.data.Image", "services.exe")
 afterEvents: []
 groupBy: []
 deduplicateBy: []

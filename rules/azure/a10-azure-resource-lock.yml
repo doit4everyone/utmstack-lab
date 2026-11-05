@@ -11,10 +11,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1562/
   - https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/lock-resources
-description: 'Un verrou de ressource Azure (Resource Lock) a été supprimé ou modifié. Les locks de type CanNotDelete ou ReadOnly protègent les ressources critiques contre la suppression ou la modification accidentelle ou malveillante. Supprimer un lock est l''étape préalable logique à la destruction de ressources protégées. Toute suppression de lock doit être corrélée avec les opérations qui suivent immédiatement (RESOURCEGROUPS/DELETE, VIRTUALMACHINES/DELETE, STORAGEACCOUNTS/DELETE). Next Steps: 1. Identifier la ressource protégée via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims dans le payload brut. 3. Vérifier immédiatement si des opérations destructrices ont suivi sur la même ressource. 4. Confirmer si l''opération était planifiée et autorisée. 5. Restaurer le lock si supprimé de manière non autorisée.'
+description: 'Un verrou de ressource Azure (Resource Lock) a été supprimé ou modifié. Les locks de type CanNotDelete ou ReadOnly protègent les ressources critiques contre la suppression ou la modification accidentelle ou malveillante. Supprimer un lock est l''étape préalable logique à la destruction de ressources protégées. Toute suppression de lock doit être corrélée avec les opérations qui suivent immédiatement (RESOURCEGROUPS/DELETE, VIRTUALMACHINES/DELETE, STORAGEACCOUNTS/DELETE). Next Steps: 1. Identifier la ressource protégée via event.resourceId. 2. Identifier l''acteur via origin.ip et event.azureActor. 3. Vérifier immédiatement si des opérations destructrices ont suivi sur la même ressource. 4. Confirmer si l''opération était planifiée et autorisée. 5. Restaurer le lock si supprimé de manière non autorisée.'
 where: |-
-  contains("log.operationName", "AUTHORIZATION/LOCKS") &&
-  contains("log.resultType", "Success")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.Authorization/locks/(write|delete)$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []

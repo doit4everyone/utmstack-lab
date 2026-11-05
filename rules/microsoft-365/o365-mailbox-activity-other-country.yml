@@ -1,0 +1,37 @@
+name: O365 - Mailbox Activity From Another Country Than Recent Sign-In
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Credential Access
+technique: T1539 - Steal Web Session Cookie
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1539/
+  - https://learn.microsoft.com/en-us/purview/audit-log-investigate-accounts
+description: 'Accès à une boîte aux lettres (MailItemsAccessed) depuis un pays différent de celui d''une connexion réussie du même compte dans les 2 heures précédentes. Complète la règle Impossible Travel : l''activité arrive dans un lot O365 postérieur à la connexion, ce qui évite l''angle mort des connexions livrées dans le même lot, et couvre le rejeu d''un cookie de session sans nouvelle connexion. Seuls les événements portant une IP cliente géolocalisée sont évalués (les IP internes de Microsoft ne le sont pas). Next Steps: 1. Identifier le compte via origin.user et l''IP via origin.ip. 2. Comparer avec les connexions réussies récentes du compte (pays, IP, appareil). 3. Vérifier si le SessionId de la session est le même dans les deux pays, signe d''un vol de cookie. 4. Révoquer les sessions du compte dans Entra ID et réinitialiser le mot de passe si l''accès est illégitime. 5. Rechercher les règles de boîte aux lettres ou transferts créés pendant la session.'
+where: |-
+  equals("action", "MailItemsAccessed") &&
+  contains("event.Workload", "Exchange") &&
+  exists("origin.geolocation.countryCode") &&
+  exists("origin.user") &&
+  !equals("origin.user", "Not Available")
+afterEvents:
+  - indexPattern: v11-log-o365-*
+    with:
+      - field: origin.user.keyword
+        operator: filter_term
+        value: "{{.origin.user}}"
+      - field: action.keyword
+        operator: filter_term
+        value: UserLoggedIn
+      - field: origin.geolocation.countryCode.keyword
+        operator: must_not_term
+        value: "{{.origin.geolocation.countryCode}}"
+    or: null
+    within: 2h
+    count: 1
+groupBy: []
+deduplicateBy: []

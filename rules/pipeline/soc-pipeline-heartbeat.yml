@@ -1,0 +1,20 @@
+name: SOC Pipeline Heartbeat Failure
+dataTypes:
+  - syslog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Availability
+technique: T1489 - Service Stop
+adversary: origin
+references:
+  - https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html
+description: 'Le pipeline de génération des rapports SOC (n8n et Ollama) n''a produit aucun rapport depuis plus de 26 heures. Le message est émis en syslog par le script soc-pipeline-heartbeat.sh, qui tourne sur la VM UTMStack, en dehors du système surveillé. Next Steps: 1. Vérifier que la VM docker-services (n8n, PostgreSQL) est démarrée. 2. Consulter l''historique des exécutions du workflow de rapport quotidien dans n8n. 3. Vérifier que le serveur Ollama répond. 4. Contrôler la dernière ligne de la table resumes_soc. 5. Relancer le workflow manuellement une fois la cause corrigée.'
+where: |-
+  contains("raw", "SOC-PIPELINE-HEARTBEAT FAILURE")
+afterEvents: []
+groupBy:
+  - '@timestamp'
+deduplicateBy:
+  - '@timestamp'

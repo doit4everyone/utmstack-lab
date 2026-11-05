@@ -11,10 +11,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1552/
   - https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage
-description: 'Une opération de listing des clés d''accès ou de génération de token SAS d''un compte de stockage Azure a été détectée (listKeys, ListServiceSas). Les clés de stockage donnent un accès complet aux données, leur listing par un compte non autorisé ou depuis une IP externe est un signal fort d''exfiltration de credentials. Next Steps: 1. Identifier le principal ayant effectué l''opération via log.identity.authorization.evidence. 2. Vérifier si le rôle RBAC attribué autorise cette opération. 3. Contrôler l''IP source via origin.ip, une IP externe inconnue est suspecte. 4. Vérifier les accès au compte de stockage dans les heures suivantes. 5. Effectuer une rotation des clés si l''accès est non autorisé.'
+description: 'Une opération de listing des clés d''accès ou de génération de token SAS d''un compte de stockage Azure a été détectée (listKeys, ListServiceSas). Les clés de stockage donnent un accès complet aux données, leur listing par un compte non autorisé ou depuis une IP externe est un signal fort d''exfiltration de credentials. Next Steps: 1. Identifier le principal ayant effectué l''opération via event.azureActor. 2. Vérifier si le rôle RBAC attribué autorise cette opération. 3. Contrôler l''IP source via origin.ip, une IP externe inconnue est suspecte. 4. Vérifier les accès au compte de stockage dans les heures suivantes. 5. Effectuer une rotation des clés si l''accès est non autorisé.'
 where: |-
-  equals("dataType", "azure") &&
-  contains("log.operationName", "LISTKEYS")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.Storage/storageAccounts/listKeys/action$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
