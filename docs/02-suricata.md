@@ -205,7 +205,7 @@ Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événe
 
 ### `${TIME}` vide avec `flags(no-parse)`
 
-**Symptôme :** Le raw dans UTMStack montre `<174>May 28 ms.bsculier.ch suricata[1]:` sans heure — les champs ne sont pas parsés.
+**Symptôme :** Le raw dans UTMStack montre `<174>May 28 ms.lab.local suricata[1]:` sans heure — les champs ne sont pas parsés.
 
 **Cause :** `flags(no-parse)` empêche syslog-ng d'extraire le timestamp du message, laissant `${TIME}` vide.
 

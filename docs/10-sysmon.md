@@ -578,7 +578,7 @@ Les DC utilisent une configuration distincte (`sysmon-dc.xml`) exportée depuis 
 
 ## 7. Déploiement Intune — Win32 App
 
-Le déploiement Intune cible uniquement MDM-BLAISE-871 dans ce lab. La méthode diffère de GPO car Intune dépose les fichiers du package dans `C:\Windows\IMECache` avant l'installation, ce qui expose temporairement le XML. La commande d'installation supprime ce dossier immédiatement après.
+Le déploiement Intune cible uniquement MDM-WIN11-01 dans ce lab. La méthode diffère de GPO car Intune dépose les fichiers du package dans `C:\Windows\IMECache` avant l'installation, ce qui expose temporairement le XML. La commande d'installation supprime ce dossier immédiatement après.
 
 ### Structure du package
 
@@ -657,7 +657,7 @@ Le WEF self-subscription locale a été validé sur :
 | DC01-MAIN-SITE | Windows Server 2025 | ✅ Fonctionnel |
 | DC01-RM | Windows Server 2025 | ✅ Fonctionnel |
 | WIN11-AD-TESTS | Windows 11 24H2 | ❌ Non fonctionnel |
-| MDM-BLAISE-871 | Windows 11 24H2 (Intune) | ❌ Non fonctionnel |
+| MDM-WIN11-01 | Windows 11 24H2 (Intune) | ❌ Non fonctionnel |
 
 Sur Windows 11, le service `Wecsvc` ne parvient pas à s'enregistrer comme source auprès de son propre Subscription Manager local — erreur `2150859027` (`/SubscriptionManager/WEC` non exposé sur les SKUs client). Ce comportement a été reproduit sur deux postes Win11 distincts après diagnostic exhaustif (DNS, pare-feu, URL ACL WinRM, `SvcHostSplitDisable`, dépréciation VBScript). Il s'agit d'une limitation de conception de Windows 11, pas d'un problème de configuration.
 
@@ -892,7 +892,7 @@ reg export "HKLM\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters" `
 
 La prise en compte est immédiate — Sysmon surveille les modifications de ses clés registre et recharge la configuration sans redémarrage de service.
 
-### Via Intune (MDM-BLAISE-871)
+### Via Intune (MDM-WIN11-01)
 
 La mise à jour de configuration passe par une révision du package. La commande d'installation utilise le nom générique `sysmonconfig.xml` — renommer le nouveau XML en `sysmonconfig.xml` avant de packager pour ne pas avoir à modifier la commande dans Intune.
 
@@ -917,7 +917,7 @@ C:\tmp\sysmon\
 3. Incrémenter la version de l'application : `2` → `3`
 4. **Réviser + enregistrer**
 
-Intune détecte le changement de version et redéploie sur MDM-BLAISE-871, même si la règle de détection est déjà satisfaite par l'installation précédente. Aucune désinstallation préalable n'est nécessaire.
+Intune détecte le changement de version et redéploie sur MDM-WIN11-01, même si la règle de détection est déjà satisfaite par l'installation précédente. Aucune désinstallation préalable n'est nécessaire.
 
 ---
 

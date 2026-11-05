@@ -119,7 +119,7 @@ Le script crée le service Windows `UTMStackAgent` qui démarre automatiquement.
 | DC01-MAIN-SITE | 10.100.1.1 | Windows Server 2025 |
 | DC01-RM | 10.100.2.1 | Windows Server 2025 |
 | gest-srv | 10.100.1.16 | Windows Server 2025 |
-| MDM-BLAISE-871 | 10.100.2.150 | Windows 11 24H2 |
+| MDM-WIN11-01 | 10.100.2.150 | Windows 11 24H2 |
 | WIN11-AD-TESTS | 10.100.1.153 | Windows 11 24H2 |
 
 ### 2.2 Canaux collectés par défaut
@@ -145,8 +145,8 @@ L'agent UTMStack collecte nativement les canaux Windows suivants sans configurat
 | 1117 | Malware remédiéi (quarantaine/suppression) | INFO | ✅ EICAR test |
 | 1118 | Remédiation échouée — malware toujours présent | CRITICAL | ⚠️ Non testé |
 | 5001 | Protection temps réel désactivée | HIGH | ⚠️ Bloqué Tamper Protection |
-| 5007 | Configuration modifiée (exclusions...) | HIGH | ✅ MDM-BLAISE-871 |
-| 5013 | Modification bloquée par Tamper Protection | HIGH | ✅ MDM-BLAISE-871 |
+| 5007 | Configuration modifiée (exclusions...) | HIGH | ✅ MDM-WIN11-01 |
+| 5013 | Modification bloquée par Tamper Protection | HIGH | ✅ MDM-WIN11-01 |
 
 **Comportement multi-événements :** pour une même détection, Defender peut générer plusieurs Event 1116 avec le même `Detection ID` mais des champs `Path` différents. Ce comportement est normal — il reflète les différents moteurs de détection (antivirus classique, SmartScreen). Pour une vue complète d'une détection, grouper par `log.data.Detection ID`.
 

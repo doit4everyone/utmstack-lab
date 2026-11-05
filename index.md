@@ -156,7 +156,7 @@ Création et validation de règles de corrélation personnalisées pour UTMStack
 | **Firewall / IDS** | OPNsense 26.1 + Suricata 8.0.5 |
 | **OS SIEM** | Ubuntu 24.04 LTS (10.100.1.150) |
 | **Active Directory** | Windows Server 2025 — Topologie multi-sites (2 DC, 2 sites AD) |
-| **Agents Windows** | DC01-MAIN-SITE (10.100.1.1), DC01-RM (10.100.2.1), gest-srv (10.100.1.16), MDM-BLAISE-871 (Win 11 24H2), WIN11-AD-TESTS (Win 11 24H2) |
+| **Agents Windows** | DC01-MAIN-SITE (10.100.1.1), DC01-RM (10.100.2.1), gest-srv (10.100.1.16), MDM-WIN11-01 (Win 11 24H2), WIN11-AD-TESTS (Win 11 24H2) |
 | **Agent Linux** | docker-services (10.100.1.10, Ubuntu 26.04) — n8n, Qdrant, Open WebUI, SearXNG |
 | **Microsoft 365** | Entra ID P1, MDE Plan 1 |
 | **Azure** | Event Hub + Event Grid — Activity Log + Resource Events |

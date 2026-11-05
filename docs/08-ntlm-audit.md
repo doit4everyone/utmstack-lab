@@ -310,7 +310,7 @@ Construit et testé dans UTMStack avec les champs réels confirmés (`log.provid
 | Observation | Event ID | NtlmUsageId | Niveau |
 |---|---|---|---|
 | `DC01-MAIN-SITE$` s'authentifie en NTLM via RPC vers DC01-RM (réplication AD) | 4021 | 10 | Normal — voir cas d'étude ci-dessus |
-| PC admin (MDM-BLAISE-871) → SYSVOL via IP → NTLM v2 | 4022 | — | Normal — accès par IP |
+| PC admin (MDM-WIN11-01) → SYSVOL via IP → NTLM v2 | 4022 | — | Normal — accès par IP |
 | Test simulé `fakeuser` → échec d'authentification | 4022 | — | Test — à surveiller si récurrent en prod |
 
 #### Référence — Reason ID côté client (événements 4020/4021)

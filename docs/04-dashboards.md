@@ -183,7 +183,7 @@ Les décisions CrowdSec arrivent dans l'index **`v11-log-syslog-*`**. Les donné
 Format d'un événement dans `raw` (format JSON depuis la mise à jour de `soar_ban.sh`) :
 
 ```
-<169>May 28 18:16:31 ms.bsculier.ch crowdsec[33276]: CROWDSEC_BAN {"event_type":"ban","ip":"45.67.246.120","reason":"utmstack","country":"ES","as":"214678","type":"ban"}
+<169>May 28 18:16:31 ms.lab.local crowdsec[33276]: CROWDSEC_BAN {"event_type":"ban","ip":"45.67.246.120","reason":"utmstack","country":"ES","as":"214678","type":"ban"}
 ```
 
 #### Champ `crowdsec_country` — Ingest pipeline OpenSearch
