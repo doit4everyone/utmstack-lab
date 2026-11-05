@@ -11,10 +11,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1078/004/
   - https://learn.microsoft.com/en-us/azure/role-based-access-control/overview
-description: 'Une attribution de rôle Azure a été créée ou supprimée sur l''abonnement ou un resource group. Cette opération modifie les droits d''accès aux ressources Azure et constitue un vecteur classique d''escalade de privilèges et de persistance dans Azure. Next Steps: 1. Identifier le resource group ou la subscription ciblés via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims (UPN dans le payload brut). 3. Vérifier si le rôle attribué est Owner ou Contributor, particulièrement sensibles. 4. Confirmer si l''opération était planifiée et autorisée. 5. Vérifier si d''autres opérations suspectes ont suivi (DEPLOYMENTS/WRITE, LOCKS/DELETE).'
+description: 'Une attribution de rôle Azure a été créée ou supprimée sur l''abonnement ou un resource group. Cette opération modifie les droits d''accès aux ressources Azure et constitue un vecteur classique d''escalade de privilèges et de persistance dans Azure. Next Steps: 1. Identifier le resource group ou la subscription ciblés via event.resourceId. 2. Identifier l''acteur via origin.ip et event.azureActor. 3. Vérifier si le rôle attribué est Owner ou Contributor, particulièrement sensibles. 4. Confirmer si l''opération était planifiée et autorisée. 5. Vérifier si d''autres opérations suspectes ont suivi (DEPLOYMENTS/WRITE, LOCKS/DELETE).'
 where: |-
-  contains("log.operationName", "ROLEASSIGNMENTS") &&
-  contains("log.resultType", "Success")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.Authorization/roleAssignments/(write|delete)$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []

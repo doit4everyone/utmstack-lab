@@ -1,0 +1,21 @@
+name: Windows - Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) (lab)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 2
+category: Execution
+technique: 'T1059.001 - Command and Scripting Interpreter: PowerShell'
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1059/001/
+description: 'Contenu de script PowerShell à haut risque détecté dans un événement 4104 (Script Block Logging) : téléchargement suivi d''exécution (download cradle), exécution encodée ou masquée, chargement réflectif ou contournement d''AMSI. Next Steps: 1. Lire le contenu du script via event.eventDataScriptBlockText et son chemin via event.data.Path. 2. Identifier l''hôte via dataSource et le compte ayant lancé PowerShell. 3. Si le script télécharge du contenu, identifier l''URL et l''IP de destination, puis rechercher ces flux dans les logs OPNsense et Suricata. 4. Rechercher les autres fragments du même script (un long script produit plusieurs 4104 portant le même ScriptBlockId). 5. Isoler l''hôte si le script n''est pas légitime. Note technique : clone de la règle native 1424 (v11.3.0, version 1.3.0 du fournisseur). La condition native est conservée à l''identique, y compris l''exclusion du harnais d''instrumentation « sentinel ». Le clone exclut en plus les scripts exécutés depuis le dossier DataCollection de Microsoft Defender for Endpoint (scanner Log4Shell signé Microsoft, CVE-2021-44228). Écrire dans ce dossier demande les droits SYSTEM ou administrateur, l''exclusion ne réduit donc la couverture que face à un attaquant déjà privilégié.'
+where: |-
+  equals("event.eventCode", "4104") &&
+  !(exists("event.data.Path") && contains("event.data.Path", "\\Windows Defender Advanced Threat Protection\\DataCollection\\")) &&
+  !regexMatch("event.eventDataScriptBlockText", "(?i)(sentinelbreakpoints|windows.sentinel.[0-9]|po_wer_spl_oit_indicators)") &&
+  (regexMatch("event.eventDataScriptBlockText", "(?i)(amsiutils|amsiinitfailed|amsiscanbuffer|virtualalloc|writeprocessmemory|getdelegateforfunctionpointer|invoke-mimikatz|invoke-shellcode|invoke-dllinjection|createremotethread)") || (regexMatch("event.eventDataScriptBlockText", "(?i)(downloadstring|downloadfile|downloaddata|invoke-webrequest|net.webclient|start-bitstransfer)") && regexMatch("event.eventDataScriptBlockText", "(?i)(iex|invoke-expression|-enc |-encodedcommand|-w hidden|-windowstyle hidden|frombase64string)")))
+afterEvents: []
+groupBy: []
+deduplicateBy: []

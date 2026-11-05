@@ -1,0 +1,20 @@
+name: Purview - DLP Rule Match Detected
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Data Loss Prevention
+technique: T1567 - Exfiltration Over Web Service
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1567/
+  - https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp
+description: 'Une politique DLP Microsoft Purview a détecté et bloqué le partage de données sensibles (DLPRuleMatch / DlpRuleMatch). La casse variable est couverte par regexMatch. Next Steps: 1. Identifier la politique via event.PolicyName. 2. Identifier les données sensibles via event.SensitiveInfoDetectionIsIncluded. 3. Vérifier l''expéditeur via origin.user. 4. Confirmer si le partage était intentionnel. 5. Escalader si destinataire externe et données classifiées.'
+where: |-
+  regexMatch("action", "(?i)dlprulematch") &&
+  contains("event.Workload", "Exchange")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

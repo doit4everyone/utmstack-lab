@@ -1,0 +1,22 @@
+name: W3 - Member Added to Group Policy Creator Owners
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Privilege Escalation
+technique: T1098 - Account Manipulation
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1098/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4728
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4756
+description: 'Un compte a été ajouté au groupe Group Policy Creator Owners (RID -520, EID 4728 ou 4756). Les membres de ce groupe peuvent créer des GPO et, par elles, exécuter du code sur toutes les machines auxquelles une GPO est liée. Les ajouts aux groupes Domain Admins (-512), Schema Admins (-518) et Enterprise Admins (-519) sont couverts par la règle native v11.3.0 ; cette règle ne cible que le RID que la règle native ne couvre pas. Ces événements sont générés sur le contrôleur de domaine. Next Steps: 1. Identifier le compte ajouté via le SID membre de l''événement. 2. Vérifier qui a effectué l''opération via event.eventDataSubjectUserName. 3. Confirmer si l''ajout est autorisé (ticket de changement, procédure administrative). 4. Retirer immédiatement le compte si l''ajout n''est pas autorisé. 5. Lister les GPO créées ou modifiées depuis l''ajout et investiguer les connexions récentes du compte ayant effectué l''opération (EID 4624).'
+where: |-
+  oneOf("event.eventCode", [4728, 4756]) &&
+  equals("event.channel", "Security") &&
+  regexMatch("event.eventDataTargetSid", "-520$")
+afterEvents: []
+groupBy: []
+deduplicateBy: []

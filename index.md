@@ -39,6 +39,8 @@ Ce site documente le déploiement complet d'un lab **UTMStack v11.2.12 Community
 
 Toutes les procédures sont testées et validées en conditions réelles sous VMware Workstation, avec OPNsense comme firewall/IDS.
 
+> ⚠️ **Mise à jour UTMStack v11.3.0 (novembre 2026).** Le lab est passé en v11.3.0, qui remplace les champs `log.*` par `event.*`. Le [chapitre 11](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html) et la [bibliothèque de règles](https://github.com/doit4everyone/utmstack-lab/tree/main/rules) ont été migrés et revalidés ; les autres chapitres décrivent encore l'état v11.2 et seront révisés progressivement. L'état v11.2 complet reste disponible dans la release [`v11.2-final`](https://github.com/doit4everyone/utmstack-lab/releases/tag/v11.2-final).
+
 > ℹ️ **UTMStack est un SIEM** — il centralise, corrèle et analyse les événements de sécurité. Un SIEM ne remplace pas un antivirus/EDR (protection des endpoints) ni une solution de conformité et protection des données (type Microsoft Purview). Ces outils sont complémentaires : le SIEM agit au niveau réseau et infrastructure, l'EDR protège les machines de l'intérieur.
 
 ---
@@ -58,7 +60,7 @@ Toutes les procédures sont testées et validées en conditions réelles sous VM
 | [09 — Pipeline SOC augmenté par IA locale](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html) | Ollama + n8n, tri déterministe, threat intelligence, heartbeat de supervision, comparatif LLM |
 | [10 — Intégrations agents et sources de logs](https://doit4everyone.github.io/utmstack-lab/docs/10-integrations-agents.html) | Agents Windows/Linux, M365, Azure Event Hub, SOC AI natif, règles custom Defender & O365 |
 | [10b — Sysmon — Déploiement et configuration](https://doit4everyone.github.io/utmstack-lab/docs/10-sysmon.html) | Sysmon v15.21, deux configs XML (postes/DC), méthode registre ANSSI, WEF self-subscription → UTMStack |
-| [11 — Règles de corrélation YAML 🆕](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html) | 48 règles custom, dont 44 validées en live — séries W, WD, S, L, M, A — 33 techniques MITRE ATT&CK — inclut détection post-compromission Entra ID (AiTM, CVE-2026-69836) |
+| [11 : Règles de corrélation YAML 🆕](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html) | Migration UTMStack v11.3.0, 48 règles personnalisées (séries W, WD, S, L, M, A et clones de règles natives), 34 techniques MITRE ATT&CK |
 
 ---
 
@@ -126,9 +128,9 @@ Déploiement de Sysmon v15.21 (schéma 4.91) en environnement hybride AD + Intun
 
 ### 🎯 Règles de corrélation YAML 🆕
 
-[→ 48 règles YAML custom — Séries W, WD, S, L, M, A](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html)
+[→ 48 règles YAML personnalisées : séries W, WD, S, L, M, A](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html)
 
-Création et validation de 48 règles de corrélation personnalisées pour UTMStack v11, couvrant 33 techniques MITRE ATT&CK. Chaque règle est testée en live dans OpenSearch avant publication, à quatre exceptions près signalées dans le chapitre (W5b, WD3, WD4, M12). Six séries organisées par source de logs : **W** (Windows natif — lockout, Pass-the-Hash, Kerberoasting, tâches planifiées, services suspects), **WD** (Windows Defender — détection malware, tamper protection, exclusions), **S** (Sysmon via WEF — LOLBAS, accès LSASS, named pipes C2, NTDS, Run keys), **L** (Linux auditd — brute force SSH, sudo), **M** (Microsoft 365/Entra ID — OAuth consent, MFA interrupt, audit désactivé, DLP, Accès Conditionnel temporel, attribution de rôle privilégié, credentials ajoutés sur service principal) et **A** (Azure Activity Log — attribution de rôle, diagnostic settings, Key Vault, resource locks, destruction bloquée). Les deux dernières règles M ont été développées en réponse aux attaques AiTM (Mirage2FA) et à CVE-2026-69836 (Entra ID RCE, CVSS 10.0). Les limitations du moteur UTMStack v11 sont documentées honnêtement, avec leurs alternatives. [Bibliothèque de règles YAML sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules).
+Création et validation de règles de corrélation personnalisées pour UTMStack v11.3.0, couvrant 34 techniques MITRE ATT&CK. Toutes les règles ont été migrées vers le nouveau schéma `event.*` de la v11.3.0 et revalidées par un test réel, à l'exception de la série Azure (intégration désactivée) et des règles impossibles à provoquer dans le lab, signalées dans le chapitre. Six séries organisées par source de logs : **W** (Windows natif : verrouillage, Pass-the-Hash, Kerberoasting, tâches planifiées, services suspects, clés Run), **WD** (Windows Defender : détection de malware, Tamper Protection, exclusions), **S** (Sysmon via WEF : LOLBAS, accès LSASS, named pipes C2, NTDS), **L** (Linux auditd : force brute SSH, sudo), **M** (Microsoft 365/Entra ID : force brute, pays inhabituel, vol de session, consentement OAuth, audit, étiquetage Purview, accès conditionnel) et **A** (Azure Activity Log : attribution de rôle, diagnostic settings, Key Vault, verrous de ressources, destruction bloquée). Le chapitre documente aussi la méthode pour corriger une règle native sans perdre la correction au redémarrage, les règles d'écriture apprises pendant la migration et les prérequis de collecte. [Bibliothèque de règles YAML sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules).
 
 ---
 
@@ -173,7 +175,7 @@ Création et validation de 48 règles de corrélation personnalisées pour UTMSt
 - **SOC AI** : module natif UTMStack (Mistral/OpenAI/Custom) + pipeline n8n custom (Ollama local)
 - **Pipeline IA** : Ollama (Llama 3.1 8B / Qwen 2.5 14B) + n8n — tri déterministe, enrichissement AbuseIPDB/GreyNoise/OTX/ThreatFox, heartbeat de supervision → alerte SIEM native
 - **Sysmon** : v15.21 schéma 4.91 — deux configs XML (postes/DC), méthode registre ANSSI, collecte WEF → ForwardedEvents → UTMStack
-- **Règles custom** : 48 règles de corrélation YAML custom (séries W, WD, S, L, M, A) couvrant 33 techniques MITRE ATT&CK, dont 44 validées en live dans OpenSearch — [bibliothèque sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules)
+- **Règles personnalisées** : 48 règles de corrélation YAML pour UTMStack v11.3.0 (séries W, WD, S, L, M, A et clones de règles natives), 34 techniques MITRE ATT&CK : [bibliothèque sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules)
 
 ---
 
@@ -183,7 +185,7 @@ Création et validation de 48 règles de corrélation personnalisées pour UTMSt
 | --- | --- |
 | [Checklist Migration OPNsense 26.1](https://doit4everyone.github.io/utmstack-lab/docs/06-migration-checklist.html) | Points de vigilance post-migration OPNsense 25.7 → 26.1 |
 | [Réduction du bruit — Règles de corrélation UTMStack](https://doit4everyone.github.io/utmstack-lab/docs/correlation-rules-tuning.html) | Alert fatigue, diagnostic OpenSearch/PostgreSQL, 7 fixes de règles de corrélation, dérive d'ID entre versions, automatisation double (boot + cron horaire), checklist post-update |
-| [Bibliothèque de règles custom (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/rules) | 48 règles YAML (séries W, WD, S, L, M, A) — 33 techniques MITRE ATT&CK, avec tuning des faux positifs documenté |
+| [Bibliothèque de règles personnalisées (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/rules) | 48 règles YAML pour v11.3.0, avec leur statut de validation, les règles retirées et le réglage des faux positifs documenté |
 | [Workflows Pipeline IA (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts) | JSON n8n (rapport quotidien, à la demande, consultation webhook), scripts heartbeat systemd, Modelfiles Ollama |
 | [Scripts WEF NTLM (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts) | Deploy-WEF-NTLM-GPO.ps1, Intune, Detect, ntlm-subscription.xml |
 | [Configurations Sysmon (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/configs/sysmon) | sysmon-workstation.xml, sysmon-dc.xml, sysmon-wef-subscription.xml — schéma 4.91 |

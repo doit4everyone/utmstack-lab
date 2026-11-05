@@ -1,0 +1,29 @@
+name: Medium level Suricata alert (lab)
+dataTypes:
+  - suricata
+impact:
+  confidentiality: 2
+  integrity: 2
+  availability: 2
+category: Discovery
+technique: T1046 - Network Service Discovery
+adversary: origin
+references:
+  - https://docs.suricata.io/en/latest/rules/meta.html
+description: 'Alerte Suricata de sévérité moyenne : reconnaissance, anomalie de protocole ou tentative d''exploitation non bloquée. Next Steps: 1. Identifier la signature via event.alert.signature et sa catégorie. 2. Vérifier la direction du flux (event.direction) : un flux entrant vers le WAN 192.168.1.203 vise un service publié par NAT (reverse proxy nginx vers la sous-CA), un flux sortant désigne un hôte du LAN masqué derrière le NAT, à identifier dans les logs NAT d''OPNsense. 3. Contrôler si le flux a été bloqué (event.alert.action). 4. Pour un flux entrant, vérifier les logs du service ciblé et le code de réponse. 5. Pour un flux sortant, investiguer le processus à l''origine sur l''hôte du LAN. Note technique : clone de la règle native 876 (v11.3.0), qui exclut le trafic entrant vers le WAN déjà bloqué et le trafic Microsoft Delivery Optimization.'
+where: |-
+  equals("event.eventType", "alert") &&
+  equals("severity", "warning") &&
+  !(equals("target.ip", "192.168.1.203") && equals("event.alert.action", "blocked")) &&
+  !contains("event.http.http_user_agent", "Microsoft-Delivery-Optimization")
+afterEvents:
+  - indexPattern: v11-log-suricata-*
+    with:
+      - field: target.ip
+        operator: filter_term
+        value: "{{.target.ip}}"
+    or: null
+    within: 15m
+    count: 5
+groupBy: []
+deduplicateBy: []
