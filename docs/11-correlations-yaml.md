@@ -1,6 +1,6 @@
 ---
 title: "Chapitre 11 : Règles de corrélation YAML personnalisées | DoIt4Everyone"
-description: "Création et validation de règles de corrélation YAML personnalisées pour UTMStack v11 CE : séries W (Windows natif), WD (Windows Defender), S (Sysmon via WEF), L (Linux auditd), M (Microsoft 365/Entra ID) et A (Azure Activity Log). 48 règles personnalisées, dont 44 validées en live dans OpenSearch, couvrant 33 techniques MITRE ATT&CK."
+description: "Création et validation de règles de corrélation YAML personnalisées pour UTMStack v11.3.0 CE : séries W (Windows natif), WD (Windows Defender), S (Sysmon via WEF), L (Linux auditd), M (Microsoft 365/Entra ID), A (Azure Activity Log) et clones de règles natives. Migration du schéma log.* vers event.*, règles d'écriture, prérequis de collecte et méthode de correction des règles natives."
 lang: fr
 ---
 <style>
@@ -29,23 +29,69 @@ lang: fr
 
 ## Sommaire
 
+- [Migration UTMStack v11.3.0](#migration-utmstack-v1130)
 - [Veille CVE et règles compensatoires](#veille-cve-et-règles-de-détection-compensatoires)
 - [Prérequis et architecture](#prérequis-et-architecture)
-- [Série W : Windows natif](#série-w--windows-natif-wineventlog) : W1 · W2 · W3 · W4 · W5a · W5b · W6 · W7
+- [Série W : Windows natif](#série-w--windows-natif-wineventlog) : W1 · W2 · W3 · W4 · W5a · W5b · W6 · W7 · S5b
 - [Série WD : Windows Defender](#série-wd--windows-defender) : WD1 · WD2 · WD3 · WD4 · WD5
 - [Série S : Sysmon via WEF](#série-s--sysmon-via-wef) : S1 · S2 · S3 · S4 · S5
 - [Série L : Linux auditd](#série-l--linux-auditd) : L1 · L2
-- [Série M : Microsoft 365 et Entra ID](#série-m--microsoft-365-et-entra-id) : Brute Force · Password Spray · Impossible Travel · DLP · MDE · Token Protection · M5 · M6 · M7 · M10 · M2 · M11 · M12 · M13 · M14 · M-new-1 · M-new-2
+- [Série M : Microsoft 365 et Entra ID](#série-m--microsoft-365-et-entra-id) : Brute Force · Password Spray · Impossible Travel · Mailbox Activity · DLP · MDE · Token Protection · M5 · M6 · M7 · M10 · M2 · M8 · M11 · M12 · M13 · M14 · M-new-1 · M-new-2
 - [Série A : Azure Activity Log](#série-a--azure-activity-log) : A1 · A2 · A3 · A4a · A4b · A5 · A6 · A7 · A8 · A9 · A10 · A11
-- [Annexe W8 : non implémentable](#annexe-w8--run-key-via-audit-natif-registre-eid-4657--non-implémentable)
+- [Clones de règles natives](#clones-de-règles-natives) : Suricata Medium (876) · PowerShell suspect (1424)
 - [Matrice de couverture MITRE ATT&CK](#matrice-de-couverture-mitre-attck)
 - [Note finale](#note-finale--détection-comportementale-cve-et-complémentarité-des-outils)
 
 ---
 
-Ce chapitre documente la création et la validation de règles de corrélation personnalisées pour UTMStack v11. Chaque règle est testée en live dans OpenSearch avant publication. Quatre exceptions sont signalées explicitement dans leur section : W5b, WD3, WD4 et M12, dont le déclenchement n'a pas pu être reproduit en lab. Pour A3, seule la désallocation a été testée en live, la correction ultérieure de la suppression n'a pas pu l'être (intégration Azure désactivée).
+Ce chapitre documente la création et la validation de règles de corrélation personnalisées pour UTMStack v11. Chaque règle est testée en conditions réelles avant publication. Les règles qui n'ont pas pu être testées sont signalées explicitement dans leur section.
 
-Les règles couvrent six sources de logs : Windows natif (wineventlog), Sysmon via WEF, Linux (auditd), Windows Defender, Microsoft 365 et Azure Activity Log. Elles sont organisées en séries : W (Windows), WD (Windows Defender), S (Sysmon), L (Linux), M (M365/Entra ID) et A (Azure).
+Les règles couvrent six sources de logs : Windows natif (wineventlog), Sysmon via WEF, Linux (auditd), Windows Defender, Microsoft 365 et Azure Activity Log. Elles sont organisées en séries : W (Windows), WD (Windows Defender), S (Sysmon), L (Linux), M (M365/Entra ID) et A (Azure). Les fichiers YAML et leur statut sont dans le dossier [`rules/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules) du dépôt.
+
+---
+
+## Migration UTMStack v11.3.0
+
+> ⚠️ **Ce chapitre décrit l'état v11.3.0 du lab (novembre 2026).** La version précédente, écrite pour UTMStack v11.2 (champs `log.*`), reste disponible dans la release [`v11.2-final`](https://github.com/doit4everyone/utmstack-lab/releases/tag/v11.2-final) du dépôt.
+
+### Ce qui a changé
+
+La v11.3.0 remplace le sac de champs `log.*` par `event.*`, indexé en `flat_object` dans OpenSearch. L'objectif de l'éditeur est de supprimer les conflits de typage dynamique, qui faisaient rejeter des documents entiers. La contrepartie est double :
+
+- **les règles personnalisées en `log.*` ne matchent plus rien.** Aucune erreur n'est signalée : la règle reste active et ne se déclenche simplement plus. Toutes les règles de ce chapitre ont été migrées et revalidées une par une ;
+- **les champs `event.*` ne sont plus agrégeables** dans OpenSearch. L'éditeur a ajouté un second espace typé, `utm.*`, alimenté par une dizaine de filtres (Windows, O365, Linux, Azure, etc.), mais pas par Suricata.
+
+Un seul renommage touche nos règles Windows, Sysmon et Defender : `TargetSid` devient `event.eventDataTargetSid` (W3). Aucun renommage ne touche nos règles O365.
+
+### Bilan de la revalidation
+
+La migration a révélé des défauts qui existaient déjà en v11.2 :
+
+- **S3** (named pipe) n'avait jamais produit d'alerte : `\.` est un échappement invalide en CEL et faisait échouer la règle en silence ;
+- **WD1** (malware détecté) n'avait jamais fonctionné : le champ s'appelle `Threat Name`, avec une espace ;
+- **S4** excluait par erreur tout le dossier `C:\Windows\System32\`, donc `ntdsutil`, `esentutl` et `vssadmin`, c'est-à-dire précisément les outils de vol de NTDS ;
+- **Brute Force** et **Password Spray** avaient une définition identique : les seuils ont été ajoutés par `afterEvents`.
+
+Plusieurs règles ont été retirées parce que la v11.3.0 apporte une règle native équivalente : W2, M-new-1, M-new-2 et les deux règles DLP. M5 a été retirée pour une autre raison, détaillée dans sa section. Les règles retirées restent publiées dans [`rules/retirees/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/retirees), pour les environnements où la règle native n'existe pas.
+
+### Corriger une règle native : la méthode du clone
+
+Le backend v11.3.0 réécrit les règles natives depuis ses propres fichiers à chaque démarrage, en conservant seulement leur statut actif ou inactif. Une exclusion ajoutée directement en base disparaît donc au prochain redémarrage. La méthode retenue :
+
+1. copier la définition de la règle native dans une règle utilisateur, avec l'exclusion ;
+2. désactiver la règle native **par son nom** (les identifiants changent d'une version à l'autre) ;
+3. redémarrer les event-processors.
+
+Les deux clones du lab sont décrits dans la section [Clones de règles natives](#clones-de-règles-natives).
+
+### Diagnostiquer dans OpenSearch
+
+Une requête qui renvoie 0 résultat ne prouve rien en v11.3.0 : deux requêtes courantes renvoient 0 sans aucune erreur.
+
+- **`match_phrase` sur un champ `event.*`** : le `flat_object` ne le supporte pas. Utiliser `term` sur la valeur exacte, ou chercher dans `raw`.
+- **`wildcard` sur `raw`** : `raw` est un texte analysé, découpé en mots. Une chaîne qui contient des `.` ou des `:` ne correspond à aucun mot.
+
+Avant de conclure qu'un événement est absent, refaire la requête sur une fenêtre où l'on sait qu'il existe (témoin positif).
 
 ---
 
@@ -53,7 +99,7 @@ Les règles couvrent six sources de logs : Windows natif (wineventlog), Sysmon v
 
 Un SIEM custom n'est pas qu'un outil de détection comportementale, c'est aussi un filet de sécurité pendant la fenêtre de vulnérabilité qui sépare la publication d'une CVE critique de son déploiement en production. Dans une PME, cette fenêtre dure souvent plusieurs semaines : le temps de tester le patch, de planifier la maintenance, et de l'appliquer sans interrompre les opérations. Pendant ce temps, la CVE est publique, les exploits sont disponibles, et les attaquants sont actifs.
 
-Les règles de corrélation personnalisées permettent de combler partiellement cette fenêtre. Une CVE qui exploite un mécanisme d'authentification sera souvent détectée par une règle comportementale existante, W6 (Pass-the-Hash), W7 (Kerberoasting), M5 (MFA Interrupt) même si aucune règle dédiée à la CVE n'a été écrite. C'est la valeur de l'approche comportementale: elle reste pertinente indépendamment des CVE publiées car les techniques ATT&CK sous-jacentes ne changent pas.
+Les règles de corrélation personnalisées permettent de combler partiellement cette fenêtre. Une CVE qui exploite un mécanisme d'authentification sera souvent détectée par une règle comportementale existante, W6 (Pass-the-Hash), W7 (Kerberoasting), Impossible Travel, même si aucune règle dédiée à la CVE n'a été écrite. C'est la valeur de l'approche comportementale: elle reste pertinente indépendamment des CVE publiées car les techniques ATT&CK sous-jacentes ne changent pas.
 
 Pour les CVE qui sortent du cadre comportemental couvert, la réponse peut être une règle ciblée et temporaire active jusqu'au patch, puis désactivée. Ce chapitre illustre cette philosophie à travers les deux axes qui se complètent: détection comportementale pérenne et réponse événementielle aux CVE critiques.
 
@@ -87,17 +133,35 @@ groupBy: []
 deduplicateBy: []
 ```
 
-### Règles absolues d'authoring
+### Règles d'écriture (v11.3.0)
 
-Quatre points sont à respecter pour que les règles déclenchent correctement dans UTMStack v11 :
+Ces points ont tous été constatés dans le lab. Les ignorer ne produit en général aucune erreur visible : la règle s'importe, reste active et ne se déclenche jamais.
 
-**`groupBy: []` et `deduplicateBy: []` obligatoires** : toute valeur non vide dans ces champs bloque silencieusement le déclenchement. Ce comportement a été confirmé empiriquement lors des premiers tests de la règle W1.
+**Point littéral dans une regex** : écrire `[.]` ou `\\.`, jamais `\.`. `\.` est un échappement invalide en CEL et fait échouer l'évaluation à chaque événement.
 
-**Limiter les blocs `()` avec `||` multiples** : lors des premiers tests, ce pattern a fait planter le moteur de corrélation, qui a désactivé la règle après 5 échecs. Préférer `regexMatch` avec alternance quand c'est possible : `regexMatch("champ", "(?i)(pattern1|pattern2|pattern3)")`. Les règles S1, S3 et S4 utilisent encore des blocs `( … || … )` et fonctionnent : tester systématiquement chaque règle après import.
+**Champs facultatifs** : garder un champ par `exists()` avant de le tester (`exists("event.data.New Value") && contains("event.data.New Value", …)`). Un champ absent fait échouer l'évaluation.
 
-**Procédure de mise à jour** : toujours supprimer et réimporter le YAML. Ne jamais éditer une règle en place.
+**Disjoncteur (« Circuit Breaker »)** : une règle qui échoue 5 fois à l'évaluation est coupée temporairement, et une alerte « Circuit Breaker: <nom de la règle> » est générée. Le moteur ne journalise pas le message d'erreur : il faut relire la condition. Les deux causes rencontrées sont les deux points ci-dessus.
 
-**Redémarrage obligatoire après import** : après chaque import de règle via l'interface UTMStack, les conteneurs event-processor doivent être redémarrés pour que la règle soit prise en compte par le moteur de corrélation :
+**`afterEvents` et champs texte** : `action`, `origin.user`, `origin.ip` (dans les anciens index), `origin.geolocation.countryCode` et `dataSource` sont indexés en texte. Dans un `afterEvents`, utiliser leur sous-champ `.keyword` (`origin.user.keyword`), sinon le filtre ne matche jamais. Les sous-champs de `event.*` s'utilisent directement.
+
+**Libellés traduits** : `Changed Type`, `ServiceType`, `StartType` dépendent de la langue de Windows. Prévoir les deux langues (`!oneOf("event.data.Changed Type", ["Ignoré", "Ignored"])`), ou filtrer sur un champ numérique.
+
+**Listes d'objets** : `ModifiedProperties` et `Parameters` (O365) ne sont pas utilisables dans une condition. Alerter sur l'action et lire la valeur dans l'alerte.
+
+**Identifiants de compte O365** : la `UserKey` d'Exchange (PUID) n'est pas celle d'Entra ID (ID d'objet). Pour relier deux workloads, passer par l'UPN.
+
+**Valeur YAML contenant `: `** : la mettre entre guillemets (`technique: 'T1059.001 - Command and Scripting Interpreter: PowerShell'`), sinon l'import échoue avec `bad indentation of a mapping entry`.
+
+**Parenthèses avec `||`** : elles fonctionnent en v11.3.0 (S1, S4, règles natives). Le plantage constaté en v11.2 ne s'est pas reproduit.
+
+**`groupBy` et `deduplicateBy`** : les règles de ce chapitre les laissent vides. En v11.2, une valeur non vide avait bloqué le déclenchement de W1. En v11.3.0, des règles natives (`groupBy: [dataSource]`) et la règle de heartbeat du [chapitre 09](09-pipeline-llm.html) (`@timestamp`) se déclenchent avec une valeur : le constat est à requalifier, mais n'a pas été retesté.
+
+**Champ `raw`** : il est évalué par le moteur, au moins pour le dataType syslog (règle de heartbeat, `contains("raw", …)`). Notre constat de v11.2 (« `raw` n'est pas évalué ») était faux. Préférer malgré tout un champ structuré quand il existe.
+
+**Mise à jour d'une règle** : supprimer l'ancienne version et réimporter le YAML. Ne pas éditer une règle en place.
+
+**Redémarrage après import** : les event-processors chargent les règles en mémoire. Après chaque import, les redémarrer :
 
 ```bash
 docker service update --force utmstack_event-processor-worker
@@ -105,15 +169,25 @@ sleep 30
 docker service update --force utmstack_event-processor-manager
 ```
 
-Sans ce redémarrage, la règle apparaît bien dans la liste des corrélations mais ne déclenche pas sur les nouveaux events.
+Sans ce redémarrage, la règle apparaît dans la liste des corrélations mais ne se déclenche pas. Les règles ne sont pas rétroactives : elles ne s'appliquent qu'aux événements reçus après le redémarrage.
 
-### GPO prérequis : Ligne de commande EID 4688
+### Prérequis de collecte
 
-Pour que les règles basées sur EID 4688 (S1 LOLBAS) fonctionnent, la GPO suivante doit être activée :
+Plusieurs règles dépendent d'un réglage d'audit absent par défaut. Sans lui, la règle est importée sans erreur mais ne voit jamais l'événement.
 
-Configuration ordinateur → Stratégies → Modèles d'administration → Système → Création de processus d'audit → **Inclure la ligne de commande dans les événements de création de processus** → Activé.
+| Règle | Prérequis |
+|---|---|
+| S1 | Audit « Création du processus » `{0CCE922B-69AE-11D9-BED3-505054503030}` et GPO « Inclure la ligne de commande dans les événements de création de processus » (Configuration ordinateur → Stratégies → Modèles d'administration → Système → Audit de la création de processus) |
+| W4 | Audit « Autres événements d'accès à l'objet » `{0CCE9227-69AE-11D9-BED3-505054503030}` |
+| S5b | Audit du registre et SACL sur les clés `Run` et `RunOnce` |
+| PowerShell suspect (clone 1424) | GPO « Activer la journalisation des blocs de scripts PowerShell » (Modèles d'administration → Composants Windows → Windows PowerShell) |
+| S2 à S5 | Sysmon et abonnement WEF vers le collecteur ; S5 exige une configuration Sysmon qui journalise les clés `Run` |
+| M10, M12, Mailbox Activity | Audit des boîtes aux lettres Exchange ; M10 exige l'étiquetage automatique Purview |
+| Impossible Travel, Mailbox Activity | Géolocalisation activée dans UTMStack |
 
-Sans cette GPO, le champ `log.data.CommandLine` est absent et les règles ne peuvent pas filtrer sur la ligne de commande.
+Pour vérifier une sous-catégorie d'audit sur une machine : `auditpol /get /subcategory:"{GUID}"`.
+
+**Journalisation des blocs de scripts PowerShell** : sans cette GPO, PowerShell ne journalise en 4104 que les blocs qu'il juge suspicieux d'après sa propre liste. Dans le lab, une commande `IEX (New-Object Net.WebClient).DownloadString(...)` tapée en console n'a produit aucun 4104 sur DC01. Après activation (clé `HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging`, valeur `EnableScriptBlockLogging = 1`) et ouverture d'une nouvelle console, le même bloc est journalisé. Le réglage est lu au démarrage de la session PowerShell. Toute règle fondée sur le 4104, y compris la règle native, ne voit sans lui qu'une partie des scripts. Le volume de 4104 augmente sensiblement : un serveur Entra Connect journalise par exemple tous les modules Azure AD Sync qu'il charge.
 
 ---
 
@@ -126,6 +200,8 @@ Les règles W détectent des comportements suspects sur les systèmes Windows en
 Un compte utilisateur a été verrouillé suite à un nombre excessif d'échecs d'authentification. Peut indiquer une attaque par force brute ou par pulvérisation de mots de passe. L'event est généré sur le contrôleur de domaine qui effectue le verrouillage.
 
 **Technique MITRE :** T1110 · Brute Force
+
+✅ **Statut v11.3.0 :** validée. Le champ `target.domain` contient en réalité la machine source du verrouillage (Caller Computer Name).
 
 ```yaml
 name: W1 - Account Lockout Detected
@@ -143,8 +219,8 @@ references:
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4740
 description: 'Un compte utilisateur a été verrouillé suite à un nombre excessif d''échecs d''authentification (EID 4740). Peut indiquer une attaque par force brute ou par pulvérisation de mots de passe. L''event est généré sur le contrôleur de domaine effectuant le verrouillage. Next Steps: 1. Identifier la machine source du verrouillage via le champ target.domain. 2. Vérifier les events 4625 (échecs d''authentification) précédant le verrouillage sur la même machine. 3. Contrôler si plusieurs comptes sont verrouillés simultanément (signe de password spray). 4. Réinitialiser le compte après investigation. 5. Vérifier si le compte ciblé est un compte privilégié.'
 where: |-
-  equals("log.eventCode", 4740) &&
-  equals("log.channel", "Security") &&
+  equals("event.eventCode", 4740) &&
+  equals("event.channel", "Security") &&
   exists("target.user") &&
   !regexMatch("target.user", "(?i)\\$$")
 afterEvents: []
@@ -179,6 +255,8 @@ Remove-ADUser -Identity "test-lockout" -Confirm:$false
 
 ### W2 : Member Added to Local Administrators Group (EID 4732)
 
+> 🗄️ **Retirée en v11.3.0.** Entièrement couverte par la règle native 1512 de la v11.3.0. Le fichier reste disponible dans [`rules/retirees/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/retirees) pour les environnements où cette règle native n'existe pas.
+
 Un compte a été ajouté au groupe Administrateurs local. Le filtre sur le SID universel `S-1-5-32-544` garantit la détection indépendamment de la langue du système (Administrateurs en français, Administrators en anglais).
 
 **Technique MITRE :** T1098 · Account Manipulation
@@ -197,11 +275,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1098/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4732
-description: 'Un compte a été ajouté au groupe Administrateurs local (EID 4732, SID S-1-5-32-544). Le filtre sur le SID universel S-1-5-32-544 garantit la détection indépendamment de la langue du système. Peut indiquer une tentative de persistance ou d''élévation de privilèges sur un serveur membre. Next Steps: 1. Identifier le compte ajouté via log.data.MemberSid. 2. Vérifier si un EID 4720 (création de compte local) précède cet event sur la même machine. 3. Contrôler qui a effectué l''opération via log.eventDataSubjectUserName. 4. Vérifier si l''ajout est légitime (GPO, script d''administration). 5. Supprimer le compte si non autorisé et investiguer le vecteur d''accès initial.'
+description: 'Un compte a été ajouté au groupe Administrateurs local (EID 4732, SID S-1-5-32-544). Le filtre sur le SID universel S-1-5-32-544 garantit la détection indépendamment de la langue du système. Peut indiquer une tentative de persistance ou d''élévation de privilèges sur un serveur membre. Next Steps: 1. Identifier le compte ajouté via event.data.MemberSid. 2. Vérifier si un EID 4720 (création de compte local) précède cet event sur la même machine. 3. Contrôler qui a effectué l''opération via event.eventDataSubjectUserName. 4. Vérifier si l''ajout est légitime (GPO, script d''administration). 5. Supprimer le compte si non autorisé et investiguer le vecteur d''accès initial.'
 where: |-
-  equals("log.eventCode", 4732) &&
-  equals("log.channel", "Security") &&
-  equals("log.data.TargetSid", "S-1-5-32-544")
+  equals("event.eventCode", 4732) &&
+  equals("event.channel", "Security") &&
+  equals("event.eventDataTargetSid", "S-1-5-32-544")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -225,16 +303,16 @@ Remove-LocalUser -Name "testlocal-w2"
 
 ---
 
-### W3 : Member Added to Privileged Domain Group (EID 4728/4756)
+### W3 : Member Added to Group Policy Creator Owners (EID 4728/4756)
 
-Un compte a été ajouté à un groupe privilégié du domaine. La détection cible les groupes les plus sensibles via leur RID universel, indépendamment de la langue du système.
-
-**Groupes couverts :** Domain Admins (RID -512), Schema Admins (RID -518), Enterprise Admins (RID -519), Group Policy Creator Owners (RID -520).
+Un compte a été ajouté au groupe Group Policy Creator Owners (RID -520). Ses membres peuvent créer des GPO et, par elles, exécuter du code sur toutes les machines auxquelles une GPO est liée. Le filtre sur le RID rend la détection indépendante de la langue du système.
 
 **Technique MITRE :** T1098 · Account Manipulation
 
+✅ **Statut v11.3.0 :** validée. La version v11.2 couvrait aussi Domain Admins (-512), Schema Admins (-518) et Enterprise Admins (-519). La v11.3.0 apporte une règle native (1512 dans le lab) qui couvre ces trois groupes, mais pas le -520 : W3 est réduite à ce seul RID et renommée. Le champ `TargetSid` est devenu `event.eventDataTargetSid`.
+
 ```yaml
-name: W3 - Member Added to Privileged Domain Group
+name: W3 - Member Added to Group Policy Creator Owners
 dataTypes:
   - wineventlog
 impact:
@@ -248,11 +326,11 @@ references:
   - https://attack.mitre.org/techniques/T1098/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4728
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4756
-description: 'Un compte a été ajouté à un groupe privilégié du domaine (EID 4728 ou 4756). La détection cible les groupes les plus sensibles via leur RID universel : Domain Admins (-512), Schema Admins (-518), Enterprise Admins (-519), Group Policy Creator Owners (-520). Ces events sont générés sur le contrôleur de domaine. Next Steps: 1. Identifier le compte ajouté via log.data.MemberSid et log.data.MemberName. 2. Vérifier qui a effectué l''opération via log.eventDataSubjectUserName. 3. Confirmer si l''ajout est autorisé (ticket de changement, procédure administrative). 4. Retirer immédiatement le compte si non autorisé. 5. Investiguer les connexions récentes du compte ayant effectué l''opération (EID 4624).'
+description: 'Un compte a été ajouté au groupe Group Policy Creator Owners (RID -520, EID 4728 ou 4756). Les membres de ce groupe peuvent créer des GPO et, par elles, exécuter du code sur toutes les machines auxquelles une GPO est liée. Les ajouts aux groupes Domain Admins (-512), Schema Admins (-518) et Enterprise Admins (-519) sont couverts par la règle native v11.3.0 ; cette règle ne cible que le RID que la règle native ne couvre pas. Ces événements sont générés sur le contrôleur de domaine. Next Steps: 1. Identifier le compte ajouté via le SID membre de l''événement. 2. Vérifier qui a effectué l''opération via event.eventDataSubjectUserName. 3. Confirmer si l''ajout est autorisé (ticket de changement, procédure administrative). 4. Retirer immédiatement le compte si l''ajout n''est pas autorisé. 5. Lister les GPO créées ou modifiées depuis l''ajout et investiguer les connexions récentes du compte ayant effectué l''opération (EID 4624).'
 where: |-
-  oneOf("log.eventCode", [4728, 4756]) &&
-  equals("log.channel", "Security") &&
-  regexMatch("log.data.TargetSid", "-(512|518|519|520)$")
+  oneOf("event.eventCode", [4728, 4756]) &&
+  equals("event.channel", "Security") &&
+  regexMatch("event.eventDataTargetSid", "-520$")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -260,16 +338,19 @@ deduplicateBy: []
 
 **Test de déclenchement**
 
-Sur DC01-MAIN-SITE (contrôleur de domaine) en PowerShell admin. Sur les systèmes en français, le groupe s'appelle `Admins du domaine`.
+Sur DC01-MAIN-SITE (contrôleur de domaine) en PowerShell admin. Le groupe est retrouvé par son SID, ce qui évite de dépendre de son nom localisé.
 
 ```powershell
 # Créer un compte de test si nécessaire
 New-ADUser -Name "ch11-test" -SamAccountName "ch11-test" `
   -AccountPassword (ConvertTo-SecureString "TestLab2026!" -AsPlainText -Force) -Enabled $true
 
-# Ajouter au groupe Domain Admins puis retirer immédiatement
-Add-ADGroupMember -Identity "Admins du domaine" -Members "ch11-test"
-Remove-ADGroupMember -Identity "Admins du domaine" -Members "ch11-test" -Confirm:$false
+# Group Policy Creator Owners, retrouvé par son RID -520
+$gpco = Get-ADGroup -Identity "$((Get-ADDomain).DomainSID)-520"
+
+# Ajouter puis retirer immédiatement
+Add-ADGroupMember -Identity $gpco -Members "ch11-test"
+Remove-ADGroupMember -Identity $gpco -Members "ch11-test" -Confirm:$false
 
 # Nettoyage
 Remove-ADUser -Identity "ch11-test" -Confirm:$false
@@ -282,6 +363,8 @@ Remove-ADUser -Identity "ch11-test" -Confirm:$false
 Une tâche planifiée a été créée en dehors des namespaces système légitimes. Les tâches planifiées sont un vecteur de persistance fréquemment utilisé par les attaquants.
 
 **Technique MITRE :** T1053.005 · Scheduled Task
+
+✅ **Statut v11.3.0 :** validée, après activation de l'audit « Autres événements d'accès à l'objet » (voir les prérequis de collecte).
 
 ```yaml
 name: W4 - Suspicious Scheduled Task Created
@@ -297,14 +380,14 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1053/005/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4698
-description: 'Une tâche planifiée a été créée en dehors des namespaces système légitimes (EID 4698). Les tâches planifiées sont un vecteur de persistance fréquemment utilisé par les attaquants. Les namespaces Microsoft, Windows, SoftLanding et les tâches créées par SYSTEM ou les comptes machine sont exclus. Next Steps: 1. Examiner le contenu XML de la tâche via log.data.TaskContent pour identifier la commande exécutée. 2. Vérifier le compte ayant créé la tâche via log.eventDataSubjectUserName. 3. Contrôler si la tâche pointe vers un exécutable dans un chemin inhabituel. 4. Supprimer la tâche si non autorisée : Unregister-ScheduledTask -TaskName "nom" -Confirm:$false. 5. Investiguer les autres activités du compte créateur dans la même fenêtre temporelle.'
+description: 'Une tâche planifiée a été créée en dehors des namespaces système légitimes (EID 4698). Les tâches planifiées sont un vecteur de persistance fréquemment utilisé par les attaquants. Les namespaces Microsoft, Windows, SoftLanding et les tâches créées par SYSTEM ou les comptes machine sont exclus. Next Steps: 1. Examiner le contenu XML de la tâche via event.data.TaskContent pour identifier la commande exécutée. 2. Vérifier le compte ayant créé la tâche via event.eventDataSubjectUserName. 3. Contrôler si la tâche pointe vers un exécutable dans un chemin inhabituel (temp, appdata, etc.). 4. Supprimer la tâche si non autorisée : Unregister-ScheduledTask -TaskName "nom" -Confirm:$false. 5. Investiguer les autres activités du compte créateur dans la même fenêtre temporelle.'
 where: |-
-  equals("log.eventCode", 4698) &&
-  equals("log.channel", "Security") &&
-  !equals("log.eventDataSubjectUserSid", "S-1-5-18") &&
-  !regexMatch("log.eventDataSubjectUserName", "(?i)\\$$") &&
-  !regexMatch("log.data.TaskName", "(?i)^\\\\(Microsoft|Windows|SoftLanding)\\\\") &&
-  !contains("log.data.TaskName", "CreateExplorerShellUnelevatedTask")
+  equals("event.eventCode", 4698) &&
+  equals("event.channel", "Security") &&
+  !equals("event.eventDataSubjectUserSid", "S-1-5-18") &&
+  !regexMatch("event.eventDataSubjectUserName", "(?i)\\$$") &&
+  !regexMatch("event.data.TaskName", "(?i)^\\\\(Microsoft|Windows|SoftLanding)\\\\") &&
+  !contains("event.data.TaskName", "CreateExplorerShellUnelevatedTask")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -328,6 +411,8 @@ Un nouveau service Windows a été installé depuis un répertoire utilisateur o
 
 **Technique MITRE :** T1543.003 · Windows Service
 
+✅ **Statut v11.3.0 :** validée. La règle exclut désormais les pilotes noyau : un pilote installé depuis un dossier utilisateur déclenchait à la fois W5a et W5b.
+
 ```yaml
 name: W5a - Service Installed from User or Temp Directory
 dataTypes:
@@ -342,11 +427,12 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1543/003/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-7045
-description: 'Un nouveau service Windows a été installé depuis un répertoire utilisateur ou temporaire (EID 7045). Les services légitimes s''installent dans Program Files ou Windows, un service depuis Temp, AppData ou Public est un signal fort de persistance malveillante. Next Steps: 1. Examiner le chemin complet via log.eventDataImagePath. 2. Identifier le compte ayant installé le service via log.data.AccountName. 3. Analyser l''exécutable (hash, VirusTotal). 4. Arrêter et supprimer le service : Stop-Service "nom" ; sc.exe delete "nom". 5. Investiguer les autres activités sur la machine dans la même fenêtre temporelle.'
+description: 'Un nouveau service Windows a été installé depuis un répertoire utilisateur ou temporaire (EID 7045). Les services légitimes s''installent dans Program Files ou Windows, un service depuis Temp, AppData ou Public est un signal fort de persistance malveillante. Next Steps: 1. Examiner le chemin complet via event.eventDataImagePath. 2. Identifier le compte ayant installé le service via event.data.AccountName. 3. Analyser l''exécutable (hash, VirusTotal). 4. Arrêter et supprimer le service : Stop-Service "nom" ; sc.exe delete "nom". 5. Investiguer les autres activités sur la machine dans la même fenêtre temporelle.'
 where: |-
-  equals("log.eventCode", 7045) &&
-  equals("log.channel", "System") &&
-  regexMatch("log.eventDataImagePath", "(?i)(\\\\temp\\\\|\\\\appdata\\\\|\\\\public\\\\|\\\\users\\\\|%temp%|%appdata%)")
+  equals("event.eventCode", 7045) &&
+  equals("event.channel", "System") &&
+  regexMatch("event.eventDataImagePath", "(?i)(\\\\temp\\\\|\\\\appdata\\\\|\\\\public\\\\|\\\\users\\\\|%temp%|%appdata%)") &&
+  !regexMatch("event.eventDataServiceType", "(?i)(noyau|kernel)")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -371,6 +457,8 @@ Un pilote en mode noyau a été installé depuis un chemin inhabituel hors de `s
 
 **Technique MITRE :** T1014 · Rootkit
 
+✅ **Statut v11.3.0 :** validée par un test scripté : création d'un service de type pilote noyau pointant hors de `System32\drivers`, sans fichier ni démarrage.
+
 ```yaml
 name: W5b - Kernel Driver Installed Outside System32
 dataTypes:
@@ -385,18 +473,18 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1014/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-7045
-description: 'Un pilote en mode noyau a été installé depuis un chemin inhabituel hors de system32\drivers (EID 7045). Les drivers noyau légitimes résident dans system32\drivers, un driver installé ailleurs est un indicateur fort de rootkit. Next Steps: 1. Examiner le chemin du driver via log.eventDataImagePath. 2. Vérifier la signature numérique du fichier .sys. 3. Analyser le driver (hash, VirusTotal, analyse statique). 4. Arrêter et supprimer le service : sc.exe stop "nom" ; sc.exe delete "nom". 5. Envisager une analyse forensique complète de la machine.'
+description: 'Un pilote en mode noyau a été installé depuis un chemin inhabituel hors de system32\drivers (EID 7045). Les drivers noyau légitimes résident dans system32\drivers, un driver installé ailleurs est un indicateur fort de rootkit ou de technique d''évasion avancée. Next Steps: 1. Examiner le chemin du driver via event.eventDataImagePath. 2. Vérifier la signature numérique du fichier .sys. 3. Analyser le driver (hash, VirusTotal, analyse statique). 4. Arrêter et supprimer le service : sc.exe stop "nom" ; sc.exe delete "nom". 5. Envisager une analyse forensique complète de la machine.'
 where: |-
-  equals("log.eventCode", 7045) &&
-  equals("log.channel", "System") &&
-  regexMatch("log.eventDataServiceType", "(?i)(noyau|kernel)") &&
-  !regexMatch("log.eventDataImagePath", "(?i)system32\\\\drivers\\\\")
+  equals("event.eventCode", 7045) &&
+  equals("event.channel", "System") &&
+  regexMatch("event.eventDataServiceType", "(?i)(noyau|kernel)") &&
+  !regexMatch("event.eventDataImagePath", "(?i)system32\\\\drivers\\\\")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Note :** le champ `log.eventDataServiceType` contient `"pilote en mode noyau"` sur les systèmes Windows en français et `"kernel mode driver"` en anglais. Le `regexMatch` avec alternance `(?i)(noyau|kernel)` couvre les deux langues sans modification supplémentaire.
+**Note :** le champ `event.eventDataServiceType` contient `"pilote en mode noyau"` sur les systèmes Windows en français et `"kernel mode driver"` en anglais. Le `regexMatch` avec alternance `(?i)(noyau|kernel)` couvre les deux langues sans modification supplémentaire.
 
 ---
 
@@ -405,6 +493,8 @@ deduplicateBy: []
 Un logon réseau NTLM (LogonType 3) a été détecté depuis un compte utilisateur. Dans un environnement Active Directory où NTLM est réduit au minimum, les logons réseau légitimes utilisent Kerberos. Un logon NTLM réseau peut indiquer une attaque Pass-the-Hash ou une connexion par adresse IP directe qui force le passage en NTLM.
 
 **Technique MITRE :** T1550.002 · Pass the Hash
+
+🔵 **Statut v11.3.0 :** validée en passif (déclenchements spontanés). Une exclusion a été ajoutée pour le couple poste d'administration et compte, voir plus bas.
 
 ```yaml
 name: W6 - NTLM Network Logon (possible Pass-the-Hash)
@@ -420,25 +510,25 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1550/002/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4624
-description: 'Un logon réseau NTLM (LogonType 3) a été détecté depuis un compte utilisateur (EID 4624). Dans un environnement Active Directory où NTLM est réduit au minimum, les logons réseau légitimes utilisent Kerberos. Un logon NTLM réseau depuis un compte utilisateur réel peut indiquer une attaque Pass-the-Hash ou une connexion par adresse IP directe. Les comptes machine, les logons locaux et les machines d''administration connues sont exclus. Next Steps: 1. Identifier la machine source via origin.ip et origin.host. 2. Vérifier si la connexion a été établie par IP (forçant NTLM) plutôt que par nom. 3. Contrôler les autres activités du compte target.user dans la même fenêtre temporelle. 4. Vérifier si des outils de type Mimikatz ont été exécutés sur la machine source. 5. Investiguer les mouvements latéraux depuis origin.ip vers d''autres machines.'
+description: 'Un logon réseau NTLM (LogonType 3) a été détecté depuis un compte utilisateur (EID 4624). Dans un environnement Active Directory où NTLM est réduit au minimum, les logons réseau légitimes utilisent Kerberos. Un logon NTLM réseau depuis un compte utilisateur réel peut indiquer une attaque Pass-the-Hash ou une connexion par adresse IP directe. Les comptes machine et les logons locaux sont exclus. Next Steps: 1. Identifier la machine source via origin.ip et origin.host. 2. Vérifier si la connexion a été établie par IP (forçant NTLM) plutôt que par nom. 3. Contrôler les autres activités du compte target.user dans la même fenêtre temporelle. 4. Vérifier si des outils de type Mimikatz ont été exécutés sur la machine source (EID 4688, Sysmon EID 1). 5. Investiguer les mouvements latéraux depuis origin.ip vers d''autres machines.'
 where: |-
-  equals("log.eventCode", 4624) &&
-  equals("log.channel", "Security") &&
-  equals("log.eventDataLogonType", "3") &&
-  equals("log.eventDataAuthenticationPackageName", "NTLM") &&
+  equals("event.eventCode", 4624) &&
+  equals("event.channel", "Security") &&
+  equals("event.eventDataLogonType", "3") &&
+  equals("event.eventDataAuthenticationPackageName", "NTLM") &&
   exists("target.user") &&
   !regexMatch("target.user", "(?i)\\$$") &&
   !regexMatch("target.user", "(?i)^(MSOL_|AAD_|AZUREADSSOACC)") &&
   !equals("origin.ip", "127.0.0.1") &&
   !equals("origin.ip", "::1") &&
-  !equals("origin.host", "ADMIN-WS") &&
-  exists("origin.ip")
+  exists("origin.ip") &&
+  !(equals("origin.host", "ADMIN-WORKSTATION") && equals("target.user", "admin"))
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Note d'adaptation :** remplacer `ADMIN-WS` par le nom de la station d'administration de votre environnement. Cette exclusion est propre au lab : elle n'est pas présente dans le fichier publié `w6-pass-the-hash.yml`, à ajouter selon votre environnement. Dans un environnement où NTLM est correctement désactivé, tout hit est suspect. Le compte `MSOL_` est le compte de synchronisation Entra Connect : son exclusion est indispensable dans les environnements hybrides pour éviter des faux positifs en rafale.
+**Note d'adaptation :** la dernière ligne exclut le couple `origin.host = ADMIN-WORKSTATION` et `target.user = admin`. Dans le lab, elle correspond au poste d'administration, hors domaine, qui ouvre des sessions RDP avec NLA : l'authentification passe alors en NTLM et déclenchait la règle à chaque connexion. Remplacer ces deux valeurs par celles de votre environnement, ou supprimer la ligne. N'exclure jamais le poste seul : tout autre compte utilisé depuis ce poste échapperait à la détection. Dans un environnement où NTLM est correctement désactivé, tout hit est suspect. Le compte `MSOL_` est le compte de synchronisation Entra Connect : son exclusion est indispensable dans les environnements hybrides pour éviter des faux positifs en rafale.
 
 **Test de déclenchement**
 
@@ -451,6 +541,8 @@ Depuis WIN11-AD-TESTS, ouvrir l'Explorateur Windows et accéder à `\\10.100.1.1
 Une demande de ticket Kerberos avec chiffrement RC4 (type 23) a été détectée. Dans un environnement moderne, les tickets légitimes utilisent AES256 (type 18). Une demande RC4 sur un compte de service avec SPN est le signal caractéristique d'une attaque Kerberoasting : l'attaquant récupère le hash RC4 pour le cracker hors ligne.
 
 **Technique MITRE :** T1558.003 · Kerberoasting
+
+✅ **Statut v11.3.0 :** validée. En v11.3.0, le filtre Windows d'UTMStack marque déjà le 4769 suspect (`event.authenticationCandidate.kerberoastingDetection = match`).
 
 ```yaml
 name: W7 - Kerberoasting RC4 Encryption Detected
@@ -466,14 +558,14 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1558/003/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4769
-description: 'Une demande de ticket Kerberos avec chiffrement RC4 (type 23) a été détectée (EID 4769). Dans un environnement moderne, les tickets légitimes utilisent AES256 (type 18). Une demande RC4 sur un compte de service avec SPN est le signal caractéristique d''une attaque Kerberoasting, l''attaquant récupère le hash RC4 pour le cracker hors ligne. Next Steps: 1. Identifier le compte demandeur via target.user et la machine source via origin.ip. 2. Vérifier si d''autres demandes RC4 ont été émises depuis la même source. 3. Contrôler si le compte de service ciblé dispose de droits élevés. 4. Réinitialiser le mot de passe du compte de service ciblé. 5. Envisager la migration vers des comptes gMSA pour éliminer le vecteur.'
+description: 'Une demande de ticket Kerberos avec chiffrement RC4 (type 23) a été détectée (EID 4769). Dans un environnement moderne, les tickets légitimes utilisent AES256 (type 18). Une demande RC4 sur un compte de service avec SPN est le signal caractéristique d''une attaque Kerberoasting, l''attaquant récupère le hash RC4 pour le cracker hors ligne. Les comptes machine et les comptes Azure AD Connect sont exclus. Next Steps: 1. Identifier le compte demandeur via target.user et la machine source via origin.ip. 2. Vérifier si d''autres demandes RC4 ont été émises depuis la même source dans la même fenêtre temporelle (signe d''un scan de comptes SPN). 3. Contrôler si le compte de service ciblé (event.eventDataServiceName) dispose de droits élevés. 4. Réinitialiser le mot de passe du compte de service ciblé. 5. Envisager la migration vers des comptes gMSA (Group Managed Service Accounts) pour éliminer le vecteur.'
 where: |-
-  equals("log.eventCode", 4769) &&
-  equals("log.channel", "Security") &&
-  equals("log.eventDataTicketEncryptionType", 23) &&
-  equals("log.eventDataStatus", 0) &&
-  !regexMatch("log.eventDataServiceName", "(?i)\\$$") &&
-  !equals("log.eventDataServiceName", "krbtgt") &&
+  equals("event.eventCode", 4769) &&
+  equals("event.channel", "Security") &&
+  equals("event.eventDataTicketEncryptionType", 23) &&
+  equals("event.eventDataStatus", 0) &&
+  !regexMatch("event.eventDataServiceName", "(?i)\\$$") &&
+  !equals("event.eventDataServiceName", "krbtgt") &&
   !regexMatch("target.user", "(?i)^(MSOL_|AAD_|AZUREADSSOACC)")
 afterEvents: []
 groupBy: []
@@ -503,15 +595,70 @@ Remove-ADUser -Identity "svc-test-w7" -Confirm:$false
 
 ---
 
+### S5b : Registry Run Key Persistence (Security 4657)
+
+Une valeur a été écrite dans une clé de démarrage automatique du registre (`Run` ou `RunOnce`), détectée par l'audit natif de Windows. C'est la variante de S5 qui ne dépend pas de Sysmon : elle fonctionne sur toute machine où l'audit du registre est actif, y compris les postes Windows 11 dont l'agent UTMStack ne collecte pas Sysmon.
+
+**Technique MITRE :** T1547.001 · Registry Run Keys
+
+✅ **Statut v11.3.0 :** nouvelle règle, validée. En v11.2, elle figurait en annexe comme non implémentable (« W8 ») : le chemin de la clé n'était pas mappé dans les champs structurés. En v11.3.0, il l'est (`event.eventDataObjectName`).
+
+```yaml
+name: S5b - Registry Run Key Persistence (Security 4657)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 2
+category: Persistence
+technique: T1547.001 - Boot or Logon Autostart Execution Registry Run Keys
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1547/001/
+  - https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4657
+description: 'Une valeur a été écrite dans une clé de démarrage automatique du registre (Run ou RunOnce), détectée par l''audit natif Windows (Security 4657). Variante de S5 sans dépendance à Sysmon : elle fonctionne sur toute machine où l''audit du registre est actif et où une SACL est posée sur les clés Run. Les modifications effectuées par des processus système légitimes sont exclues. Next Steps: 1. Identifier la valeur ajoutée via event.data.ObjectValueName et la commande persistée via event.data.NewValue. 2. Vérifier le chemin de l''exécutable référencé, un chemin dans Temp ou AppData est très suspect. 3. Identifier le processus ayant effectué la modification via event.eventDataProcessName et le compte via event.eventDataSubjectUserName. 4. Supprimer la valeur si non autorisée. 5. Analyser l''exécutable référencé (hash, VirusTotal).'
+where: |-
+  equals("event.eventCode", 4657) &&
+  equals("event.channel", "Security") &&
+  regexMatch("event.eventDataObjectName", "(?i)\\\\(Run|RunOnce)$") &&
+  !equals("event.eventDataOperationType", "%%1906") &&
+  !regexMatch("event.eventDataProcessName", "(?i)\\\\(services|svchost|msiexec|trustedinstaller|tiworker)[.]exe$") &&
+  !contains("event.eventDataProcessName", "Windows Defender") &&
+  !contains("event.eventDataProcessName", "UTMStack")
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Prérequis :** audit du registre activé et SACL posée sur les clés `Run` et `RunOnce`. Dans le lab, deux GPO s'en chargent : `Audit HKCU RunKeys` (configuration utilisateur, clés de HKCU) et `Audit RUN KEY local machine` (configuration ordinateur, clés de HKLM).
+
+**Suppressions exclues :** l'EID 4657 est aussi émis quand une valeur est supprimée (`OperationType = %%1906`). Une suppression n'installe pas de persistance : elle est exclue.
+
+**Faux positif connu :** Edge et EdgeWebView écrivent dans les clés `RunOnce` lors de leurs mises à jour. À exclure par le chemin exact de l'exécutable si le volume le justifie.
+
+**Exemple de test :** en PowerShell, sur une machine où la SACL est en place :
+
+```powershell
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "TestS5b" -Value "C:\Users\Public\test.exe"
+Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "TestS5b"
+```
+
+L'écriture déclenche l'alerte, la suppression non.
+
+---
+
 ## Série WD : Windows Defender
 
 Ces cinq règles couvrent les événements Windows Defender sur les endpoints. Elles utilisent les journaux `Microsoft-Windows-Windows Defender` collectés par l'agent UTMStack. Les fichiers YAML sont disponibles dans [`rules/windows-defender/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/windows-defender).
 
 ### WD1 : Malware Detected (EID 1116)
 
-Windows Defender a détecté un malware sur un endpoint. Aucune règle native UTMStack ne couvre l'EID 1116 : cette règle custom est indispensable pour remonter les détections Defender dans le SIEM. Le champ `log.data.ThreatName` contient le nom complet de la menace (ex : `Trojan:Win32/Meterpreter.gen!A`).
+Windows Defender a détecté un malware sur un endpoint. Aucune règle native UTMStack ne couvre l'EID 1116 : cette règle custom est indispensable pour remonter les détections Defender dans le SIEM. Le champ `event.data.ThreatName` contient le nom complet de la menace (ex : `Trojan:Win32/Meterpreter.gen!A`).
 
 **Technique MITRE :** T1204.002 · User Execution: Malicious File (approximation : aucune technique ATT&CK ne correspond exactement à une détection antivirus)
+
+✅ **Statut v11.3.0 :** validée, après correction : le champ s'appelle `Threat Name`, avec une espace. La version v11.2 n'avait jamais fonctionné.
 
 ```yaml
 name: Windows Defender - Malware Detected
@@ -527,10 +674,10 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1204/002/
   - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
-description: 'Windows Defender a détecté un malware sur un endpoint (EID 1116). Le champ log.data.ThreatName contient le nom complet de la menace détectée (ex: Trojan:Win32/Meterpreter.gen!A). Aucune règle native UTMStack ne couvre cet event, cette règle custom est nécessaire pour remonter les détections Defender dans le SIEM. Next Steps: 1. Identifier le fichier détecté via log.data.Path. 2. Identifier le nom complet de la menace via log.data.ThreatName. 3. Vérifier si la remédiation automatique a réussi, consulter l''EID 1117 (remédiation réussie) ou EID 1118 (remédiation échouée) sur le même host dans les minutes suivantes. 4. Si remédiation échouée (WD4), isoler le poste immédiatement. 5. Corréler avec les events Sysmon sur le même host pour identifier le vecteur d''infection.'
+description: 'Windows Defender a détecté un malware sur un endpoint (EID 1116). Le champ event.data.ThreatName contient le nom complet de la menace détectée (ex: Trojan:Win32/Meterpreter.gen!A). Aucune règle native UTMStack ne couvre cet event, cette règle custom est nécessaire pour remonter les détections Defender dans le SIEM. Next Steps: 1. Identifier le fichier détecté via event.data.Path. 2. Identifier le nom complet de la menace via event.data.ThreatName. 3. Vérifier si la remédiation automatique a réussi, consulter l''EID 1117 (remédiation réussie) ou EID 1118 (remédiation échouée) sur le même host dans les minutes suivantes. 4. Si remédiation échouée (WD4), isoler le poste immédiatement. 5. Corréler avec les events Sysmon sur le même host pour identifier le vecteur d''infection.'
 where: |-
-  equals("log.eventCode", 1116) &&
-  exists("log.data.ThreatName")
+  equals("event.eventCode", 1116) &&
+  exists("event.data.Threat Name")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -544,9 +691,11 @@ deduplicateBy: []
 
 La Tamper Protection de Windows Defender a bloqué une tentative de modification des paramètres de sécurité. Signal fort d'une tentative d'évasion de défense : un ransomware ou malware avancé tente systématiquement de désactiver Defender avant son déploiement.
 
-**Faux positif documenté :** certains events EID 5013 ont `log.data.Changed Type = "Ignoré"` : Defender loggue des changements de configuration interne qu'il a lui-même ignorés (non appliqués). Ces events bénins sont exclus par le filtre.
+**Faux positif documenté :** certains events EID 5013 ont `event.data.Changed Type = "Ignoré"` : Defender loggue des changements de configuration interne qu'il a lui-même ignorés (non appliqués). Ces events bénins sont exclus par le filtre.
 
 **Technique MITRE :** T1562.001 · Impair Defenses: Disable or Modify Tools
+
+✅ **Statut v11.3.0 :** validée. L'exclusion couvre désormais les deux langues (`Ignoré`, `Ignored`).
 
 ```yaml
 name: Windows Defender - Tamper Protection Blocked (Event 5013)
@@ -562,25 +711,27 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1562/001/
   - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/prevent-changes-to-security-settings-with-tamper-protection
-description: 'La Tamper Protection de Windows Defender a bloqué une tentative de modification des paramètres de sécurité (Event 5013). Signal fort d''une tentative d''évasion de défense. Les events de type "Ignoré" (changements internes Defender non appliqués) sont exclus. Next Steps: 1. Identifier le processus ayant tenté la modification via les logs de sécurité (Event 4688). 2. Vérifier l''utilisateur connecté au moment de l''event. 3. Contrôler les events 1116/1117 récents sur la même machine. 4. Investiguer si d''autres techniques d''évasion ont été tentées simultanément.'
+description: 'La Tamper Protection de Windows Defender a bloqué une tentative de modification des paramètres de sécurité (Event 5013). Cet événement indique qu''un processus ou utilisateur a tenté de désactiver ou modifier Windows Defender mais a été bloqué. C''est un signal fort d''une tentative d''évasion de défense, technique MITRE T1562.001. Next Steps: 1. Identifier le processus ayant tenté la modification via les logs de sécurité (Event 4688). 2. Vérifier l''utilisateur connecté au moment de l''event. 3. Contrôler les events 1116/1117 récents sur la même machine. 4. Investiguer si d''autres techniques d''évasion ont été tentées simultanément.'
 where: |-
-  equals("log.eventCode", 5013) &&
-  equals("log.providerName", "Microsoft-Windows-Windows Defender") &&
-  !equals("log.data.Changed Type", "Ignoré")
+  equals("event.eventCode", 5013) &&
+  equals("event.providerName", "Microsoft-Windows-Windows Defender") &&
+  !oneOf("event.data.Changed Type", ["Ignoré", "Ignored"])
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Test de déclenchement :** depuis MDM-BLAISE-871 (Intune, Tamper Protection active), tenter en PowerShell admin : `Set-MpPreference -DisableTamperProtection $true`. L'opération est bloquée et génère l'EID 5013 avec `log.data.Changed Type` différent de `"Ignoré"`.
+**Test de déclenchement :** depuis un poste géré par Intune (Intune, Tamper Protection active), tenter en PowerShell admin : `Set-MpPreference -DisableTamperProtection $true`. L'opération est bloquée et génère l'EID 5013 avec `event.data.Changed Type` différent de `"Ignoré"`.
 
 ---
 
 ### WD3 : Real-Time Protection Disabled (EID 5001)
 
-La protection en temps réel de Windows Defender a été désactivée. Action classique des ransomwares et malwares avant leur déploiement. **Non testé en live dans ce lab** : Tamper Protection active sur MDM-BLAISE-871 bloque toute désactivation, empêchant la génération de l'EID 5001.
+La protection en temps réel de Windows Defender a été désactivée. Action classique des ransomwares et malwares avant leur déploiement. **Non testé en live dans ce lab** : Tamper Protection active sur un poste géré par Intune bloque toute désactivation, empêchant la génération de l'EID 5001.
 
 **Technique MITRE :** T1562.001 · Impair Defenses: Disable or Modify Tools
+
+⚠️ **Statut v11.3.0 :** non testable dans le lab, l'opération est bloquée par la Tamper Protection.
 
 ```yaml
 name: Windows Defender - Real-Time Protection Disabled (Event 5001)
@@ -596,10 +747,10 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1562/001/
   - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
-description: 'La protection en temps réel de Windows Defender a été désactivée sur un endpoint (EID 5001). Technique d''évasion classique utilisée par les ransomwares avant leur déploiement. Next Steps: 1. Vérifier si la désactivation est planifiée et autorisée. 2. Identifier le processus ou l''utilisateur ayant désactivé la protection. 3. Vérifier les events 1116/1117 récents sur la même machine. 4. Contrôler les connexions réseau sortantes. 5. Réactiver immédiatement si non autorisée.'
+description: 'La protection en temps réel de Windows Defender a été désactivée sur un endpoint. Cette action est une technique d''évasion classique utilisée par les ransomwares et les malwares avancés avant leur déploiement (MITRE T1562.001 - Impair Defenses). Une désactivation non planifiée doit être considérée comme une compromission potentielle. Next Steps: 1. Vérifier si la désactivation est planifiée et autorisée. 2. Identifier le processus ou l''utilisateur ayant désactivé la protection. 3. Vérifier les events 1116/1117 récents sur la même machine. 4. Contrôler les connexions réseau sortantes depuis l''endpoint. 5. Réactiver immédiatement la protection si non autorisée.'
 where: |-
-  equals("log.eventCode", 5001) &&
-  equals("log.providerName", "Microsoft-Windows-Windows Defender")
+  equals("event.eventCode", 5001) &&
+  equals("event.providerName", "Microsoft-Windows-Windows Defender")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -615,6 +766,8 @@ Windows Defender a détecté un malware mais n'a pas pu effectuer la remédiatio
 
 **Technique MITRE :** T1204 · User Execution
 
+⚠️ **Statut v11.3.0 :** non testée, il faut un malware que Defender ne parvient pas à supprimer.
+
 ```yaml
 name: Windows Defender - Malware Remediation Failed (Event 1118)
 dataTypes:
@@ -629,10 +782,10 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1204/
   - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
-description: 'Windows Defender a détecté un logiciel malveillant mais n''a pas pu effectuer l''action de remédiation (EID 1118). Le malware est toujours présent, intervention manuelle requise immédiatement. Next Steps: 1. Isoler immédiatement la machine du réseau. 2. Identifier le fichier via log.data.Path. 3. Tenter une remédiation manuelle depuis security.microsoft.com. 4. Analyser les connexions réseau sortantes. 5. Vérifier si d''autres machines sont affectées.'
+description: 'Windows Defender a détecté un logiciel malveillant mais n''a pas pu effectuer l''action de remédiation (quarantaine ou suppression). Le malware est toujours présent sur la machine, intervention manuelle requise immédiatement. Vérifier le champ event.data.Threat Name pour le nom de la menace et event.data.Path pour le chemin du fichier. Next Steps: 1. Isoler immédiatement la machine du réseau. 2. Identifier le fichier via event.data.Path. 3. Tenter une remédiation manuelle depuis le portail security.microsoft.com. 4. Analyser les connexions réseau sortantes depuis l''endpoint. 5. Vérifier si d''autres machines sont affectées.'
 where: |-
-  equals("log.eventCode", 1118) &&
-  equals("log.providerName", "Microsoft-Windows-Windows Defender")
+  equals("event.eventCode", 1118) &&
+  equals("event.providerName", "Microsoft-Windows-Windows Defender")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -644,9 +797,11 @@ deduplicateBy: []
 
 ### WD5 : Defender Exclusion Added (EID 5007)
 
-La configuration de Windows Defender a été modifiée (EID 5007). L'ajout d'une exclusion est le cas le plus critique, technique couramment utilisée post-compromise pour masquer des outils malveillants. La règle se déclenche toutefois sur toute modification de configuration non exclue.
+Une exclusion a été ajoutée à Windows Defender (EID 5007). C'est une technique courante après une compromission pour masquer des outils malveillants.
 
 **Technique MITRE :** T1562.001 · Impair Defenses: Disable or Modify Tools
+
+✅ **Statut v11.3.0 :** validée, après réécriture sur un critère positif (voir plus bas).
 
 ```yaml
 name: Windows Defender - Exclusion Added (Event 5007)
@@ -662,20 +817,18 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1562/001/
   - https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/troubleshoot-microsoft-defender-antivirus
-description: 'La configuration de Windows Defender a été modifiée sur un endpoint (Event 5007). Les modifications les plus critiques sont l''ajout d''exclusions de fichiers, dossiers ou processus, technique couramment utilisée post-compromise pour masquer des outils malveillants et empêcher leur détection. La règle se déclenche sur toute modification de configuration 5007, à l''exception des mises à jour de configuration poussées par Intune (WdConfigHash, UX Configuration, DLP Configs, EcsConfigs). Vérifier le champ log.data.New Value pour identifier la modification effectuée. Next Steps: 1. Identifier la modification via log.data.New Value (exclusion ajoutée, paramètre modifié). 2. Vérifier si la modification est autorisée et planifiée. 3. Contrôler les events de connexion récents sur cette machine (Event 4624/4625). 4. Vérifier si d''autres modifications de sécurité ont eu lieu dans la même fenêtre temporelle. 5. Supprimer l''exclusion si non autorisée et investiguer l''origine de la modification.'
+description: 'La configuration de Windows Defender a été modifiée sur un endpoint (Event 5007). Les modifications les plus critiques sont l''ajout d''exclusions de fichiers, dossiers ou processus, technique couramment utilisée post-compromise pour masquer des outils malveillants et empêcher leur détection. La règle se déclenche sur toute modification de configuration 5007, à l''exception des mises à jour de configuration poussées par Intune (WdConfigHash, UX Configuration, DLP Configs, EcsConfigs). Vérifier le champ event.data.New Value pour identifier la modification effectuée. Next Steps: 1. Identifier la modification via event.data.New Value (exclusion ajoutée, paramètre modifié). 2. Vérifier si la modification est autorisée et planifiée. 3. Contrôler les events de connexion récents sur cette machine (Event 4624/4625). 4. Vérifier si d''autres modifications de sécurité ont eu lieu dans la même fenêtre temporelle. 5. Supprimer l''exclusion si non autorisée et investiguer l''origine de la modification.'
 where: |-
-  equals("log.eventCode", 5007) &&
-  equals("log.providerName", "Microsoft-Windows-Windows Defender") &&
-  !contains("log.data.New Value", "WdConfigHash") &&
-  !contains("log.data.New Value", "UX Configuration") &&
-  !contains("log.data.New Value", "DLP Configs") &&
-  !contains("log.data.New Value", "EcsConfigs")
+  equals("event.eventCode", 5007) &&
+  equals("event.providerName", "Microsoft-Windows-Windows Defender") &&
+  exists("event.data.New Value") &&
+  contains("event.data.New Value", "\\Exclusions\\")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Faux positifs documentés :** les mises à jour de configuration Defender via Intune génèrent des EID 5007 avec `WdConfigHash`, `UX Configuration`, `DLP Configs`, `EcsConfigs` dans `log.data.New Value`, exclus par le filtre.
+**Réécriture en v11.3.0 :** la version v11.2 se déclenchait sur toute modification de configuration et excluait au cas par cas les faux positifs connus (`WdConfigHash`, `UX Configuration`, `DLP Configs`, `EcsConfigs`). En v11.3.0, de nouveaux faux positifs sont apparus : les échecs intermittents de MAPS (protection cloud) et les changements sous `Features\Controls`. Plutôt que d'allonger la liste, la règle ne retient plus que les écritures sous `\Exclusions\`, qui couvrent les exclusions de chemin, d'extension, de processus et d'adresse IP. Le garde `exists("event.data.New Value")` évite les échecs d'évaluation sur les 5007 qui ne portent pas ce champ.
 
 **Test de déclenchement :** depuis WIN11-AD-TESTS en PowerShell admin :
 
@@ -684,7 +837,7 @@ Add-MpPreference -ExclusionPath "C:\Temp\test-wd5"
 Remove-MpPreference -ExclusionPath "C:\Temp\test-wd5"
 ```
 
-L'alerte contient `log.data.New Value` avec le chemin exclu et `log.data.Old Value` vide pour l'ajout.
+L'alerte contient `event.data.New Value` avec le chemin exclu et `event.data.Old Value` vide pour l'ajout.
 
 ---
 
@@ -702,7 +855,7 @@ Conséquence pratique : les règles S s'appliquent aux serveurs et contrôleurs 
 
 **EID 1 (ProcessCreate) absent des événements WEF** : l'EID 1 Sysmon n'est pas remonté par WEF via `ForwardedEvents`, même quand la souscription est active et que les autres EIDs (8, 10, 11, 12, 13, 17) fonctionnent correctement. La règle S1 utilise EID 4688 (journal Security) comme contournement : ce qui nécessite la GPO "Inclure la ligne de commande dans les événements de création de processus".
 
-**Filtre `log.channel`** : le canal Sysmon (`Microsoft-Windows-Sysmon/Operational`) est indexé en tant que champ `text` et non `keyword`. Utiliser `contains("log.channel", "Sysmon")` et non `equals()`.
+**Filtre sur le canal** : en v11.2, le canal Sysmon était indexé en `text`, d'où l'usage de `contains("event.channel", "Sysmon")` plutôt que `equals()`. Cette forme fonctionne toujours en v11.3.0 et a été conservée. Les événements Sysmon transmis par WEF arrivent avec le canal d'origine, que la machine soit un contrôleur de domaine ou un serveur membre.
 
 ---
 
@@ -715,6 +868,8 @@ Un binaire Windows légitime fréquemment détourné (LOLBAS : Living Off the La
 **Défense en profondeur :** lors des tests, MDE a bloqué les exécutions (`certutil -urlcache` → Trojan:Win32/Ceprolad.A, `regsvr32 /i:http scrobj.dll` → Trojan:Win32/Powemet.A!attk) tandis que la règle native UTMStack et S1 généraient des alertes SIEM complémentaires. Les trois couches ont fonctionné simultanément : MDE bloque, le SIEM contextualise et corrèle.
 
 **Technique MITRE :** T1218 · System Binary Proxy Execution
+
+✅ **Statut v11.3.0 :** validée. L'audit de création de processus n'était pas actif sur le poste de test : la règle ne voyait rien.
 
 ```yaml
 name: S1 - LOLBAS Execution Detected
@@ -731,23 +886,23 @@ references:
   - https://attack.mitre.org/techniques/T1218/
   - https://lolbas-project.github.io/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4688
-description: 'Un binaire Windows légitime fréquemment détourné (LOLBAS) a été exécuté avec une ligne de commande suspecte (EID 4688). Les attaquants utilisent ces binaires signés Microsoft pour télécharger des payloads, exécuter du code distant ou contourner les défenses. Cette règle nécessite la GPO "Inclure la ligne de commande dans les événements de création de processus". Note : Sysmon EID 1 serait l''approche idéale mais l''agent UTMStack ne remonte pas cet EID, EID 4688 est le contournement retenu. Next Steps: 1. Examiner la ligne de commande complète via log.data.CommandLine. 2. Identifier le processus parent via log.data.ParentProcessName. 3. Vérifier si la commande télécharge un fichier distant ou exécute du code encodé. 4. Corréler avec les connexions réseau et créations de fichiers dans la même fenêtre. 5. Isoler la machine si le pattern est confirmé malveillant.'
+description: 'Un binaire Windows légitime fréquemment détourné (LOLBAS) a été exécuté avec une ligne de commande suspecte (EID 4688). Les attaquants utilisent ces binaires signés Microsoft (certutil, mshta, regsvr32, rundll32, etc.) pour télécharger des payloads, exécuter du code distant ou contourner les défenses sans déposer d''exécutable malveillant. Cette règle nécessite l''activation de la GPO "Inclure la ligne de commande dans les événements de création de processus". Note : Sysmon EID 1 serait l''approche idéale mais l''agent UTMStack ne remonte pas cet EID, EID 4688 est le contournement retenu. Next Steps: 1. Examiner la ligne de commande complète via event.data.CommandLine. 2. Identifier le processus parent via event.data.ParentProcessName (un parent Office ou navigateur est très suspect). 3. Vérifier si la commande télécharge un fichier distant ou exécute du code encodé. 4. Corréler avec les connexions réseau et créations de fichiers dans la même fenêtre. 5. Isoler la machine si le pattern est confirmé malveillant.'
 where: |-
-  equals("log.eventCode", 4688) &&
-  regexMatch("log.data.NewProcessName", "(?i)\\\\(certutil|mshta|regsvr32|rundll32|installutil|odbcconf|msbuild|bitsadmin|wmic|cmstp|regasm|regsvcs)[.]exe$") &&
-  !equals("log.eventDataSubjectUserSid", "S-1-5-18") &&
-  !(contains("log.data.NewProcessName", "rundll32.exe") &&
-    regexMatch("log.data.CommandLine", "(?i)C:\\\\Windows\\\\system32\\\\.*\\.dll")) &&
+  equals("event.eventCode", 4688) &&
+  regexMatch("event.data.NewProcessName", "(?i)\\\\(certutil|mshta|regsvr32|rundll32|installutil|odbcconf|msbuild|bitsadmin|wmic|cmstp|regasm|regsvcs)[.]exe$") &&
+  !equals("event.eventDataSubjectUserSid", "S-1-5-18") &&
+  !(contains("event.data.NewProcessName", "rundll32.exe") &&
+    regexMatch("event.data.CommandLine", "(?i)C:\\\\Windows\\\\system32\\\\.*\\.dll")) &&
   (
-    contains("log.data.CommandLine", "http") ||
-    contains("log.data.CommandLine", "-urlcache") ||
-    contains("log.data.CommandLine", "javascript:") ||
-    contains("log.data.CommandLine", "vbscript:") ||
-    contains("log.data.CommandLine", "-decode") ||
-    contains("log.data.CommandLine", "-encode") ||
-    contains("log.data.CommandLine", "scrobj.dll") ||
-    contains("log.data.CommandLine", "/i:") ||
-    regexMatch("log.data.CommandLine", "(?i)\\.(sct|xsl|hta)$")
+    contains("event.data.CommandLine", "http") ||
+    contains("event.data.CommandLine", "-urlcache") ||
+    contains("event.data.CommandLine", "javascript:") ||
+    contains("event.data.CommandLine", "vbscript:") ||
+    contains("event.data.CommandLine", "-decode") ||
+    contains("event.data.CommandLine", "-encode") ||
+    contains("event.data.CommandLine", "scrobj.dll") ||
+    contains("event.data.CommandLine", "/i:") ||
+    regexMatch("event.data.CommandLine", "(?i)\\.(sct|xsl|hta)$")
   )
 afterEvents: []
 groupBy: []
@@ -774,6 +929,8 @@ Un processus a accédé à la mémoire de `lsass.exe` avec des droits suspects. 
 
 **Technique MITRE :** T1003.001 · LSASS Memory
 
+🔵 **Statut v11.3.0 :** validée en passif. Seule la variante VMware est active dans le lab ; elle exclut `vmtoolsd.exe` par son chemin exact.
+
 **Variante universelle (`s2-lsass-access.yml`) :** pour les environnements sans VMware.
 
 **Variante VMware (`s2-lsass-access-vmware.yml`) :** pour les labs et environnements virtualisés VMware. Ajoute l'exclusion de `vmtoolsd.exe` qui accède légitimement à LSASS pour collecter des informations sur les processus actifs. Les masques 5120 et 5200 et l'agent Azure AD Connect Health sont également exclus (voir la réserve sur 5200 ci-dessous). Ne pas importer les deux simultanément.
@@ -792,26 +949,26 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1003/001/
   - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
-description: 'Variante de S2 pour environnements virtualisés VMware Workstation/ESXi. Identique à s2-lsass-access.yml avec exclusion supplémentaire de vmtoolsd.exe (VMware Tools) qui accède légitimement à LSASS pour collecter des informations sur les processus actifs. Les masques 5120 (0x1400, query-only) et 5200 (0x1450, qui inclut VM_READ : choix de tuning à réévaluer) et l''agent Azure AD Connect Health sont également exclus. Utiliser cette variante à la place de S2 dans les labs et environnements VMware, ne pas importer les deux simultanément. Next Steps: 1. Identifier le processus source via log.data.SourceImage. 2. Vérifier les droits d''accès via log.data.GrantedAccess, les valeurs 4112 (0x1010) et 5136 (0x1410) sont caractéristiques de Mimikatz et des outils de dumping. Attention : UTMStack stocke ce champ en décimal, pas en hexadécimal. 3. Analyser log.data.CallTrace pour identifier les modules chargés, la présence de frames UNKNOWN indique une DLL non mappée sur disque, signe possible d''injection. 4. Isoler la machine si un outil de dumping est confirmé. 5. Réinitialiser tous les mots de passe si compromise confirmée.'
+description: 'Variante de S2 pour environnements virtualisés VMware Workstation/ESXi. Identique à s2-lsass-access.yml avec exclusion supplémentaire de vmtoolsd.exe (VMware Tools) qui accède légitimement à LSASS pour collecter des informations sur les processus actifs. Les masques 5120 (0x1400, query-only) et 5200 (0x1450, qui inclut VM_READ : choix de tuning à réévaluer) et l''agent Azure AD Connect Health sont également exclus. Utiliser cette variante à la place de S2 dans les labs et environnements VMware, ne pas importer les deux simultanément. Next Steps: 1. Identifier le processus source via event.data.SourceImage. 2. Vérifier les droits d''accès via event.data.GrantedAccess, les valeurs 4112 (0x1010) et 5136 (0x1410) sont caractéristiques de Mimikatz et des outils de dumping. Attention : UTMStack stocke ce champ en décimal, pas en hexadécimal. 3. Analyser event.data.CallTrace pour identifier les modules chargés, la présence de frames UNKNOWN indique une DLL non mappée sur disque, signe possible d''injection. 4. Isoler la machine si un outil de dumping est confirmé. 5. Réinitialiser tous les mots de passe si compromise confirmée.'
 where: |-
-  equals("log.eventCode", 10) &&
-  contains("log.channel", "Sysmon") &&
-  contains("log.data.TargetImage", "lsass.exe") &&
-  !equals("log.data.GrantedAccess", 5120) &&
-  !equals("log.data.GrantedAccess", 5200) &&
-  !contains("log.data.SourceImage", "Windows Defender Advanced Threat Protection") &&
-  !contains("log.data.SourceImage", "Windows Defender") &&
-  !contains("log.data.SourceImage", "Azure AD Connect Health Agent") &&
-  !contains("log.data.SourceImage", "UTMStack") &&
-  !contains("log.data.SourceImage", "MRT.exe") &&
-  !contains("log.data.SourceImage", "taskmgr.exe") &&
-  !contains("log.data.SourceImage", "VMware Tools")
+  equals("event.eventCode", 10) &&
+  contains("event.channel", "Sysmon") &&
+  contains("event.data.TargetImage", "lsass.exe") &&
+  !equals("event.data.GrantedAccess", 5120) &&
+  !equals("event.data.GrantedAccess", 5200) &&
+  !contains("event.data.SourceImage", "Windows Defender Advanced Threat Protection") &&
+  !contains("event.data.SourceImage", "Windows Defender") &&
+  !contains("event.data.SourceImage", "Azure AD Connect Health Agent") &&
+  !contains("event.data.SourceImage", "UTMStack") &&
+  !contains("event.data.SourceImage", "MRT.exe") &&
+  !contains("event.data.SourceImage", "taskmgr.exe") &&
+  !equals("event.data.SourceImage", "C:\\Program Files\\VMware\\VMware Tools\\vmtoolsd.exe")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Note sur les masques d'accès :** UTMStack stocke `log.data.GrantedAccess` en décimal. Les masques couramment cités dans la littérature Sysmon en hexadécimal correspondent aux valeurs décimales suivantes :
+**Note sur les masques d'accès :** UTMStack stocke `event.data.GrantedAccess` en décimal. Les masques couramment cités dans la littérature Sysmon en hexadécimal correspondent aux valeurs décimales suivantes :
 
 | Décimal | Hexadécimal | Signification | Verdict |
 |---|---|---|---|
@@ -832,25 +989,27 @@ Vérifier les events EID 10 récents avec un masque suspect dans OpenSearch :
 ```bash
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
   -u 'admin:<OPENSEARCH_PASSWORD>' \
-  'https://localhost:9200/v11-log-*/_search' \
+  'https://localhost:9200/v11-log-wineventlog-*/_search' \
   -H 'Content-Type: application/json' \
   -d '{
   "size": 5,
   "query": {
     "bool": {
       "filter": [
-        { "term": { "log.eventCode": 10 } },
-        { "match_phrase": { "log.data.TargetImage": "lsass.exe" } },
-        { "range": { "timestamp": { "gte": "now-24h" } } }
+        { "term": { "event.eventCode": 10 } },
+        { "match_phrase": { "raw": "lsass.exe" } },
+        { "range": { "@timestamp": { "gte": "now-24h" } } }
       ]
     }
   },
-  "sort": [{ "timestamp": "desc" }],
-  "_source": ["log.data.SourceImage", "log.data.GrantedAccess", "host.hostname", "timestamp"]
+  "sort": [{ "@timestamp": "desc" }],
+  "_source": ["@timestamp", "dataSource", "event.data.SourceImage", "event.data.GrantedAccess"]
 }' | python3 -m json.tool
 ```
 
-Un event avec `log.data.GrantedAccess` à `4112` ou `5136` depuis un `SourceImage` inattendu doit déclencher l'alerte. Un event à `5120` ou `5200` ne déclenche pas : ces masques sont exclus par la règle (voir la réserve sur `5200` ci-dessus).
+En v11.3.0, `match_phrase` sur un champ `event.*` renvoie 0 sans erreur : la recherche de texte se fait donc dans `raw`.
+
+Un event avec `event.data.GrantedAccess` à `4112` ou `5136` depuis un `SourceImage` inattendu doit déclencher l'alerte. Un event à `5120` ou `5200` ne déclenche pas : ces masques sont exclus par la règle (voir la réserve sur `5200` ci-dessus).
 
 Sur une VM de test **isolée de MDE et du domaine**, ProcDump de Sysinternals permet de générer un event EID 10 contrôlé :
 
@@ -870,6 +1029,8 @@ Lors des tests, MDE a identifié automatiquement le pattern `\msagent_test` comm
 
 **Technique MITRE :** T1559.001 · Named Pipes
 
+✅ **Statut v11.3.0 :** validée. La version v11.2 n'avait **jamais produit d'alerte** : la regex contenait `\.`, échappement invalide en CEL, remplacé par `[.]`.
+
 ```yaml
 name: S3 - Suspicious Named Pipe Created
 dataTypes:
@@ -885,17 +1046,13 @@ references:
   - https://attack.mitre.org/techniques/T1559/001/
   - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
   - https://www.cobaltstrike.com/blog/learn-pipe-fitting-for-all-of-your-offense-projects
-description: 'Un named pipe avec un nom caractéristique d''un framework offensif a été créé (Sysmon EID 17). Les frameworks C2 comme Cobalt Strike, Metasploit et Mimikatz utilisent des named pipes pour leurs communications inter-processus et leurs techniques de post-exploitation. Les pipes légitimes Windows (services.exe, etc.) sont exclus. Next Steps: 1. Identifier le processus créateur via log.data.Image. 2. Vérifier le nom exact du pipe via log.data.PipeName et le comparer aux patterns connus. 3. Rechercher d''autres activités suspectes depuis le même ProcessGuid. 4. Corréler avec les connexions réseau sortantes depuis la même machine. 5. Isoler la machine si un framework C2 est confirmé.'
+description: 'Un named pipe avec un nom caractéristique d''un framework offensif a été créé (Sysmon EID 17). Les frameworks C2 comme Cobalt Strike, Metasploit et Mimikatz utilisent des named pipes pour leurs communications inter-processus et leurs techniques de post-exploitation. Les pipes légitimes Windows (services.exe, etc.) sont exclus. Next Steps: 1. Identifier le processus créateur via event.data.Image. 2. Vérifier le nom exact du pipe via event.data.PipeName et le comparer aux patterns connus. 3. Rechercher d''autres activités suspectes depuis le même ProcessGuid. 4. Corréler avec les connexions réseau sortantes depuis la même machine. 5. Isoler la machine si un framework C2 est confirmé.'
 where: |-
-  equals("log.eventCode", 17) &&
-  contains("log.channel", "Sysmon") &&
-  equals("log.data.EventType", "CreatePipe") &&
-  (
-    regexMatch("log.data.PipeName", "(?i)\\\\(msagent_|mojo\.|postex_|status_|MSSE-|psexec|paexec|remcom|csexec)") ||
-    regexMatch("log.data.PipeName", "(?i)\\\\pipe\\\\pipe\\\\") ||
-    contains("log.data.PipeName", "lsadump")
-  ) &&
-  !contains("log.data.Image", "services.exe")
+  equals("event.eventCode", 17) &&
+  contains("event.channel", "Sysmon") &&
+  equals("event.data.EventType", "CreatePipe") &&
+  regexMatch("event.data.PipeName", "(?i)(\\\\(msagent_|mojo[.]|postex_|status_|MSSE-|psexec|paexec|remcom|csexec)|\\\\pipe\\\\pipe\\\\|lsadump)") &&
+  !contains("event.data.Image", "services.exe")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -926,6 +1083,8 @@ Lors des tests, MDE a déclenché une alerte "Suspicious credential dump from NT
 
 **Technique MITRE :** T1003.003 · NTDS
 
+✅ **Statut v11.3.0 :** validée par un test scripté, après correction de l'exclusion du processus System (voir plus bas).
+
 ```yaml
 name: S4 - Suspicious Access to NTDS or SAM Files
 dataTypes:
@@ -940,25 +1099,25 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1003/003/
   - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
-description: 'Un processus a créé ou modifié un fichier dans le répertoire NTDS ou accédé à la base SAM (Sysmon EID 11). La base NTDS.dit contient tous les hashes de mots de passe du domaine, une copie non autorisée permet l''extraction offline de tous les credentials. Next Steps: 1. Identifier le processus accédant à NTDS via log.data.Image. 2. Vérifier si le fichier créé est ntds.dit ou une copie. 3. Rechercher une tentative de Volume Shadow Copy dans la même fenêtre temporelle. 4. Isoler immédiatement le DC si un accès non autorisé est confirmé. 5. Réinitialiser le mot de passe krbtgt et tous les comptes privilégiés.'
+description: 'Un processus a créé ou modifié un fichier dans le répertoire NTDS ou accédé à la base SAM (Sysmon EID 11). La base NTDS.dit contient tous les hashes de mots de passe du domaine, une copie non autorisée permet l''extraction offline de tous les credentials. Les accès légitimes de lsass.exe et du système sont exclus. Next Steps: 1. Identifier le processus accédant à NTDS via event.data.Image. 2. Vérifier si le fichier créé est ntds.dit ou une copie de celui-ci. 3. Rechercher une tentative de Volume Shadow Copy (vssadmin, wmic shadowcopy) dans la même fenêtre temporelle. 4. Isoler immédiatement le DC si un accès non autorisé est confirmé. 5. Réinitialiser le mot de passe krbtgt et tous les comptes privilégiés.'
 where: |-
-  equals("log.eventCode", 11) &&
-  contains("log.channel", "Sysmon") &&
+  equals("event.eventCode", 11) &&
+  contains("event.channel", "Sysmon") &&
   (
-    contains("log.data.TargetFilename", "\\NTDS\\") ||
-    contains("log.data.TargetFilename", "ntds.dit") ||
-    contains("log.data.TargetFilename", "\\SAM") ||
-    contains("log.data.TargetFilename", "\\SYSTEM") ||
-    contains("log.data.TargetFilename", "\\SECURITY")
+    contains("event.data.TargetFilename", "\\NTDS\\") ||
+    contains("event.data.TargetFilename", "ntds.dit") ||
+    contains("event.data.TargetFilename", "\\SAM") ||
+    contains("event.data.TargetFilename", "\\SYSTEM") ||
+    contains("event.data.TargetFilename", "\\SECURITY")
   ) &&
-  !contains("log.data.Image", "lsass.exe") &&
-  !contains("log.data.Image", "System")
+  !contains("event.data.Image", "lsass.exe") &&
+  !equals("event.data.Image", "System")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Note :** le filtre `!contains("log.data.Image", "System")` vise le processus System. Il dépend de la casse : un chemin écrit `C:\Windows\System32\...` serait aussi exclu, ce qui masquerait des outils comme `ntdsutil.exe`. À vérifier sur vos données.
+**Correction en v11.3.0 :** la version v11.2 utilisait `!contains("event.data.Image", "System")` pour exclure le processus System. Ce filtre excluait aussi tout `C:\Windows\System32\`, donc `ntdsutil`, `esentutl`, `vssadmin` et `powershell`, c'est-à-dire précisément les outils qui servent à copier `ntds.dit`. Le test scripté l'a révélé. Il est remplacé par `!equals("event.data.Image", "System")`, qui ne vise que le processus System.
 
 **Test de déclenchement**
 
@@ -977,6 +1136,8 @@ Une valeur a été écrite ou supprimée dans une clé de démarrage automatique
 
 **Technique MITRE :** T1547.001 · Registry Run Keys
 
+⚠️ **Statut v11.3.0 :** inopérante dans le lab, la configuration Sysmon ne journalise pas les clés `Run` de HKCU. Conservée pour les configurations Sysmon qui les couvrent. Voir [S5b](#s5b--registry-run-key-persistence-security-4657), qui fonctionne sans Sysmon.
+
 ```yaml
 name: S5 - Registry Run Key Persistence
 dataTypes:
@@ -991,14 +1152,14 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1547/001/
   - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
-description: 'Une valeur a été écrite dans une clé de démarrage automatique du registre (Sysmon EID 13). Les clés Run et RunOnce sont les vecteurs de persistance les plus utilisés. Next Steps: 1. Identifier la valeur ajoutée via log.data.Details. 2. Vérifier le chemin de l''exécutable référencé, un chemin dans Temp ou AppData est très suspect. 3. Identifier le processus ayant effectué la modification via log.data.Image. 4. Supprimer la valeur si non autorisée. 5. Analyser l''exécutable référencé (hash, VirusTotal).'
+description: 'Une valeur a été écrite dans une clé de démarrage automatique du registre (Sysmon EID 13). Les clés Run et RunOnce sont les vecteurs de persistance les plus utilisés, un exécutable référencé dans ces clés est lancé automatiquement à chaque démarrage ou connexion utilisateur. Les modifications effectuées par des processus système légitimes sont exclues. Next Steps: 1. Identifier la valeur ajoutée via event.data.Details. 2. Vérifier le chemin de l''exécutable référencé, un chemin dans Temp ou AppData est très suspect. 3. Identifier le processus ayant effectué la modification via event.data.Image. 4. Supprimer la valeur si non autorisée : Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "nom". 5. Analyser l''exécutable référencé (hash, VirusTotal).'
 where: |-
-  oneOf("log.eventCode", [12, 13]) &&
-  contains("log.channel", "Sysmon") &&
-  regexMatch("log.data.TargetObject", "(?i)\\\\(Run|RunOnce)\\\\") &&
-  !regexMatch("log.data.Image", "(?i)\\\\(services|svchost|msiexec|trustedinstaller|tiworker)[.]exe$") &&
-  !contains("log.data.Image", "Windows Defender") &&
-  !contains("log.data.Image", "UTMStack")
+  oneOf("event.eventCode", [12, 13]) &&
+  contains("event.channel", "Sysmon") &&
+  regexMatch("event.data.TargetObject", "(?i)\\\\(Run|RunOnce)\\\\") &&
+  !regexMatch("event.data.Image", "(?i)\\\\(services|svchost|msiexec|trustedinstaller|tiworker)[.]exe$") &&
+  !contains("event.data.Image", "Windows Defender") &&
+  !contains("event.data.Image", "UTMStack")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1026,9 +1187,9 @@ Les règles L utilisent les événements auditd Linux collectés par l'agent UTM
 
 ### Découverte technique importante
 
-Le moteur de corrélation UTMStack v11 n'évalue pas les champs syslog (`log.message`, `raw`) des événements Linux. Seuls les événements **auditd structurés** (`action`, `log.userauth.*`) sont traités par le pipeline de corrélation. Les tentatives de filtrage sur `log.message` ou `contains("raw", "...")` ne déclenchent pas, même si le texte recherché est bien présent dans le champ.
+En v11.2, nos règles Linux fondées sur le texte du message (`message`, `contains("raw", "...")`) ne se déclenchaient pas, alors que le texte recherché était bien présent. Nous en avions conclu que le moteur n'évaluait pas ces champs. Ce constat est à nuancer : en v11.3.0, la règle de heartbeat du [chapitre 09](09-pipeline-llm.html) utilise `contains("raw", …)` sur des événements syslog et se déclenche. Le cas des événements Linux n'a pas été retesté.
 
-Cette limitation explique pourquoi les règles L utilisent les champs `action` et `log.userauth.*` plutôt que les messages textuels de `auth.log`.
+Les règles L restent fondées sur les champs **auditd structurés** (`action`, `event.userauth.*`) : ils ne dépendent pas de la formulation des messages de `auth.log`, qui change d'une version d'OpenSSH ou de distribution à l'autre.
 
 ---
 
@@ -1037,6 +1198,8 @@ Cette limitation explique pourquoi les règles L utilisent les champs `action` e
 Un échec d'authentification SSH a été détecté via les événements auditd (`USER_AUTH fail`).
 
 **Technique MITRE :** T1110.001 · Password Guessing
+
+✅ **Statut v11.3.0 :** validée. Sur Ubuntu 26.04, le processus s'appelle `sshd-session` ; la regex `sshd` le couvre.
 
 ```yaml
 name: L1 - SSH Authentication Failure
@@ -1051,11 +1214,11 @@ technique: T1110.001 - Brute Force Password Guessing
 adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1110/001/
-description: 'Un échec d''authentification SSH a été détecté sur un serveur Linux via les events auditd (USER_AUTH fail). Next Steps: 1. Identifier l''adresse IP source via log.userauth.addr. 2. Vérifier si plusieurs échecs proviennent de la même IP. 3. Bloquer l''IP source si le pattern est confirmé (fail2ban, CrowdSec). 4. Vérifier si une connexion réussie a suivi les échecs. 5. Auditer les comptes valides sur la machine cible.'
+description: 'Un échec d''authentification SSH a été détecté sur un serveur Linux via les events auditd (USER_AUTH fail). Détecte les tentatives d''authentification SSH échouées sur les comptes valides et invalides. Next Steps: 1. Identifier l''adresse IP source via event.userauth.addr. 2. Vérifier si plusieurs échecs proviennent de la même IP. 3. Bloquer l''IP source si le pattern est confirmé (fail2ban, CrowdSec). 4. Vérifier si une connexion réussie a suivi les échecs. 5. Auditer les comptes valides sur la machine cible.'
 where: |-
   equals("action", "USER_AUTH") &&
-  contains("log.userauth.result", "fail") &&
-  regexMatch("log.userauth.exe", "(?i)sshd")
+  contains("event.userauth.result", "fail") &&
+  regexMatch("event.userauth.exe", "(?i)sshd")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1079,6 +1242,8 @@ Une commande a été exécutée avec des privilèges root via sudo.
 
 **Technique MITRE :** T1548.003 · Sudo and Sudo Caching
 
+✅ **Statut v11.3.0 :** validée.
+
 ```yaml
 name: L2 - Sudo Command Execution
 dataTypes:
@@ -1092,11 +1257,11 @@ technique: T1548.003 - Abuse Elevation Control Mechanism Sudo and Sudo Caching
 adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1548/003/
-description: 'Une commande a été exécutée avec des privilèges root via sudo sur un serveur Linux (auditd USER_AUTH success sudo). Next Steps: 1. Identifier le compte via log.userauth.acct. 2. Vérifier si la commande est autorisée. 3. Contrôler les connexions SSH récentes depuis le même compte. 4. Vérifier si le compte est dans sudoers de manière légitime. 5. Révoquer les droits sudo si non autorisé.'
+description: 'Une commande a été exécutée avec des privilèges root via sudo sur un serveur Linux (auditd USER_AUTH success sudo). Toute exécution sudo doit être tracée et vérifiée. Next Steps: 1. Identifier le compte via event.userauth.acct. 2. Vérifier si la commande est autorisée. 3. Contrôler les connexions SSH récentes depuis le même compte. 4. Vérifier si le compte est dans sudoers de manière légitime. 5. Révoquer les droits sudo si non autorisé.'
 where: |-
   equals("action", "USER_AUTH") &&
-  contains("log.userauth.result", "success") &&
-  regexMatch("log.userauth.exe", "(?i)sudo")
+  contains("event.userauth.result", "success") &&
+  regexMatch("event.userauth.exe", "(?i)sudo")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1120,13 +1285,15 @@ Les règles M couvrent les événements Microsoft 365 collectés via l'API Offic
 
 ### Découvertes techniques importantes
 
-**`log.Workload` indexé en `text`** : les agrégations `terms` échouent silencieusement sur ce champ. Utiliser `contains()` et non `equals()`.
+**`event.Workload`** : en v11.2, ce champ était indexé en `text`, d'où l'usage de `contains()` plutôt que `equals()` dans nos règles. Cette forme fonctionne toujours en v11.3.0. Pour compter les événements par workload dans OpenSearch, utiliser `utm.*` ou une requête `term` par valeur : `event.*` n'est pas agrégeable.
 
-**`actionResult` paradoxal** : les events `UserLoginFailed` ont `actionResult = "Success"` car l'API a traité la requête correctement, même si l'authentification a échoué. C'est le champ `log.LogonError` qui indique le motif d'échec.
+**`UserKey`** : la `UserKey` d'un événement Exchange (PUID) n'est pas celle d'un événement Entra ID (ID d'objet) pour le même compte. Pour relier deux workloads, passer par l'UPN (`origin.user`). Et `origin.user` lui-même n'est pas homogène : selon l'étape de connexion, il contient l'UPN, un GUID ou « Not Available ».
 
-**`log.LogonError`** : présent uniquement sur certains events `UserLoginFailed` selon le motif d'échec fourni par Microsoft dans le payload. Absent des events de type reprocessing MFA (`ErrorNumber 9002341`) qui correspondent à des flux d'authentification intermédiaires MDE/Intune.
+**`actionResult` paradoxal** : les events `UserLoginFailed` ont `actionResult = "Success"` car l'API a traité la requête correctement, même si l'authentification a échoué. C'est le champ `event.LogonError` qui indique le motif d'échec.
 
-**`log.ExternalAccess`** : booléen natif dans OpenSearch. Utiliser `equals("log.ExternalAccess", true)` sans guillemets sur la valeur booléenne.
+**`event.LogonError`** : présent uniquement sur certains events `UserLoginFailed` selon le motif d'échec fourni par Microsoft dans le payload. Absent des events de type reprocessing MFA (`ErrorNumber 9002341`) qui correspondent à des flux d'authentification intermédiaires MDE/Intune.
+
+**`event.ExternalAccess`** : booléen natif dans OpenSearch. Utiliser `equals("event.ExternalAccess", true)` sans guillemets sur la valeur booléenne.
 
 ### Règles existantes en dépôt : documentation complète
 
@@ -1142,6 +1309,8 @@ Alerte sur chaque échec de connexion Entra ID avec le code d'erreur `InvalidUse
 
 **Technique MITRE :** T1110.001 · Brute Force: Password Guessing
 
+✅ **Statut v11.3.0 :** validée. En v11.2, Brute Force et Password Spray avaient une définition identique et déclenchaient sur chaque échec. Le seuil est désormais porté par `afterEvents` : 5 échecs du même compte en 10 minutes.
+
 ```yaml
 name: Entra ID - Brute Force Password Attack
 dataTypes:
@@ -1156,19 +1325,33 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1110/001/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
-description: 'Alerte sur chaque échec de connexion Entra ID avec le code d''erreur InvalidUserNameOrPassword (ErrorNumber 50126). Plusieurs alertes successives sur un même compte indiquent une attaque par force brute sur le mot de passe. Filtre identique à la règle Password Spray : la distinction se fait à l''investigation. Vérifier si les tentatives proviennent d''une IP externe inconnue et si le compte a été compromis.'
+description: 'Au moins 5 échecs de connexion Entra ID avec le code d''erreur InvalidUserNameOrPassword (ErrorNumber 50126) sur un même compte en 10 minutes. Ce volume sur un seul compte indique une attaque par force brute sur le mot de passe, une faute de frappe isolée ne déclenche pas la règle. Next Steps: 1. Identifier le compte ciblé via origin.user. 2. Vérifier l''IP source via origin.ip, une IP externe inconnue est suspecte. 3. Vérifier si une connexion réussie (UserLoggedIn) a suivi les échecs. 4. Contrôler l''état de verrouillage du compte dans Entra ID. 5. Réinitialiser le mot de passe et révoquer les sessions si une compromission est suspectée.'
 where: |-
   oneOf("action", ["UserLoginFailed"]) &&
-  oneOf("log.Workload", ["AzureActiveDirectory"]) &&
-  oneOf("log.LogonError", ["InvalidUserNameOrPassword"])
-afterEvents: []
+  oneOf("event.Workload", ["AzureActiveDirectory"]) &&
+  oneOf("event.LogonError", ["InvalidUserNameOrPassword"])
+afterEvents:
+  - indexPattern: v11-log-o365-*
+    with:
+      - field: origin.user.keyword
+        operator: filter_term
+        value: "{{.origin.user}}"
+      - field: action.keyword
+        operator: filter_term
+        value: UserLoginFailed
+      - field: event.LogonError
+        operator: filter_term
+        value: InvalidUserNameOrPassword
+    or: null
+    within: 10m
+    count: 5
 groupBy: []
 deduplicateBy: []
 ```
 
 **Note sur `oneOf()` :** la syntaxe `oneOf("champ", ["valeur"])` avec un seul élément dans la liste est équivalente à `equals()`. Elle a été retenue ici pour cohérence avec des règles qui pourraient étendre la liste à plusieurs valeurs.
 
-**Test de déclenchement :** depuis WIN11-AD-TESTS, ouvrir une fenêtre de navigation privée et se connecter à `portal.office.com` avec `demo@lan.local` et un mauvais mot de passe plusieurs fois de suite. L'event `UserLoginFailed` avec `log.LogonError = InvalidUserNameOrPassword` est généré dans les logs O365 (latence ~5-10 minutes).
+**Test de déclenchement :** depuis WIN11-AD-TESTS, ouvrir une fenêtre de navigation privée et se connecter à `portal.office.com` avec `demo@lan.local` et un mauvais mot de passe plusieurs fois de suite. L'event `UserLoginFailed` avec `event.LogonError = InvalidUserNameOrPassword` est généré dans les logs O365 (latence ~5-10 minutes).
 
 ---
 
@@ -1179,6 +1362,8 @@ Détecte une attaque par password spray : un même mot de passe testé sur de no
 **Note :** le filtre YAML est identique à la règle brute force. La distinction est dans l'investigation : chercher dans l'alerte si plusieurs `origin.user` distincts ont échoué depuis le même `origin.ip` dans une courte fenêtre temporelle.
 
 **Technique MITRE :** T1110.003 · Brute Force: Password Spraying
+
+✅ **Statut v11.3.0 :** validée. Seuil porté par `afterEvents` : 10 échecs depuis la même adresse IP en 30 minutes.
 
 ```yaml
 name: Entra ID - Password Spray Attack
@@ -1194,12 +1379,26 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1110/003/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
-description: 'Alerte sur chaque échec de connexion Entra ID (filtre identique à la règle Brute Force). Le password spray consiste à tester un même mot de passe sur plusieurs comptes distincts depuis la même IP source. Contrairement au brute force (un compte, plusieurs mots de passe), le password spray cible de nombreux comptes avec un seul mot de passe courant pour éviter le verrouillage de compte. Vérifier si plusieurs utilisateurs distincts ont échoué depuis la même origin.ip dans une courte fenêtre temporelle.'
+description: 'Au moins 10 échecs de connexion Entra ID avec le code d''erreur InvalidUserNameOrPassword depuis une même IP source en 30 minutes. Le password spray teste un mot de passe courant sur de nombreux comptes pour éviter le verrouillage. Le moteur ne compte pas les utilisateurs distincts : le seuil porte sur l''IP source, l''investigation confirme si plusieurs comptes sont visés. Next Steps: 1. Identifier l''IP source via origin.ip et sa réputation. 2. Lister les comptes ayant échoué depuis cette IP dans la fenêtre. 3. Vérifier si une connexion réussie a suivi depuis la même IP. 4. Bloquer l''IP via une politique d''accès conditionnel (emplacement nommé). 5. Forcer la réinitialisation des mots de passe des comptes visés si une connexion a réussi.'
 where: |-
   oneOf("action", ["UserLoginFailed"]) &&
-  oneOf("log.Workload", ["AzureActiveDirectory"]) &&
-  oneOf("log.LogonError", ["InvalidUserNameOrPassword"])
-afterEvents: []
+  oneOf("event.Workload", ["AzureActiveDirectory"]) &&
+  oneOf("event.LogonError", ["InvalidUserNameOrPassword"])
+afterEvents:
+  - indexPattern: v11-log-o365-*
+    with:
+      - field: origin.ip.keyword
+        operator: filter_term
+        value: "{{.origin.ip}}"
+      - field: action.keyword
+        operator: filter_term
+        value: UserLoginFailed
+      - field: event.LogonError
+        operator: filter_term
+        value: InvalidUserNameOrPassword
+    or: null
+    within: 30m
+    count: 10
 groupBy: []
 deduplicateBy: []
 ```
@@ -1212,9 +1411,11 @@ deduplicateBy: []
 
 Connexion réussie depuis un pays différent de la connexion précédente dans une fenêtre de 2 heures pour le même utilisateur. Signal d'un vol de cookie de session (AiTM) ou d'une connexion depuis un pays étranger non autorisé.
 
-Cette règle est la seule du lab à utiliser le mécanisme `afterEvents` de corrélation temporelle d'UTMStack : elle corrèle deux events `UserLoggedIn` depuis des pays distincts dans une fenêtre glissante de 2 heures sur le même `origin.user`.
+La règle utilise le mécanisme `afterEvents` d'UTMStack : à chaque `UserLoggedIn` géolocalisé, elle cherche dans les 2 heures précédentes une connexion réussie du même compte depuis un autre pays.
 
 **Technique MITRE :** T1078 · Valid Accounts
+
+✅ **Statut v11.3.0 :** validée par un test avec un VPN, après deux corrections (voir plus bas). Un angle mort subsiste, compensé par la règle Mailbox Activity.
 
 ```yaml
 name: Entra ID - Impossible Travel Detection
@@ -1234,18 +1435,20 @@ references:
 description: 'Détecte une connexion réussie depuis un pays différent du pays de la connexion précédente dans une fenêtre de 2 heures pour le même utilisateur. Ce pattern indique soit un vol de token de session (attaque AiTM via Evilginx/Modlishka), soit une connexion non autorisée depuis un pays étranger. Note : avec Entra ID P1, cette détection est réalisée par UTMStack via corrélation des logs O365. Entra ID P2 (Identity Protection), avec Defender for Cloud Apps, offre une détection native avec scoring de risque. Next Steps: 1. Vérifier si le déplacement géographique est physiquement possible dans la fenêtre temporelle. 2. Contacter l''utilisateur pour confirmer si les deux connexions sont légitimes. 3. Si compromission suspectée : révoquer toutes les sessions actives via Entra ID. 4. Vérifier les activités post-connexion (accès fichiers, emails, modifications de configuration). 5. Contrôler si des règles inbox ou des modifications de compte ont été effectuées.'
 where: |-
   oneOf("action", ["UserLoggedIn"]) &&
-  oneOf("log.Workload", ["AzureActiveDirectory"]) &&
-  exists("origin.geolocation.countryCode")
+  oneOf("event.Workload", ["AzureActiveDirectory"]) &&
+  exists("origin.geolocation.countryCode") &&
+  exists("event.UserKey") &&
+  !equals("origin.user", "Not Available")
 afterEvents:
   - indexPattern: v11-log-o365-*
     with:
-      - field: origin.user
+      - field: event.UserKey
         operator: filter_term
-        value: "{{.origin.user}}"
-      - field: action
+        value: "{{.event.UserKey}}"
+      - field: action.keyword
         operator: filter_term
         value: UserLoggedIn
-      - field: origin.geolocation.countryCode
+      - field: origin.geolocation.countryCode.keyword
         operator: must_not_term
         value: "{{.origin.geolocation.countryCode}}"
     or: null
@@ -1255,11 +1458,78 @@ groupBy: []
 deduplicateBy: []
 ```
 
-**Test de déclenchement :** se connecter à `portal.office.com` depuis un VPN positionné dans un pays différent du pays habituel de connexion, dans les 2 heures suivant une connexion normale. La règle déclenche quand deux `UserLoggedIn` avec des `origin.geolocation.countryCode` distincts apparaissent dans la fenêtre `afterEvents` pour le même `origin.user`.
+**Corrections en v11.3.0 :**
+
+- les champs du `afterEvents` passent en `.keyword` (`action.keyword`, `origin.geolocation.countryCode.keyword`) : sur un champ texte, `filter_term` ne matche jamais ;
+- la corrélation se fait sur `event.UserKey` et non plus sur `origin.user`. Pour une même connexion, O365 produit plusieurs événements `UserLoggedIn` (une étape par facteur), et `origin.user` y vaut tantôt l'UPN, tantôt un GUID, tantôt « Not Available ». Les étapes « Not Available » sont exclues dans le `where`.
+
+**Test de déclenchement :** se connecter à `portal.office.com` normalement, puis depuis un VPN positionné dans un autre pays, dans les 2 heures. Dans le lab, le test (Suisse, puis Pays-Bas) a produit 10 alertes, une par étape de la connexion étrangère.
+
+**Angle mort : les lots O365.** `afterEvents` ne cherche que dans les événements déjà indexés. Or O365 livre ses journaux par lots. Quand la connexion légitime et la connexion étrangère arrivent **dans le même lot**, aucune ne voit l'autre et la règle ne se déclenche pas. Constaté dans le lab : 10 alertes quand les deux connexions sont arrivées en deux lots séparés de 11 minutes, aucune quand toutes les étapes sont arrivées ensemble. L'angle mort est aléatoire. Attendre ne le corrige pas : dans le scénario d'un vol de cookie, c'est justement la rapidité de l'attaquant qui place les deux connexions dans le même lot. La règle suivante le compense.
+
+---
+
+### O365 : Mailbox Activity From Another Country Than Recent Sign-In
+
+Un accès à la boîte aux lettres (`MailItemsAccessed`) a lieu depuis un pays différent de celui d'une connexion réussie du même compte dans les 2 heures précédentes.
+
+Cette règle complète Impossible Travel. L'activité dans la messagerie arrive forcément dans un lot O365 postérieur à la connexion qui l'a précédée : elle échappe donc à l'angle mort des lots. Elle couvre aussi le rejeu d'un cookie de session volé, qui produit de l'activité sans nouvelle connexion.
+
+**Technique MITRE :** T1539 · Steal Web Session Cookie
+
+✅ **Statut v11.3.0 :** nouvelle règle, validée au premier test (VPN aux Pays-Bas, Outlook sur le web).
+
+```yaml
+name: O365 - Mailbox Activity From Another Country Than Recent Sign-In
+dataTypes:
+  - o365
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Credential Access
+technique: T1539 - Steal Web Session Cookie
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1539/
+  - https://learn.microsoft.com/en-us/purview/audit-log-investigate-accounts
+description: 'Accès à une boîte aux lettres (MailItemsAccessed) depuis un pays différent de celui d''une connexion réussie du même compte dans les 2 heures précédentes. Complète la règle Impossible Travel : l''activité arrive dans un lot O365 postérieur à la connexion, ce qui évite l''angle mort des connexions livrées dans le même lot, et couvre le rejeu d''un cookie de session sans nouvelle connexion. Seuls les événements portant une IP cliente géolocalisée sont évalués (les IP internes de Microsoft ne le sont pas). Next Steps: 1. Identifier le compte via origin.user et l''IP via origin.ip. 2. Comparer avec les connexions réussies récentes du compte (pays, IP, appareil). 3. Vérifier si le SessionId de la session est le même dans les deux pays, signe d''un vol de cookie. 4. Révoquer les sessions du compte dans Entra ID et réinitialiser le mot de passe si l''accès est illégitime. 5. Rechercher les règles de boîte aux lettres ou transferts créés pendant la session.'
+where: |-
+  equals("action", "MailItemsAccessed") &&
+  contains("event.Workload", "Exchange") &&
+  exists("origin.geolocation.countryCode") &&
+  exists("origin.user") &&
+  !equals("origin.user", "Not Available")
+afterEvents:
+  - indexPattern: v11-log-o365-*
+    with:
+      - field: origin.user.keyword
+        operator: filter_term
+        value: "{{.origin.user}}"
+      - field: action.keyword
+        operator: filter_term
+        value: UserLoggedIn
+      - field: origin.geolocation.countryCode.keyword
+        operator: must_not_term
+        value: "{{.origin.geolocation.countryCode}}"
+    or: null
+    within: 2h
+    count: 1
+groupBy: []
+deduplicateBy: []
+```
+
+**Pourquoi `origin.user` et pas `event.UserKey` :** la `UserKey` d'un événement Exchange (PUID) n'est pas celle de l'événement de connexion Entra ID (ID d'objet). Les deux workloads se relient par l'UPN, que `origin.user` contient sur les événements `MailItemsAccessed`.
+
+**Limites :** la règle ne voit que la messagerie. Seuls les accès qui portent une adresse IP cliente géolocalisée sont évalués : les accès internes de Microsoft (synchronisation, services) n'en portent pas.
+
+**Test de déclenchement :** se connecter normalement à Outlook sur le web, puis, dans les 2 heures, rouvrir Outlook sur le web depuis un VPN positionné dans un autre pays et ouvrir quelques messages.
 
 ---
 
 ### Purview DLP : Sensitive Data Policy Match
+
+> 🗄️ **Retirée en v11.3.0.** Couverte par la règle native 806 « Data Loss Prevention Policy Violation », qui traite `DLPRuleMatch`, `DlpPolicyMatch` et `DLPRuleUndo` (contournement avec justification) sur Exchange, SharePoint, OneDrive, Teams et Security & Compliance. Le fichier reste disponible dans [`rules/retirees/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/retirees) pour les environnements où cette règle native n'existe pas.
 
 Une règle DLP Microsoft Purview a détecté des données sensibles dans un fichier OneDrive, SharePoint ou un email Exchange. Couvre tous les workloads DLP (Exchange, SharePoint, Teams) via le `regexMatch` insensible à la casse qui capture les deux formes du libellé O365 (`DLPRuleMatch` et `DlpRuleMatch`).
 
@@ -1282,7 +1552,7 @@ references:
   - https://attack.mitre.org/techniques/T1567/
   - https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp
   - https://learn.microsoft.com/en-us/purview/dlp-policy-reference
-description: 'Une règle DLP Microsoft Purview a détecté des données sensibles dans un fichier OneDrive, SharePoint ou Exchange. Vérifier la politique déclenchée via log.PolicyDetails et le fichier ou email source. Next Steps: 1. Identifier la politique DLP déclenchée via log.PolicyDetails. 2. Identifier le fichier ou l''email source. 3. Vérifier si le partage était autorisé. 4. Contacter l''utilisateur si le partage semble involontaire. 5. Documenter l''incident dans le registre de traitement nLPD si des données personnelles sont impliquées.'
+description: 'Une règle DLP Microsoft Purview a détecté des données sensibles (numéro AVS, données personnelles, informations confidentielles) dans un fichier OneDrive, SharePoint ou Exchange. L''événement indique qu''un utilisateur a tenté d''accéder ou de partager un document contenant des informations protégées par les politiques nLPD/RGPD. Vérifier le fichier concerné via event.SharePointMetaData.FileName et la politique déclenchée via event.PolicyDetails. Next Steps: 1. Identifier la politique DLP déclenchée via event.PolicyDetails. 2. Identifier le fichier ou l''email source. 3. Vérifier si le partage était autorisé. 4. Contacter l''utilisateur si le partage semble involontaire. 5. Documenter l''incident dans le registre de traitement nLPD si des données personnelles sont impliquées.'
 where: |-
   regexMatch("action", "(?i)dlprulematch")
 afterEvents: []
@@ -1292,7 +1562,7 @@ deduplicateBy: []
 
 **Note :** contrairement à M11 (`Purview - DLP Rule Match Detected`) qui filtre sur `Workload Exchange`, cette règle ne filtre pas sur le workload : elle couvre Exchange, SharePoint et Teams simultanément. Le `regexMatch` avec `(?i)` est le discriminant principal.
 
-**Test de déclenchement :** envoyer depuis `demo@lan.local` vers une adresse externe un email contenant des données couvertes par la politique DLP active (dans ce lab : numéros AVS). Exchange génère l'event `DLPRuleMatch` (ou `DlpRuleMatch` selon la version) avec `log.PolicyDetails` contenant la politique déclenchée.
+**Test de déclenchement :** envoyer depuis `demo@lan.local` vers une adresse externe un email contenant des données couvertes par la politique DLP active (dans ce lab : numéros AVS). Exchange génère l'event `DLPRuleMatch` (ou `DlpRuleMatch` selon la version) avec `event.PolicyDetails` contenant la politique déclenchée.
 
 ---
 
@@ -1301,6 +1571,8 @@ deduplicateBy: []
 MDE a supprimé un fichier suspect sur un endpoint enrollé. Les suppressions manuelles (Explorer, OneDrive, Teams) et les nettoyages système (WER, MeasuredBoot) sont exclus. Seules les suppressions effectuées directement par MDE (sans application connue comme vecteur) déclenchent l'alerte.
 
 **Technique MITRE :** T1204.002 · User Execution: Malicious File (approximation : la suppression est faite par Defender, pas par l'attaquant)
+
+⚠️ **Statut v11.3.0 :** sans source dans le lab, aucun poste n'est intégré à MDE. Le workload `Endpoint` semble correspondre à Endpoint DLP, à vérifier.
 
 ```yaml
 name: MDE Endpoint - Malware File Deleted by Defender
@@ -1316,22 +1588,22 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1204/002/
   - https://learn.microsoft.com/en-us/microsoft-365/compliance/audit-log-activities
-description: 'MDE a supprimé un fichier suspect sur un endpoint enrollé via l''API Office 365 Management (Workload: Endpoint, RecordType: 63). Les suppressions manuelles via Explorer, les nettoyages système (WER, MeasuredBoot) et les suppressions par le client OneDrive sont exclus. Consulter security.microsoft.com pour les détails de la détection. Next Steps: 1. Identifier le fichier supprimé via log.ObjectId. 2. Identifier le device via log.DeviceName et log.MDATPDeviceId. 3. Consulter l''alerte correspondante dans security.microsoft.com. 4. Vérifier si d''autres fichiers suspects ont été détectés sur le même device. 5. Isoler le device si une compromission active est suspectée.'
+description: 'MDE a supprimé un fichier suspect sur un endpoint enrollé via l''API Office 365 Management (Workload: Endpoint, RecordType: 63). Les suppressions manuelles via Explorer, les nettoyages système (WER, MeasuredBoot) et les suppressions par le client OneDrive sont exclus. Consulter security.microsoft.com pour les détails de la détection. Next Steps: 1. Identifier le fichier supprimé via event.ObjectId. 2. Identifier le device via event.DeviceName et event.MDATPDeviceId. 3. Consulter l''alerte correspondante dans security.microsoft.com. 4. Vérifier si d''autres fichiers suspects ont été détectés sur le même device. 5. Isoler le device si une compromission active est suspectée.'
 where: |-
   oneOf("action", ["FileDeleted"]) &&
-  oneOf("log.Workload", ["Endpoint"]) &&
-  !contains("log.ObjectId", "\\WER\\Temp\\") &&
-  !contains("log.ObjectId", "\\Windows\\Logs\\MeasuredBoot\\") &&
-  !equals("log.Application", "explorer.exe") &&
-  !equals("log.Application", "OneDrive.exe") &&
-  !equals("log.Application", "Teams.exe") &&
-  !equals("log.Application", "taskhostw.exe")
+  oneOf("event.Workload", ["Endpoint"]) &&
+  !contains("event.ObjectId", "\\WER\\Temp\\") &&
+  !contains("event.ObjectId", "\\Windows\\Logs\\MeasuredBoot\\") &&
+  !equals("event.Application", "explorer.exe") &&
+  !equals("event.Application", "OneDrive.exe") &&
+  !equals("event.Application", "Teams.exe") &&
+  !equals("event.Application", "taskhostw.exe")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Test de déclenchement :** télécharger le fichier EICAR sur un endpoint MDE enrollé. MDE détecte la menace, la met en quarantaine (suppression effective du fichier), et génère l'event `FileDeleted` avec `log.Workload = Endpoint` dans les logs O365 (latence ~5 minutes). Corréler avec WD1 (EID 1116) sur le même host pour la vue complète de l'incident.
+**Test de déclenchement :** télécharger le fichier EICAR sur un endpoint MDE enrollé. MDE détecte la menace, la met en quarantaine (suppression effective du fichier), et génère l'event `FileDeleted` avec `event.Workload = Endpoint` dans les logs O365 (latence ~5 minutes). Corréler avec WD1 (EID 1116) sur le même host pour la vue complète de l'incident.
 
 ### La boucle DLP : un anti-pattern de configuration documenté
 
@@ -1364,7 +1636,7 @@ La boucle tourne toutes les 5 minutes (cycle de réévaluation du moteur UTMStac
 
 ### Protection contre le vol de session : Token Protection (Accès Conditionnel Entra ID)
 
-Avant de documenter les règles de détection M3 et M5, il est utile de situer leur rôle dans l'architecture de défense globale face aux attaques AiTM (Adversary-in-the-Middle).
+Il est utile de situer le rôle des règles Impossible Travel et Mailbox Activity dans l'architecture de défense globale face aux attaques AiTM (Adversary-in-the-Middle).
 
 Dans une attaque AiTM, un proxy malveillant se positionne entre l'utilisateur et le service Microsoft. L'utilisateur complète le MFA normalement, mais le proxy intercepte le cookie de session post-authentification. L'attaquant utilise ensuite ce cookie depuis un autre appareil pour accéder aux ressources sans jamais connaître le mot de passe ni posséder le facteur MFA.
 
@@ -1379,25 +1651,17 @@ La **Token Protection** est une politique d'Accès Conditionnel Entra ID (licenc
 
 **Prérequis :** appareils Windows (ou Apple) inscrits ou enregistrés dans Entra ID. Microsoft liste plusieurs types d'appareils non pris en charge (hôtes Azure Virtual Desktop joints à Entra ID, Cloud PC Windows 365, appareils inscrits en masse, etc.) : tester en mode Rapport uniquement avant d'activer.
 
-Les règles M3 (Impossible Travel) et M5 (MFA Required Interrupt) opèrent sur un plan complémentaire : elles détectent les signaux comportementaux de la tentative, indépendamment de son succès. M3 détecte une connexion depuis un pays géographiquement impossible après une connexion récente. M5 détecte l'interrupt MFA lui-même. Cette trace est précieuse pour l'investigation post-incident : elle permet de reconstituer la timeline et d'identifier le vecteur d'attaque.
-
----
-
-### M3 : Impossible Travel (règle existante)
-
-Connexion réussie depuis un pays géographiquement impossible compte tenu de la dernière connexion connue. Signal fort de compromission de compte ou d'utilisation d'un VPN d'un pays inhabituel.
-
-**Fichier :** `o365-impossible-travel.yml`, voir le dépôt.
-
-**Test de déclenchement :** se connecter à `portal.office.com` via un VPN positionné dans un pays différent du pays habituel de connexion. La règle déclenche quand deux connexions réussies (`UserLoggedIn`) apparaissent depuis deux pays distincts dans la fenêtre `afterEvents` définie.
+Les règles Impossible Travel et Mailbox Activity opèrent sur un plan complémentaire : elles détectent l'usage du compte depuis un autre pays, que l'attaquant ait rejoué un cookie ou ouvert une nouvelle session. Cette trace est précieuse pour l'investigation post-incident : elle permet de reconstituer la timeline et d'identifier le vecteur d'attaque. La v11.2 comptait aussi M5 (MFA Required Interrupt), retirée en v11.3.0 : l'événement qu'elle surveillait est l'étape normale de toute connexion avec MFA.
 
 ---
 
 ### M5 : MFA Required Interrupt on Sign-In
 
+> 🗄️ **Retirée en v11.3.0.** `UserStrongAuthClientAuthNRequiredInterrupt` n'est pas un signal : c'est l'étape normale de chaque connexion avec MFA. La règle sera remplacée par une règle de fatigue MFA (refus répétés), écrite à partir d'un vrai événement de test. Le fichier reste disponible dans [`rules/retirees/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/retirees) pour les environnements où cette règle native n'existe pas.
+
 Une tentative de connexion Entra ID a été interrompue par une demande MFA (`LogonError UserStrongAuthClientAuthNRequiredInterrupt`, ErrorNumber 50074). Ce signal est normal lors d'une première connexion depuis un nouvel appareil, mais devient suspect associé à une IP externe inconnue ou un pays inhabituel. Dans un scénario AiTM, l'interrupt MFA reste visible dans les logs même si le proxy a relayé le token de session.
 
-**Faux positifs documentés :** dans les environnements Intune, les appareils conformes peuvent générer cet event lors de connexions dont le statut de conformité n'a pas encore été propagé. Le champ `log.DeviceProperties` montre `IsCompliant = False` même pour un appareil enregistré et conforme dans Intune. Ce décalage est inhérent à la synchronisation asynchrone entre Intune et Entra ID au moment de l'authentification : le statut réel est bien conforme, mais l'event est loggé avant que la propagation soit complète.
+**Faux positifs documentés :** dans les environnements Intune, les appareils conformes peuvent générer cet event lors de connexions dont le statut de conformité n'a pas encore été propagé. Le champ `event.DeviceProperties` montre `IsCompliant = False` même pour un appareil enregistré et conforme dans Intune. Ce décalage est inhérent à la synchronisation asynchrone entre Intune et Entra ID au moment de l'authentification : le statut réel est bien conforme, mais l'event est loggé avant que la propagation soit complète.
 
 **Technique MITRE :** T1078.004 · Valid Accounts: Cloud Accounts
 
@@ -1415,11 +1679,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1078/004/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-ins
-description: 'Une tentative de connexion Entra ID a été interrompue par une demande MFA (LogonError UserStrongAuthClientAuthNRequiredInterrupt, ErrorNumber 50074). Ce signal est normal lors d''une première connexion depuis un nouvel appareil, mais devient suspect s''il est associé à une IP externe inconnue ou à un pays inhabituel. Dans un scénario AiTM, le proxy malveillant relaie le token de session après que l''utilisateur a complété le MFA, l''interrupt lui-même reste visible dans les logs. Next Steps: 1. Vérifier si l''IP source (origin.ip) est habituelle pour cet utilisateur. 2. Contrôler le pays d''origine via origin.geolocation.countryCode. 3. Vérifier si une connexion réussie (UserLoggedIn) a suivi dans la même fenêtre temporelle depuis la même IP. 4. Révoquer les sessions actives via Entra ID si compromission suspectée. 5. Corréler avec la règle Entra ID - Impossible Travel si le pays est inhabituel.'
+description: 'Une tentative de connexion Entra ID a été interrompue par une demande MFA (LogonError UserStrongAuthClientAuthNRequiredInterrupt, ErrorNumber 50074). Ce signal est normal lors d''une première connexion depuis un nouvel appareil, mais devient suspect s''il est associé à une IP externe inconnue ou à un pays inhabituel. Dans un scénario AiTM (Adversary-in-the-Middle), le proxy malveillant relaie le token de session après que l''utilisateur a complété le MFA, l''interrupt lui-même reste visible dans les logs. Next Steps: 1. Vérifier si l''IP source (origin.ip) est habituelle pour cet utilisateur. 2. Contrôler le pays d''origine via origin.geolocation.countryCode. 3. Vérifier si une connexion réussie (UserLoggedIn) a suivi dans la même fenêtre temporelle depuis la même IP. 4. Révoquer les sessions actives via Entra ID si compromission suspectée. 5. Corréler avec les events o365-impossible-travel si le pays est inhabituel.'
 where: |-
   equals("action", "UserLoginFailed") &&
-  contains("log.Workload", "AzureActiveDirectory") &&
-  equals("log.LogonError", "UserStrongAuthClientAuthNRequiredInterrupt")
+  contains("event.Workload", "AzureActiveDirectory") &&
+  equals("event.LogonError", "UserStrongAuthClientAuthNRequiredInterrupt")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1437,6 +1701,8 @@ Un compte utilisateur a été ajouté à un groupe Entra ID par un utilisateur h
 
 **Technique MITRE :** T1098.003 · Account Manipulation: Additional Cloud Roles
 
+✅ **Statut v11.3.0 :** validée. Aucune règle native ne la recouvre.
+
 ```yaml
 name: Entra ID - Member Added to Group by User
 dataTypes:
@@ -1451,17 +1717,17 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1098/003/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
-description: 'Un compte utilisateur a été ajouté à un groupe Entra ID par un utilisateur humain (Add member to group., Workload AzureActiveDirectory). Les ajouts automatiques par des ServicePrincipals Microsoft (Microsoft Approval Management, Entra Connect) sont exclus via le filtre sur origin.user. Un ajout non autorisé à un groupe de sécurité ou M365 peut conférer des droits d''accès à des ressources sensibles. Next Steps: 1. Identifier le membre ajouté via log.ObjectId. 2. Identifier le groupe cible via log.ModifiedProperties (champ Group.DisplayName). 3. Vérifier si l''acteur (origin.user) est autorisé à modifier ce groupe. 4. Contrôler les droits associés au groupe cible. 5. Retirer le membre si l''ajout n''est pas justifié.'
+description: 'Un compte utilisateur a été ajouté à un groupe Entra ID par un utilisateur humain (Add member to group., Workload AzureActiveDirectory). Les ajouts automatiques par des ServicePrincipals Microsoft (Microsoft Approval Management, Entra Connect) sont exclus. Un ajout non autorisé à un groupe de sécurité ou à un groupe M365 peut conférer des droits d''accès à des ressources sensibles. Next Steps: 1. Identifier le membre ajouté via event.ObjectId. 2. Identifier le groupe cible, rechercher Group.DisplayName dans event.ModifiedProperties. 3. Vérifier si l''acteur (origin.user) est autorisé à modifier ce groupe. 4. Contrôler les droits associés au groupe cible. 5. Retirer le membre si l''ajout n''est pas justifié.'
 where: |-
   equals("action", "Add member to group.") &&
-  contains("log.Workload", "AzureActiveDirectory") &&
+  contains("event.Workload", "AzureActiveDirectory") &&
   !contains("origin.user", "ServicePrincipal_")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Test de déclenchement :** dans le portail Entra ID → Groupes → sélectionner un groupe de sécurité existant → Membres → Ajouter des membres → sélectionner un utilisateur de test. L'alerte contient `log.ObjectId` (UPN du membre ajouté) et `log.ModifiedProperties` avec `Group.DisplayName` (nom du groupe cible).
+**Test de déclenchement :** dans le portail Entra ID → Groupes → sélectionner un groupe de sécurité existant → Membres → Ajouter des membres → sélectionner un utilisateur de test. L'alerte contient `event.ObjectId` (UPN du membre ajouté) et `event.ModifiedProperties` avec `Group.DisplayName` (nom du groupe cible).
 
 ---
 
@@ -1472,6 +1738,8 @@ Un compte utilisateur a été créé directement dans Entra ID, hors du processu
 **Contexte de l'exclusion :** dans ce tenant, tous les comptes passent par Entra Connect (gest-srv (serveur membre du domaine) héberge le connecteur). L'unique event `Add user.` présent en base avant le test était la création de `ch11-test@lan.local` par `ConnectSyncProvisioning_GEST-SRV_...` : un ServicePrincipal Entra Connect. Sans l'exclusion, chaque nouvel utilisateur créé dans l'AD on-premise génèrerait une alerte lors de sa synchronisation vers Entra ID.
 
 **Technique MITRE :** T1136.003 · Create Account: Cloud Account
+
+✅ **Statut v11.3.0 :** validée. Aucune règle native ne la recouvre.
 
 ```yaml
 name: Entra ID - User Account Created Outside Sync Process
@@ -1487,10 +1755,10 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1136/003/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
-description: 'Un compte utilisateur a été créé directement dans Entra ID, hors du processus de synchronisation Entra Connect (Add user., Workload AzureActiveDirectory). Les créations via Entra Connect (ConnectSyncProvisioning) sont exclues car elles représentent le flux normal de synchronisation AD→Entra. La création manuelle d''un compte cloud contourne les contrôles IAM on-premise et peut indiquer une tentative de persistance post-compromission. Next Steps: 1. Identifier le compte créé via log.ObjectId. 2. Vérifier si le compte est autorisé dans le processus RH/IT. 3. Contrôler l''acteur via origin.user. 4. Vérifier si le compte a reçu des droits ou licences après création. 5. Désactiver le compte si non autorisé et investiguer le vecteur initial.'
+description: 'Un compte utilisateur a été créé directement dans Entra ID, hors du processus de synchronisation Entra Connect (Add user., Workload AzureActiveDirectory). La création manuelle d''un compte cloud contourne les contrôles IAM on-premise et peut indiquer une tentative de persistance post-compromission. Les créations via Entra Connect (ConnectSyncProvisioning) sont exclues car elles représentent le flux normal de synchronisation AD→Entra. Next Steps: 1. Identifier le compte créé via event.ObjectId. 2. Vérifier si le compte est autorisé dans le processus RH/IT. 3. Contrôler l''acteur ayant effectué la création via origin.user. 4. Vérifier si le compte a reçu des droits ou licences après sa création. 5. Désactiver le compte si non autorisé et investiguer le vecteur initial.'
 where: |-
   equals("action", "Add user.") &&
-  contains("log.Workload", "AzureActiveDirectory") &&
+  contains("event.Workload", "AzureActiveDirectory") &&
   !contains("origin.user", "ConnectSyncProvisioning")
 afterEvents: []
 groupBy: []
@@ -1509,6 +1777,8 @@ Une règle d'étiquetage automatique Microsoft Purview a détecté des données 
 
 **Technique MITRE :** T1567 · Exfiltration Over Web Service
 
+✅ **Statut v11.3.0 :** validée par un test réel avec des documents fictifs (Business Premium avec le module Purview Suite dans le lab). `origin.user` y contient un identifiant numérique, pas un UPN.
+
 ```yaml
 name: Purview - Sensitive Data Auto-Label Rule Match
 dataTypes:
@@ -1524,10 +1794,10 @@ references:
   - https://attack.mitre.org/techniques/T1567/
   - https://learn.microsoft.com/en-us/purview/apply-sensitivity-label-automatically
   - https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp
-description: 'Une règle d''étiquetage automatique Microsoft Purview a détecté des données sensibles et a appliqué un label de confidentialité (AutoSensitivityLabelRuleMatch, mode Enforce). Cet event indique que des données protégées circulent dans Exchange ou SharePoint. Les emails de notification DLP internes sont exclus pour éviter les boucles d''alertes. Next Steps: 1. Identifier la politique déclenchée via log.PolicyName et la règle via log.ExecutionRuleName. 2. Identifier le label appliqué via log.LabelName. 3. Vérifier si le destinataire ou le chemin de partage est approprié pour ce niveau de confidentialité. 4. Corréler avec les events DLPRuleMatch si une politique DLP couvre les mêmes données. 5. Vérifier si l''expéditeur est autorisé à manipuler des données de ce niveau de sensibilité.'
+description: 'Une règle d''étiquetage automatique Microsoft Purview a détecté des données sensibles et a appliqué un label de confidentialité (AutoSensitivityLabelRuleMatch, mode Enforce). Cet event indique que des données protégées circulent dans Exchange ou SharePoint. Les emails de notification DLP internes (notifications-utmstack, MipLabelsAgent) sont exclus pour éviter les boucles d''alertes. Surveiller les flux inattendus, un email contenant des données RH ou financières envoyé vers une adresse externe est un signal fort. Next Steps: 1. Identifier la politique déclenchée via event.PolicyName et la règle via event.ExecutionRuleName. 2. Identifier le label appliqué via event.LabelName. 3. Vérifier si le destinataire ou le chemin de partage est approprié pour ce niveau de confidentialité. 4. Corréler avec les events DLPRuleMatch si une politique DLP couvre les mêmes données. 5. Vérifier si l''expéditeur est autorisé à manipuler des données de ce niveau de sensibilité.'
 where: |-
   equals("action", "AutoSensitivityLabelRuleMatch") &&
-  contains("log.RuleMode", "Enforce") &&
+  contains("event.RuleMode", "Enforce") &&
   !contains("origin.user", "notifications-") &&
   !contains("origin.user", "MipLabelsAgent")
 afterEvents: []
@@ -1535,7 +1805,7 @@ groupBy: []
 deduplicateBy: []
 ```
 
-**Test de déclenchement :** envoyer depuis `demo@lan.local` vers une adresse externe un email contenant un document avec des données sensibles couvertes par la politique d'auto-labeling (dans ce lab : un document Word contenant un numéro AVS). Exchange Online applique automatiquement le label `4 : RH-Confidentiel` et génère l'event. L'alerte contient `log.PolicyName`, `log.ExecutionRuleName`, `log.LabelName` et `log.ExchangeMetaData`.
+**Test de déclenchement :** envoyer depuis `demo@lan.local` vers une adresse externe un email contenant un document avec des données sensibles couvertes par la politique d'auto-labeling (dans ce lab : un document Word contenant un numéro AVS). Exchange Online applique automatiquement le label `4 : RH-Confidentiel` et génère l'event. L'alerte contient `event.PolicyName`, `event.ExecutionRuleName`, `event.LabelName` et `event.ExchangeMetaData`.
 
 **Voir section "La boucle DLP" ci-dessus** pour comprendre pourquoi les exclusions `!contains("origin.user", "notifications-")` et `!contains("origin.user", "MipLabelsAgent")` sont indispensables.
 
@@ -1546,6 +1816,8 @@ deduplicateBy: []
 Un utilisateur ou un administrateur a accordé son consentement à une application OAuth tierce dans Entra ID. Les attaques par consentement OAuth malveillant (Consent Phishing) consistent à faire approuver une application qui dispose de droits étendus sans vol de mot de passe.
 
 **Technique MITRE :** T1528 · Steal Application Access Token
+
+✅ **Statut v11.3.0 :** validée. Aucune règle native ne la recouvre.
 
 ```yaml
 name: Entra ID - OAuth Application Consent Granted
@@ -1562,22 +1834,24 @@ references:
   - https://attack.mitre.org/techniques/T1528/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
   - https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/consent-and-permissions-overview
-description: 'Un utilisateur ou un administrateur a accordé son consentement à une application OAuth tierce dans Entra ID. Les attaques par consentement OAuth malveillant (Consent Phishing, T1550.001) consistent à faire approuver par l''utilisateur une application légitime en apparence qui dispose en réalité de droits étendus (lecture des emails, accès OneDrive, envoi au nom de l''utilisateur). Ce vecteur est utilisé pour obtenir un accès persistant sans vol de mot de passe. Next Steps: 1. Identifier l''application via log.ObjectId. 2. Vérifier les permissions accordées dans le portail Entra ID (Entra ID → Applications d''entreprise). 3. Contrôler si l''application est connue et approuvée par l''IT. 4. Révoquer le consentement si l''application est suspecte. 5. Vérifier les activités post-consentement (accès Exchange, SharePoint) depuis l''AppId de l''application.'
+description: 'Un utilisateur ou un administrateur a accordé son consentement à une application OAuth tierce dans Entra ID. Les attaques par consentement OAuth malveillant (Consent Phishing, T1550.001) consistent à faire approuver par l''utilisateur une application légitime en apparence qui dispose en réalité de droits étendus (lecture des emails, accès OneDrive, envoi au nom de l''utilisateur). Ce vecteur est utilisé pour obtenir un accès persistant sans vol de mot de passe. Next Steps: 1. Identifier l''application via event.ObjectId. 2. Vérifier les permissions accordées dans le portail Entra ID (Entra ID → Applications d''entreprise). 3. Contrôler si l''application est connue et approuvée par l''IT. 4. Révoquer le consentement si l''application est suspecte. 5. Vérifier les activités post-consentement (accès Exchange, SharePoint) depuis l''AppId de l''application.'
 where: |-
   equals("action", "Consent to application.") &&
-  contains("log.Workload", "AzureActiveDirectory")
+  contains("event.Workload", "AzureActiveDirectory")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Test de déclenchement :** dans le portail Entra ID → Applications d'entreprise → sélectionner une application avec des autorisations configurées (ex: UTMStack O365 Agent) → Sécurité → Autorisations → **Accorder un consentement d'administrateur pour [tenant]**. Confirmer dans la boîte de dialogue. L'alerte contient `log.ObjectId` (AppId de l'application), `log.ModifiedProperties` avec les scopes accordés (`ConsentContext.IsAdminConsent`, `ConsentAction.Permissions`).
+**Test de déclenchement :** dans le portail Entra ID → Applications d'entreprise → sélectionner une application avec des autorisations configurées (ex: UTMStack O365 Agent) → Sécurité → Autorisations → **Accorder un consentement d'administrateur pour [tenant]**. Confirmer dans la boîte de dialogue. L'alerte contient `event.ObjectId` (AppId de l'application), `event.ModifiedProperties` avec les scopes accordés (`ConsentContext.IsAdminConsent`, `ConsentAction.Permissions`).
 
 ---
 
 ## Série A : Azure Activity Log
 
 Les règles A couvrent les événements Azure Activity Log collectés via l'Event Hub et indexés dans `v11-log-azure-*` avec `dataType = azure`. Deux structures coexistent dans l'index : Activity Log (`log.operationName`, en majuscules) et Event Grid (`log.data.operationName`, en casse mixte). Les règles A ciblent principalement Activity Log. Elles ont été validées en live en août 2026. L'intégration Azure du lab a depuis été désactivée pour des raisons de coût : ces règles ne peuvent plus être retestées dans ce lab. Les fichiers YAML sont disponibles dans [`rules/azure/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/azure).
+
+> ⚠️ **Statut v11.3.0 : non revalidées.** L'intégration Azure du lab est désactivée. Les règles A1 à A10 ont été réécrites sur le modèle des règles natives v11.3.0, qui utilisent `event.azureKind` (`activity` ou `eventgrid`), `event.azureOperation` (nom de l'opération, commun aux deux structures) et `actionResult`. Les blocs YAML de cette section montrent ces réécritures. **Aucune n'a été testée sur un événement réel.** Le texte qui les accompagne (champs, tests, faux positifs) décrit la validation d'août 2026 en v11.2 et cite donc des champs `log.*`. A8 et A9 ont été réduites pour ne plus doublonner des règles natives, et renommées. **A11 n'est pas migrée** : faute de connaître les champs d'un échec en v11.3.0, son YAML est resté en `log.*` et ne se déclenchera pas. Une session de validation, avec réactivation temporaire de l'intégration, est prévue.
 
 ### Prérequis infrastructure : Event Hub SKU Standard
 
@@ -1617,10 +1891,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1552/
   - https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage
-description: 'Une opération de listing des clés d''accès ou de génération de token SAS d''un compte de stockage Azure a été détectée (listKeys, ListServiceSas). Les clés de stockage donnent un accès complet aux données, leur listing par un compte non autorisé ou depuis une IP externe est un signal fort d''exfiltration de credentials. Next Steps: 1. Identifier le principal ayant effectué l''opération via log.identity.authorization.evidence. 2. Vérifier si le rôle RBAC attribué autorise cette opération. 3. Contrôler l''IP source via origin.ip, une IP externe inconnue est suspecte. 4. Vérifier les accès au compte de stockage dans les heures suivantes. 5. Effectuer une rotation des clés si l''accès est non autorisé.'
+description: 'Une opération de listing des clés d''accès ou de génération de token SAS d''un compte de stockage Azure a été détectée (listKeys, ListServiceSas). Les clés de stockage donnent un accès complet aux données, leur listing par un compte non autorisé ou depuis une IP externe est un signal fort d''exfiltration de credentials. Next Steps: 1. Identifier le principal ayant effectué l''opération via event.azureActor. 2. Vérifier si le rôle RBAC attribué autorise cette opération. 3. Contrôler l''IP source via origin.ip, une IP externe inconnue est suspecte. 4. Vérifier les accès au compte de stockage dans les heures suivantes. 5. Effectuer une rotation des clés si l''accès est non autorisé.'
 where: |-
-  equals("dataType", "azure") &&
-  contains("log.operationName", "LISTKEYS")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.Storage/storageAccounts/listKeys/action$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1650,11 +1925,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1485/
   - https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-portal
-description: 'Un groupe de ressources Azure a été supprimé. La suppression d''un resource group entraîne la suppression irréversible de toutes les ressources qu''il contient. Dans un scénario d''attaque, cette action peut être utilisée pour détruire des preuves ou provoquer une interruption de service. Next Steps: 1. Identifier l''auteur de la suppression via log.identity. 2. Vérifier si la suppression était planifiée et autorisée. 3. Contrôler quelles ressources ont été supprimées. 4. Vérifier si des sauvegardes existent pour les ressources critiques. 5. Investiguer les connexions et activités de l''auteur dans les heures précédant la suppression.'
+description: 'Un groupe de ressources Azure a été supprimé. La suppression d''un resource group entraîne la suppression irréversible de toutes les ressources qu''il contient. Dans un scénario d''attaque, cette action peut être utilisée pour détruire des preuves ou provoquer une interruption de service. Next Steps: 1. Identifier l''auteur de la suppression via event.azureActor. 2. Vérifier si la suppression était planifiée et autorisée. 3. Contrôler quelles ressources ont été supprimées. 4. Vérifier si des sauvegardes existent pour les ressources critiques. 5. Investiguer les connexions et activités de l''auteur dans les heures précédant la suppression.'
 where: |-
-  equals("dataType", "azure") &&
-  contains("log.operationName", "RESOURCEGROUPS/DELETE") &&
-  contains("log.resultType", "Success")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)/resourceGroups/delete$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1684,11 +1959,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1529/
   - https://learn.microsoft.com/en-us/azure/virtual-machines/states-billing
-description: 'Une machine virtuelle Azure a été désallouée ou supprimée (deallocate/delete). La désallocation arrête la VM et libère les ressources de calcul, dans un contexte d''attaque, cela peut être utilisé pour interrompre des services ou effacer des preuves. Next Steps: 1. Identifier l''auteur de l''opération via log.identity. 2. Vérifier si l''opération était planifiée. 3. Contrôler si d''autres VMs ont été affectées simultanément. 4. Vérifier l''état des sauvegardes de la VM. 5. Redémarrer la VM si l''arrêt n''était pas autorisé.'
+description: 'Une machine virtuelle Azure a été désallouée ou supprimée (deallocate/delete). La désallocation arrête la VM et libère les ressources de calcul, dans un contexte d''attaque, cela peut être utilisé pour interrompre des services ou effacer des preuves. Next Steps: 1. Identifier l''auteur de l''opération via event.azureActor. 2. Vérifier si l''opération était planifiée. 3. Contrôler si d''autres VMs ont été affectées simultanément. 4. Vérifier l''état des sauvegardes de la VM. 5. Redémarrer la VM si l''arrêt n''était pas autorisé.'
 where: |-
-  equals("dataType", "azure") &&
-  regexMatch("log.operationName", "(?i)MICROSOFT\\.COMPUTE/VIRTUALMACHINES/(DEALLOCATE/ACTION|DELETE)") &&
-  contains("log.resultType", "Success")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.Compute/virtualMachines/(deallocate/action|delete)$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1720,12 +1995,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1562/007/
   - https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview
-description: 'Un groupe de sécurité réseau Azure (NSG) a été créé ou modifié dans sa globalité. La création d''un nouveau NSG peut indiquer la mise en place d''une nouvelle infrastructure, légitime ou non. À corréler avec d''autres activités Azure inhabituelles. Next Steps: 1. Identifier le NSG créé ou modifié via log.resourceId. 2. Vérifier si la création est liée à un déploiement planifié. 3. Contrôler l''auteur via log.identity.authorization.evidence. 4. Vérifier les règles appliquées au NSG.'
+description: 'Un groupe de sécurité réseau Azure (NSG) a été créé ou modifié dans sa globalité. La création d''un nouveau NSG peut indiquer la mise en place d''une nouvelle infrastructure, légitime ou non. À corréler avec d''autres activités Azure inhabituelles. Next Steps: 1. Identifier le NSG créé ou modifié via event.resourceId. 2. Vérifier si la création est liée à un déploiement planifié. 3. Contrôler l''auteur via event.azureActor. 4. Vérifier les règles appliquées au NSG.'
 where: |-
-  equals("dataType", "azure") &&
-  contains("log.operationName", "NETWORKSECURITYGROUPS/WRITE") &&
-  !contains("log.operationName", "SECURITYRULES") &&
-  contains("log.resultType", "Success")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.Network/networkSecurityGroups/write$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1757,11 +2031,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1562/007/
   - https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview
-description: 'Une règle de sécurité individuelle dans un NSG Azure a été ajoutée ou modifiée. Ce pattern est plus suspect que la modification du NSG entier, un attaquant qui a compromis un compte Azure va typiquement ajouter une règle ciblée pour ouvrir un port (RDP 3389, SSH 22, WinRM 5985) plutôt que de recréer un NSG complet. Next Steps: 1. Identifier la règle modifiée via log.resourceId (contient le nom de la règle). 2. Vérifier si un port sensible a été ouvert (RDP, SSH, WinRM, RPC). 3. Contrôler l''auteur via log.identity.authorization.evidence. 4. Vérifier si la modification est liée à un déploiement planifié. 5. Supprimer la règle si non autorisée.'
+description: 'Une règle de sécurité individuelle dans un NSG Azure a été ajoutée ou modifiée. Ce pattern est plus suspect que la modification du NSG entier, un attaquant qui a compromis un compte Azure va typiquement ajouter une règle ciblée pour ouvrir un port (RDP 3389, SSH 22, WinRM 5985) plutôt que de recréer un NSG complet. Next Steps: 1. Identifier la règle modifiée via event.resourceId (contient le nom de la règle). 2. Vérifier si un port sensible a été ouvert (RDP, SSH, WinRM, RPC). 3. Contrôler l''auteur via event.azureActor. 4. Vérifier si la modification est liée à un déploiement planifié. 5. Supprimer la règle si non autorisée.'
 where: |-
-  equals("dataType", "azure") &&
-  contains("log.operationName", "NETWORKSECURITYGROUPS/SECURITYRULES/WRITE") &&
-  contains("log.resultType", "Success")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.Network/networkSecurityGroups/securityRules/write$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1793,11 +2067,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1552/
   - https://learn.microsoft.com/en-us/azure/event-hubs/authorize-access-shared-access-signature
-description: 'Les clés d''autorisation d''un espace de noms Event Hub Azure ont été listées (listKeys). Ces clés permettent d''envoyer et de recevoir des messages depuis l''Event Hub, leur exposition compromet l''intégrité du pipeline de données. Dans ce lab, l''Event Hub est utilisé par UTMStack pour collecter les logs Azure, une compromission de ces clés permettrait à un attaquant d''injecter de faux logs ou de perturber la collecte. Next Steps: 1. Identifier le principal ayant listé les clés via log.identity. 2. Vérifier si l''accès est légitime. 3. Effectuer une rotation des clés si compromis. 4. Vérifier l''intégrité des logs collectés dans la fenêtre temporelle.'
+description: 'Les clés d''autorisation d''un espace de noms Event Hub Azure ont été listées (listKeys). Ces clés permettent d''envoyer et de recevoir des messages depuis l''Event Hub, leur exposition compromet l''intégrité du pipeline de données. Dans ce lab, l''Event Hub est utilisé par UTMStack pour collecter les logs Azure, une compromission de ces clés permettrait à un attaquant d''injecter de faux logs ou de perturber la collecte. Next Steps: 1. Identifier le principal ayant listé les clés via event.azureActor. 2. Vérifier si l''accès est légitime. 3. Effectuer une rotation des clés si compromis. 4. Vérifier l''intégrité des logs collectés dans la fenêtre temporelle.'
 where: |-
-  equals("dataType", "azure") &&
-  contains("log.operationName", "EVENTHUB") &&
-  contains("log.operationName", "LISTKEYS")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.EventHub/.*/listKeys/action$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1829,11 +2103,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1072/
   - https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/overview
-description: 'Un déploiement ARM (Azure Resource Manager) a été exécuté. Les templates ARM permettent de créer ou modifier un ensemble de ressources Azure en une seule opération, ils peuvent être utilisés pour déployer des backdoors, modifier des configurations de sécurité ou provisionner des ressources non autorisées. Next Steps: 1. Identifier le template déployé et les ressources créées ou modifiées via log.resourceId. 2. Vérifier l''auteur du déploiement via log.identity. 3. Contrôler si le déploiement était planifié et autorisé. 4. Examiner le contenu du template si disponible. 5. Supprimer les ressources non autorisées.'
+description: 'Un déploiement ARM (Azure Resource Manager) a été exécuté. Les templates ARM permettent de créer ou modifier un ensemble de ressources Azure en une seule opération, ils peuvent être utilisés pour déployer des backdoors, modifier des configurations de sécurité ou provisionner des ressources non autorisées. Next Steps: 1. Identifier le template déployé et les ressources créées ou modifiées. 2. Vérifier l''auteur du déploiement via event.azureActor. 3. Contrôler si le déploiement était planifié et autorisé. 4. Examiner le contenu du template si disponible. 5. Supprimer les ressources non autorisées.'
 where: |-
-  equals("dataType", "azure") &&
-  contains("log.operationName", "DEPLOYMENTS/WRITE") &&
-  contains("log.resultType", "Success")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)/deployments/write$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1865,10 +2139,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1078/004/
   - https://learn.microsoft.com/en-us/azure/role-based-access-control/overview
-description: 'Une attribution de rôle Azure a été créée ou supprimée sur l''abonnement ou un resource group. Cette opération modifie les droits d''accès aux ressources Azure et constitue un vecteur classique d''escalade de privilèges et de persistance dans Azure. Next Steps: 1. Identifier le resource group ou la subscription ciblés via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims (UPN dans le payload brut). 3. Vérifier si le rôle attribué est Owner ou Contributor, particulièrement sensibles. 4. Confirmer si l''opération était planifiée et autorisée. 5. Vérifier si d''autres opérations suspectes ont suivi (DEPLOYMENTS/WRITE, LOCKS/DELETE).'
+description: 'Une attribution de rôle Azure a été créée ou supprimée sur l''abonnement ou un resource group. Cette opération modifie les droits d''accès aux ressources Azure et constitue un vecteur classique d''escalade de privilèges et de persistance dans Azure. Next Steps: 1. Identifier le resource group ou la subscription ciblés via event.resourceId. 2. Identifier l''acteur via origin.ip et event.azureActor. 3. Vérifier si le rôle attribué est Owner ou Contributor, particulièrement sensibles. 4. Confirmer si l''opération était planifiée et autorisée. 5. Vérifier si d''autres opérations suspectes ont suivi (DEPLOYMENTS/WRITE, LOCKS/DELETE).'
 where: |-
-  contains("log.operationName", "ROLEASSIGNMENTS") &&
-  contains("log.resultType", "Success")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.Authorization/roleAssignments/(write|delete)$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1878,7 +2153,9 @@ deduplicateBy: []
 
 ---
 
-### A8 : Diagnostic Settings Modified or Deleted
+### A8 : Diagnostic Settings Created or Modified
+
+> ℹ️ **v11.3.0 :** renommée (anciennement « Modified or Deleted »). La suppression d'un paramètre de diagnostic est couverte par une règle native ; A8 ne garde que la création et la modification.
 
 Un paramètre de diagnostic Azure a été créé, modifié ou supprimé. Les paramètres de diagnostic contrôlent l'envoi des logs vers Log Analytics, Event Hub ou Storage Account. Leur suppression peut aveugler le SIEM en interrompant la collecte des logs Azure Activity.
 
@@ -1887,7 +2164,7 @@ Un paramètre de diagnostic Azure a été créé, modifié ou supprimé. Les par
 **Technique MITRE :** T1562.008 · Impair Defenses: Disable Cloud Logs
 
 ```yaml
-name: Azure - Diagnostic Settings Modified or Deleted
+name: Azure - Diagnostic Settings Created or Modified
 dataTypes:
   - azure
 impact:
@@ -1900,10 +2177,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1562/008/
   - https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/diagnostic-settings
-description: 'Un paramètre de diagnostic Azure a été créé, modifié ou supprimé. Note : le rôle Log Analytics Contributor suffit, aucun droit Owner requis. Next Steps: 1. Identifier la ressource via log.resourceId. 2. Identifier l''acteur via origin.ip. 3. Vérifier si l''opération était autorisée. 4. Contrôler les opérations suspectes suivantes. 5. Restaurer le paramètre si supprimé de manière non autorisée.'
+description: 'Un paramètre de diagnostic Azure a été créé ou modifié. La suppression est couverte par la règle native UTMStack "Azure Diagnostic Settings Deletion". Les paramètres de diagnostic contrôlent l''envoi des logs de ressources vers Log Analytics, Event Hub ou Storage Account. La suppression ou la modification d''un paramètre existant peut aveugler le SIEM en interrompant la collecte des logs Azure Activity, technique documentée dans les attaques de type "defense evasion" avant destruction d''infrastructure. Next Steps: 1. Identifier la ressource ciblée via event.resourceId, noter si c''est un paramètre de diagnostic sur la subscription entière (impact maximal) ou sur une ressource isolée. 2. Identifier l''acteur via origin.ip. 3. Vérifier si l''opération était planifiée et autorisée. 4. Contrôler si d''autres opérations suspectes ont suivi (ROLEASSIGNMENTS/WRITE, LOCKS/DELETE, RESOURCEGROUPS/DELETE). 5. Restaurer le paramètre de diagnostic si supprimé de manière non autorisée.'
 where: |-
-  contains("log.operationName", "DIAGNOSTICSETTINGS") &&
-  contains("log.resultType", "Success")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.Insights/diagnosticSettings/write$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1913,7 +2191,9 @@ deduplicateBy: []
 
 ---
 
-### A9 : Key Vault Created or Deleted
+### A9 : Key Vault Deleted
+
+> ℹ️ **v11.3.0 :** renommée (anciennement « Created or Deleted »). La création d'un Key Vault est couverte par une règle native ; A9 ne garde que la suppression.
 
 Un coffre de clés Azure (Key Vault) a été créé ou supprimé. Les Key Vaults contiennent les secrets les plus sensibles d'une infrastructure cloud : chaînes de connexion, clés API, certificats. La suppression d'un Key Vault efface l'ensemble de ces secrets en une seule opération.
 
@@ -1922,7 +2202,7 @@ Un coffre de clés Azure (Key Vault) a été créé ou supprimé. Les Key Vaults
 **Technique MITRE :** T1485 · Data Destruction
 
 ```yaml
-name: Azure - Key Vault Created or Deleted
+name: Azure - Key Vault Deleted
 dataTypes:
   - azure
 impact:
@@ -1935,11 +2215,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1485/
   - https://learn.microsoft.com/en-us/azure/key-vault/general/logging
-description: 'Un coffre de clés Azure a été créé ou supprimé. Note : les accès aux secrets individuels ne sont pas visibles dans l''Activity Log. Next Steps: 1. Identifier le Key Vault via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims. 3. Pour une suppression : vérifier l''état soft-delete et initier une restauration. 4. Pour une création non autorisée : vérifier les secrets créés via le portail. 5. Corréler avec ROLEASSIGNMENTS/WRITE et DIAGNOSTICSETTINGS/DELETE.'
+description: 'Un coffre de clés Azure (Key Vault) a été supprimé. La création et la modification sont couvertes par la règle native UTMStack "Azure Key Vault Configuration Changed". Les Key Vaults contiennent les secrets les plus sensibles d''une infrastructure cloud, connection strings, clés API, certificats de service. La suppression d''un Key Vault efface l''ensemble de ces secrets en une seule opération et constitue un acte destructeur majeur. Note : les accès aux secrets individuels (lecture, écriture, suppression de secrets) transitent par les logs de diagnostic Key Vault (AuditEvent) et ne sont pas visibles dans l''Activity Log, cette règle couvre uniquement les opérations sur le coffre lui-même. Next Steps: 1. Identifier le Key Vault concerné via event.resourceId. 2. Identifier l''acteur via origin.ip et event.azureActor. 3. Vérifier immédiatement si le Key Vault est en état de suppression réversible (soft-delete) et initier une restauration si nécessaire. 4. Corréler avec d''autres opérations suspectes (ROLEASSIGNMENTS/WRITE, DIAGNOSTICSETTINGS/DELETE).'
 where: |-
-  contains("log.operationName", "KEYVAULT/VAULTS") &&
-  !contains("log.operationName", "REGISTER") &&
-  regexMatch("log.resultType", "(?i)(Success|Accept)")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.KeyVault/vaults/delete$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1971,10 +2251,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1562/
   - https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/lock-resources
-description: 'Un verrou de ressource Azure (Resource Lock) a été supprimé ou modifié. Les locks de type CanNotDelete ou ReadOnly protègent les ressources critiques contre la suppression ou la modification accidentelle ou malveillante. Supprimer un lock est l''étape préalable logique à la destruction de ressources protégées. Toute suppression de lock doit être corrélée avec les opérations qui suivent immédiatement (RESOURCEGROUPS/DELETE, VIRTUALMACHINES/DELETE, STORAGEACCOUNTS/DELETE). Next Steps: 1. Identifier la ressource protégée via log.resourceId. 2. Identifier l''acteur via origin.ip et log.identity.claims dans le payload brut. 3. Vérifier immédiatement si des opérations destructrices ont suivi sur la même ressource. 4. Confirmer si l''opération était planifiée et autorisée. 5. Restaurer le lock si supprimé de manière non autorisée.'
+description: 'Un verrou de ressource Azure (Resource Lock) a été supprimé ou modifié. Les locks de type CanNotDelete ou ReadOnly protègent les ressources critiques contre la suppression ou la modification accidentelle ou malveillante. Supprimer un lock est l''étape préalable logique à la destruction de ressources protégées. Toute suppression de lock doit être corrélée avec les opérations qui suivent immédiatement (RESOURCEGROUPS/DELETE, VIRTUALMACHINES/DELETE, STORAGEACCOUNTS/DELETE). Next Steps: 1. Identifier la ressource protégée via event.resourceId. 2. Identifier l''acteur via origin.ip et event.azureActor. 3. Vérifier immédiatement si des opérations destructrices ont suivi sur la même ressource. 4. Confirmer si l''opération était planifiée et autorisée. 5. Restaurer le lock si supprimé de manière non autorisée.'
 where: |-
-  contains("log.operationName", "AUTHORIZATION/LOCKS") &&
-  contains("log.resultType", "Success")
+  regexMatch("event.azureKind", "(?i)^(activity|eventgrid)$") &&
+  regexMatch("event.azureOperation", "(?i)^Microsoft\\.Authorization/locks/(write|delete)$") &&
+  equalsIgnoreCase("actionResult", "success")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -1985,6 +2266,8 @@ deduplicateBy: []
 ---
 
 ### A11 : Deletion Attempt Blocked by Resource Lock
+
+> ⚠️ **v11.3.0 : non migrée.** Le YAML ci-dessous est la version v11.2 (`log.*`) : il ne se déclenchera pas en v11.3.0. Il sera réécrit lors de la session de validation Azure, une fois les champs d'un échec `ScopeLocked` relevés sur un événement réel.
 
 Une tentative de suppression d'une ressource Azure a été bloquée par un verrou. Le champ `log.properties.statusMessage` contenant `ScopeLocked` est le discriminant précis qui distingue ce blocage d'autres conflits Azure.
 
@@ -2025,13 +2308,15 @@ deduplicateBy: []
 
 La commande PowerShell Exchange Online `Set-AdminAuditLogConfig` a été exécutée sur le tenant. Cette commande permet de désactiver l'ingestion du journal d'audit unifié, aveuglant immédiatement le SIEM. Toute exécution mérite une investigation, quelle que soit la valeur : un administrateur légitime n'exécute cette commande que très rarement.
 
-**Pourquoi ne pas filtrer sur la valeur `False` ?** Le champ `log.Parameters` est un tableau d'objets imbriqués non filtrable par le moteur UTMStack v11.
+**Pourquoi ne pas filtrer sur la valeur `False` ?** Le champ `event.Parameters` est un tableau d'objets imbriqués non filtrable par le moteur UTMStack v11.
 
 **Comportement asymétrique documenté :** l'event de désactivation apparaît avec l'IP WAN réelle de la session PowerShell, tandis que l'event de réactivation provient d'une IPv6 Microsoft interne : Exchange Online gère la réactivation depuis ses propres serveurs.
 
 **Faux positif connu :** le service `NT SERVICE\MSExchangeAdminApiNetCore` peut générer cet event lors de maintenances automatiques : non exclu volontairement, car un ServicePrincipal compromis génère le même signal.
 
 **Technique MITRE :** T1562.008 · Impair Defenses: Disable Cloud Logs
+
+✅ **Statut v11.3.0 :** validée par un test scripté. La règle se déclenche sur **toute** exécution de `Set-AdminAuditLogConfig`, même si elle ne change rien : le test peut donc se faire sans couper l'audit. La règle native « Exchange Admin Configuration Changes » se déclenche aussi.
 
 ```yaml
 name: O365 - Unified Audit Log Ingestion Disabled
@@ -2047,10 +2332,10 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1562/008/
   - https://learn.microsoft.com/en-us/powershell/module/exchange/set-adminauditlogconfig
-description: 'La commande Set-AdminAuditLogConfig a été exécutée sur le tenant Exchange Online. Toute exécution est suspecte, un attaquant ayant compromis un compte admin ou un ServicePrincipal Exchange peut l''utiliser pour effacer ses traces. Next Steps: 1. Identifier l''acteur via origin.user et origin.ip. 2. Vérifier si origin.user est un ServicePrincipal non-Microsoft. 3. Contrôler log.Parameters (UnifiedAuditLogIngestionEnabled = False). 4. Vérifier l''état de l''audit dans Purview. 5. Réactiver si désactivé et investiguer.'
+description: 'La commande Set-AdminAuditLogConfig a été exécutée sur le tenant Exchange Online. Cette commande permet de désactiver l''ingestion du journal d''audit unifié (UnifiedAuditLogIngestionEnabled), ce qui aveugle le SIEM en supprimant la collecte de tous les events O365. Toute exécution de cette commande est suspecte indépendamment du résultat, un attaquant ayant compromis un compte admin ou un ServicePrincipal Exchange peut l''utiliser pour effacer ses traces. Next Steps: 1. Identifier l''acteur via origin.user et origin.ip. 2. Vérifier si origin.user est un compte humain ou un ServicePrincipal non-Microsoft. 3. Contrôler event.Parameters pour identifier si l''audit a été désactivé (UnifiedAuditLogIngestionEnabled = False). 4. Vérifier l''état actuel de l''audit dans le portail Purview (Audit → Paramètres). 5. Réactiver immédiatement si désactivé et investiguer le vecteur d''accès.'
 where: |-
   equals("action", "Set-AdminAuditLogConfig") &&
-  contains("log.Workload", "Exchange")
+  contains("event.Workload", "Exchange")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -2065,11 +2350,13 @@ Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true
 Disconnect-ExchangeOnline -Confirm:$false
 ```
 
-Deux alertes déclenchent. La valeur de `UnifiedAuditLogIngestionEnabled` est visible dans `log.Parameters`.
+Deux alertes déclenchent. La valeur de `UnifiedAuditLogIngestionEnabled` est visible dans `event.Parameters`.
 
 ---
 
 ### M11 : DLP Rule Match (Purview Data Loss Prevention)
+
+> 🗄️ **Retirée en v11.3.0.** Entièrement incluse dans « Purview DLP - Sensitive Data Policy Match », elle-même retirée au profit de la règle native 806. Le fichier reste disponible dans [`rules/retirees/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/retirees) pour les environnements où cette règle native n'existe pas.
 
 Une politique de prévention contre la perte de données Microsoft Purview a détecté et bloqué le partage de données sensibles.
 
@@ -2095,26 +2382,28 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1567/
   - https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp
-description: 'Une politique DLP Microsoft Purview a détecté et bloqué le partage de données sensibles (DLPRuleMatch / DlpRuleMatch). La casse variable est couverte par regexMatch. Next Steps: 1. Identifier la politique via log.PolicyName. 2. Identifier les données sensibles via log.SensitiveInfoDetectionIsIncluded. 3. Vérifier l''expéditeur via origin.user. 4. Confirmer si le partage était intentionnel. 5. Escalader si destinataire externe et données classifiées.'
+description: 'Une politique DLP Microsoft Purview a détecté et bloqué le partage de données sensibles (DLPRuleMatch / DlpRuleMatch). La casse variable est couverte par regexMatch. Next Steps: 1. Identifier la politique via event.PolicyName. 2. Identifier les données sensibles via event.SensitiveInfoDetectionIsIncluded. 3. Vérifier l''expéditeur via origin.user. 4. Confirmer si le partage était intentionnel. 5. Escalader si destinataire externe et données classifiées.'
 where: |-
   regexMatch("action", "(?i)dlprulematch") &&
-  contains("log.Workload", "Exchange")
+  contains("event.Workload", "Exchange")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Test de déclenchement :** envoyer depuis `demo@lan.local` vers une adresse externe un email contenant des numéros AVS couverts par `DLP-Protection-nLPD-demo`. L'alerte contient `log.PolicyName`, `log.RuleName` et `log.ExchangeMetaData`.
+**Test de déclenchement :** envoyer depuis `demo@lan.local` vers une adresse externe un email contenant des numéros AVS couverts par `DLP-Protection-nLPD-demo`. L'alerte contient `event.PolicyName`, `event.RuleName` et `event.ExchangeMetaData`.
 
 ---
 
 ### M12 : Exchange External Mailbox Access
 
-Un accès externe à une boîte aux lettres Exchange Online a été détecté. L'event `MailItemsAccessed` avec `log.ExternalAccess = true` indique qu'un compte ou une application externe au tenant a accédé aux emails d'un utilisateur. **Midnight Blizzard (APT29)** a utilisé ce vecteur pour exfiltrer les emails de cibles diplomatiques via des applications OAuth malveillantes en 2023-2024.
+Un accès externe à une boîte aux lettres Exchange Online a été détecté. L'event `MailItemsAccessed` avec `event.ExternalAccess = true` indique qu'un compte ou une application externe au tenant a accédé aux emails d'un utilisateur. **Midnight Blizzard (APT29)** a utilisé ce vecteur pour exfiltrer les emails de cibles diplomatiques via des applications OAuth malveillantes en 2023-2024.
 
 **Validation dans ce lab :** aucun event `MailItemsAccessed` avec `ExternalAccess = true` n'est présent en base : la règle est validée logiquement et déclenchera dès qu'un accès externe effectif se produira.
 
 **Technique MITRE :** T1114.002 · Email Collection: Remote Email Collection
+
+⚠️ **Statut v11.3.0 :** non testable. Les seuls événements `ExternalAccess = true` des 90 derniers jours sont des opérations internes de Microsoft ; le champ désigne un accès par un tiers extérieur à l'organisation, impossible à provoquer dans le lab.
 
 ```yaml
 name: Exchange - External or Admin Access to Mailbox Detected
@@ -2130,11 +2419,11 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1114/002/
   - https://learn.microsoft.com/en-us/purview/audit-mailitemsaccessed
-description: 'Un accès externe à une boîte Exchange a été détecté via les events MailItemsAccessed (RecordType 50). Deux patterns sont couverts : accès par délégation depuis une application tierce (LogonType 1) ou accès administrateur à la boîte d''un autre utilisateur (LogonType 2). Ces patterns peuvent indiquer une règle de redirection externe, un accès post-compromission via un token OAuth, ou un abus de droits administrateur. Next Steps: 1. Identifier l''application accédant à la boîte via log.AppId. 2. Vérifier si log.ExternalAccess est true (accès depuis hors organisation). 3. Identifier la boîte cible via log.MailboxOwnerUPN. 4. Contrôler les emails accédés dans les folders listés. 5. Vérifier si des règles inbox ont été créées depuis cet accès (action InboxRuleCreated).'
+description: 'Un accès externe à une boîte Exchange a été détecté via les events MailItemsAccessed (RecordType 50). Deux patterns sont couverts : accès par délégation depuis une application tierce (LogonType 1) ou accès administrateur à la boîte d''un autre utilisateur (LogonType 2). Ces patterns peuvent indiquer une règle de redirection externe, un accès post-compromission via un token OAuth, ou un abus de droits administrateur. Next Steps: 1. Identifier l''application accédant à la boîte via event.AppId. 2. Vérifier si event.ExternalAccess est true (accès depuis hors organisation). 3. Identifier la boîte cible via event.MailboxOwnerUPN. 4. Contrôler les emails accédés dans les folders listés. 5. Vérifier si des règles inbox ont été créées depuis cet accès (action InboxRuleCreated).'
 where: |-
   equals("action", "MailItemsAccessed") &&
-  contains("log.Workload", "Exchange") &&
-  equals("log.ExternalAccess", true)
+  contains("event.Workload", "Exchange") &&
+  equals("event.ExternalAccess", true)
 afterEvents: []
 groupBy: []
 deduplicateBy: []
@@ -2189,9 +2478,11 @@ Une tentative de connexion a été bloquée par une politique d'Accès Condition
 
 **Note nLPD :** une politique CA temporelle doit être documentée dans le registre des activités de traitement comme contrôle d'accès système (et non évaluation des employés), communiquée aux utilisateurs dans la politique de sécurité IT, et appliquée de manière proportionnée au risque identifié.
 
-**Lacune documentée :** `ConditionalAccessStatus` des Sign-in logs Entra ID n'est pas collecté par le connecteur O365 d'UTMStack. La règle M14 contourne cette limitation via `log.LogonError = BlockedByConditionalAccess`, présent dans les events `Audit.AzureActiveDirectory` collectés.
+**Lacune documentée :** `ConditionalAccessStatus` des Sign-in logs Entra ID n'est pas collecté par le connecteur O365 d'UTMStack. La règle M14 contourne cette limitation via `event.LogonError = BlockedByConditionalAccess`, présent dans les events `Audit.AzureActiveDirectory` collectés.
 
 **Technique MITRE :** T1078.004 · Valid Accounts: Cloud Accounts
+
+✅ **Statut v11.3.0 :** validée par un test scripté (stratégie de blocage ciblant un seul compte de test, `ErrorNumber 53003`).
 
 ```yaml
 name: O365 - Sign-In Blocked by Conditional Access Policy
@@ -2207,24 +2498,26 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1078/004/
   - https://learn.microsoft.com/en-us/entra/identity/conditional-access/overview
-description: 'Une tentative de connexion a été bloquée par une politique d''Accès Conditionnel (ErrorNumber 53003, LogonError BlockedByConditionalAccess). Note nLPD : le déploiement d''une CA temporelle doit être documenté dans le registre des activités de traitement et communiqué aux utilisateurs. Next Steps: 1. Identifier le compte via origin.user. 2. Identifier l''IP via origin.ip et géolocalisation. 3. Vérifier si la connexion était légitime (déplacement, décalage horaire). 4. Corréler avec d''autres events du même compte dans les 24h. 5. Si suspect, réinitialiser le mot de passe et révoquer les sessions.'
+description: 'Une tentative de connexion a été bloquée par une politique d''Accès Conditionnel Entra ID (ErrorNumber 53003, LogonError BlockedByConditionalAccess). Dans ce lab, la politique CA-M14-SignIn-Outside-Hours-ReportOnly bloque les connexions en dehors des heures ouvrables (lundi-vendredi 07h00-19h00 CEST) et le week-end entier. Une connexion bloquée hors heures peut indiquer une tentative d''accès par un attaquant ayant compromis des credentials valides, ou un accès non autorisé depuis un fuseau horaire inhabituel. Note nLPD : cette règle s''appuie sur une politique CA temporelle dont le déploiement doit être documenté dans le registre des activités de traitement comme contrôle d''accès système, et communiqué aux utilisateurs dans la politique de sécurité IT. Next Steps: 1. Identifier le compte bloqué via origin.user. 2. Identifier l''IP source via origin.ip et la géolocalisation. 3. Vérifier si la connexion était légitime (employé en déplacement, décalage horaire) ou suspecte (pays inhabituel, IP de datacenter). 4. Corréler avec d''autres events du même compte (UserLoginFailed, MFA prompts) dans les 24h précédentes. 5. Si suspect, forcer la réinitialisation du mot de passe et révoquer les sessions actives.'
 where: |-
   equals("action", "UserLoginFailed") &&
-  equals("log.LogonError", "BlockedByConditionalAccess")
+  equals("event.LogonError", "BlockedByConditionalAccess")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Test de déclenchement :** créer la politique CA, ajouter la condition temporelle via Graph API (procédure ci-dessus), passer en mode Activé. Se connecter depuis un compte non exclu en dehors des heures autorisées. L'alerte contient `log.LogonError = BlockedByConditionalAccess`, `log.ErrorNumber = 53003`, et le compte bloqué dans `origin.user`.
+**Test de déclenchement :** créer la politique CA, ajouter la condition temporelle via Graph API (procédure ci-dessus), passer en mode Activé. Se connecter depuis un compte non exclu en dehors des heures autorisées. L'alerte contient `event.LogonError = BlockedByConditionalAccess`, `event.ErrorNumber = 53003`, et le compte bloqué dans `origin.user`.
 
 ---
 
 ### M-new-1 : Privileged Role Assigned in Entra ID
 
+> 🗄️ **Retirée en v11.3.0.** Couverte par la règle native 1440 de la v11.3.0. Le fichier reste disponible dans [`rules/retirees/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/retirees) pour les environnements où cette règle native n'existe pas.
+
 Un compte utilisateur a été assigné à un rôle Entra ID. Contrairement à M6 qui couvre les groupes, cette règle cible les rôles d'administration Entra ID : Global Administrator, Security Administrator, Privileged Role Administrator, etc. Dans un scénario post-compromission (AiTM, CVE-2026-69836), l'attribution d'un rôle privilégié est le vecteur de persistance le plus critique : il confère des droits d'administration permanents indépendamment de toute rotation de mot de passe utilisateur.
 
-Le nom du rôle attribué est visible dans `log.ModifiedProperties` (champ `Role.DisplayName`) : non filtrable par le moteur UTMStack mais lisible dans l'alerte pour l'investigation.
+Le nom du rôle attribué est visible dans `event.ModifiedProperties` (champ `Role.DisplayName`) : non filtrable par le moteur UTMStack mais lisible dans l'alerte pour l'investigation.
 
 **Technique MITRE :** T1098.003 · Account Manipulation: Additional Cloud Roles
 
@@ -2242,10 +2535,10 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1098/003/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
-description: 'Un compte utilisateur a été assigné à un rôle Entra ID (Add member to role., Workload AzureActiveDirectory). Contrairement à M6 qui couvre les groupes, cette règle cible les rôles d''administration Entra ID, Global Administrator, Security Administrator, Privileged Role Administrator, etc. Dans un scénario post-CVE-2026-69836 ou post-compromission AiTM, l''attribution d''un rôle privilégié est le vecteur de persistance le plus critique. Le nom du rôle attribué est visible dans log.ModifiedProperties (Role.DisplayName). Les attributions automatiques par ServicePrincipals Microsoft sont exclues. Next Steps: 1. Identifier le compte assigné via log.ObjectId. 2. Identifier le rôle attribué via log.ModifiedProperties (Role.DisplayName). 3. Vérifier si origin.user est autorisé à attribuer ce rôle. 4. Retirer l''attribution si non autorisée via Entra ID → Rôles et administrateurs. 5. Révoquer toutes les sessions actives du compte assigné si compromission suspectée.'
+description: 'Un compte utilisateur a été assigné à un rôle Entra ID (Add member to role., Workload AzureActiveDirectory). Contrairement à M6 qui couvre les groupes, cette règle cible les rôles d''administration Entra ID, Global Administrator, Security Administrator, Privileged Role Administrator, etc. Dans un scénario post-CVE-2026-69836 ou post-compromission AiTM, l''attribution d''un rôle privilégié est le vecteur de persistance le plus critique. Le nom du rôle attribué est visible dans event.ModifiedProperties (Role.DisplayName). Les attributions automatiques par ServicePrincipals Microsoft sont exclues. Next Steps: 1. Identifier le compte assigné via event.ObjectId. 2. Identifier le rôle attribué via event.ModifiedProperties (Role.DisplayName). 3. Vérifier si origin.user est autorisé à attribuer ce rôle. 4. Retirer l''attribution si non autorisée via Entra ID → Rôles et administrateurs. 5. Révoquer toutes les sessions actives du compte assigné si compromission suspectée.'
 where: |-
   equals("action", "Add member to role.") &&
-  contains("log.Workload", "AzureActiveDirectory") &&
+  contains("event.Workload", "AzureActiveDirectory") &&
   !contains("origin.user", "ServicePrincipal_")
 afterEvents: []
 groupBy: []
@@ -2254,11 +2547,13 @@ deduplicateBy: []
 
 **Discriminant M6 vs M-new-1 :** M6 filtre sur `Add member to group.` (groupes Entra ID), M-new-1 sur `Add member to role.` (rôles d'administration). Les deux actions coexistent dans les logs O365 avec des libellés distincts.
 
-**Test de déclenchement :** dans le portail Entra ID → Rôles et administrateurs → sélectionner un rôle (ex : Lecteur de sécurité) → Ajouter des attributions → sélectionner un compte de test. L'alerte contient `log.ObjectId` (UPN du compte assigné) et `log.ModifiedProperties` avec `Role.DisplayName` (nom du rôle attribué). Validé en live le 22 août 2026 sur ce lab.
+**Test de déclenchement :** dans le portail Entra ID → Rôles et administrateurs → sélectionner un rôle (ex : Lecteur de sécurité) → Ajouter des attributions → sélectionner un compte de test. L'alerte contient `event.ObjectId` (UPN du compte assigné) et `event.ModifiedProperties` avec `Role.DisplayName` (nom du rôle attribué). Validé en live le 22 août 2026 sur ce lab.
 
 ---
 
 ### M-new-2 : Credentials Added to Existing Service Principal
+
+> 🗄️ **Retirée en v11.3.0.** Couverte par la règle native 840 de la v11.3.0, qui détecte aussi les secrets ajoutés depuis le portail (que M-new-2 ne voyait pas). Le fichier reste disponible dans [`rules/retirees/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/retirees) pour les environnements où cette règle native n'existe pas.
 
 Un secret ou certificat a été ajouté sur un service principal Entra ID existant. Vecteur de persistance documenté dans les incidents post-compromission d'infrastructure d'identité : un attaquant ayant obtenu un accès temporaire ajoute ses propres credentials sur un service principal disposant déjà de droits étendus, pour maintenir un accès persistant même après réinitialisation des mots de passe utilisateurs.
 
@@ -2280,16 +2575,16 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1098/001/
   - https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-audit-logs
-description: 'Un secret ou certificat a été ajouté sur un service principal Entra ID existant (Add service principal credentials., Workload AzureActiveDirectory). Vecteur de persistance classique, à auditer après CVE-2026-69836 : un attaquant ayant obtenu un accès temporaire ajoute ses propres credentials sur un service principal existant pour maintenir un accès persistant même après réinitialisation des mots de passe utilisateur. Le service principal concerné est visible dans log.ObjectId. Attention : cette règle couvre uniquement les ajouts via API Graph (addPassword), l''interface graphique Entra ID génère un libellé différent (Update application, Certificates and secrets management) et ne déclenche pas cette règle. Validée en live le 22 août 2026. Next Steps: 1. Identifier le service principal concerné via log.ObjectId. 2. Vérifier l''acteur via origin.user, un acteur inconnu ou un ServicePrincipal non Microsoft est suspect. 3. Auditer les permissions du service principal concerné. 4. Supprimer les credentials non autorisés via Entra ID → Applications d''entreprise → Certificats et secrets. 5. Investiguer les connexions effectuées via ce service principal depuis l''ajout des credentials.'
+description: 'Un secret ou certificat a été ajouté sur un service principal Entra ID existant (Add service principal credentials., Workload AzureActiveDirectory). Vecteur de persistance classique, à auditer après CVE-2026-69836 : un attaquant ayant obtenu un accès temporaire ajoute ses propres credentials sur un service principal existant pour maintenir un accès persistant même après réinitialisation des mots de passe utilisateur. Le service principal concerné est visible dans event.ObjectId. Attention : cette règle couvre uniquement les ajouts via API Graph (addPassword), l''interface graphique Entra ID génère un libellé différent (Update application, Certificates and secrets management) et ne déclenche pas cette règle. Validée en live le 22 août 2026. Next Steps: 1. Identifier le service principal concerné via event.ObjectId. 2. Vérifier l''acteur via origin.user, un acteur inconnu ou un ServicePrincipal non Microsoft est suspect. 3. Auditer les permissions du service principal concerné. 4. Supprimer les credentials non autorisés via Entra ID → Applications d''entreprise → Certificats et secrets. 5. Investiguer les connexions effectuées via ce service principal depuis l''ajout des credentials.'
 where: |-
   equals("action", "Add service principal credentials.") &&
-  contains("log.Workload", "AzureActiveDirectory")
+  contains("event.Workload", "AzureActiveDirectory")
 afterEvents: []
 groupBy: []
 deduplicateBy: []
 ```
 
-**Note de validation :** validée en live le 22 août 2026 via API Graph (`addPassword`) sur le service principal `Portals-Docs divers`. Latence O365 → UTMStack : ~4 minutes. Champs confirmés : `action = "Add service principal credentials."` (filtre YAML exact), `log.ObjectId` (URI du service principal ciblé), `log.ModifiedProperties` avec `KeyDescription` (nom du credential ajouté visible), `origin.user` (acteur), `log.Target` (nom de l'application ciblée).
+**Note de validation :** validée en live le 22 août 2026 via API Graph (`addPassword`) sur le service principal `Portals-Docs divers`. Latence O365 → UTMStack : ~4 minutes. Champs confirmés : `action = "Add service principal credentials."` (filtre YAML exact), `event.ObjectId` (URI du service principal ciblé), `event.ModifiedProperties` avec `KeyDescription` (nom du credential ajouté visible), `origin.user` (acteur), `event.Target` (nom de l'application ciblée).
 
 **Point critique : deux libellés distincts selon le vecteur d'ajout :**
 - Via **API Graph** (`addPassword`) → génère `Add service principal credentials.` → **déclenche M-new-2** ✅
@@ -2320,48 +2615,134 @@ Content-Type: application/json
 }
 ```
 
-L'alerte contient `log.ModifiedProperties` avec `KeyDescription` (nom et identifiant du credential ajouté) et `log.Target` avec le nom de l'application ciblée.
+L'alerte contient `event.ModifiedProperties` avec `KeyDescription` (nom et identifiant du credential ajouté) et `event.Target` avec le nom de l'application ciblée.
 
 ---
 
-### Annexe W8 : Run Key via audit natif registre (EID 4657) : non implémentable
+## Clones de règles natives
 
-Cette annexe documente la tentative d'implémentation d'une règle de détection de persistance via les clés Run/RunOnce sur Windows 11, où l'agent UTMStack ne collecte pas Sysmon (limitation confirmée, GitHub issue #2446).
+La v11.3.0 apporte beaucoup de règles natives, et certaines produisent des faux positifs dans un environnement donné. Comme le backend réécrit les règles natives à chaque démarrage, l'exclusion ne peut pas être ajoutée directement en base : elle disparaîtrait au prochain redémarrage (voir [la méthode du clone](#corriger-une-règle-native--la-méthode-du-clone)). Chaque clone reprend la condition native mot pour mot, ajoute l'exclusion, et la règle native est désactivée par son nom :
 
-**Deux GPOs en place dans ce lab :**
-- `Audit HKCU RunKeys` (Configuration Utilisateur) : couvre `HKCU\...\Run` et `HKCU\...\RunOnce`
-- `Audit RUN KEY local machine` (Configuration Ordinateur) : couvre `HKLM\...\Run` et `HKLM\...\RunOnce`
+```bash
+PG=$(docker ps -qf name=postgres | head -1)
+docker exec -i $PG psql -U postgres -d utmstack -c "UPDATE utm_correlation_rules SET rule_active=false WHERE rule_name='<nom exact de la règle native>' AND system_owner=true;"
+```
 
-**L'EID 4657 est bien collecté** par UTMStack. Le champ `ObjectName` (chemin de la clé modifiée) est présent dans le champ `raw` mais **n'est pas mappé** dans `log.data`. Le moteur de corrélation n'évalue pas `raw` : confirmé empiriquement.
+Puis redémarrer les event-processors. Le backend conserve le statut inactif lors de ses resynchronisations : vérifié en redémarrant le backend après la désactivation.
 
-**Faux positif documenté :** Edge et EdgeWebView écrivent dans les clés RunOnce lors de leurs mises à jour.
+**Contrepartie :** le clone ne suit plus les évolutions de la règle native. À chaque mise à jour d'UTMStack, comparer la définition native avec celle du clone et reporter les changements.
 
-**Deux voies de résolution dans les versions futures :**
-1. Mapping de `ObjectName` dans `log.data` pour EID 4657
-2. Levée de la limitation Sysmon sur Windows 11 (issue #2446) : S5 couvrirait alors ce vecteur automatiquement
+### Suricata : Medium level Suricata alert (clone de la 876)
 
-**Alternative actuelle :** MDE Plan 1 détecte nativement T1547.001 via son moteur ASEP, ce qui a été confirmé en conditions réelles lors des tests de ce lab.
+La règle native se déclenche sur toute alerte Suricata de sévérité moyenne. Dans le lab, elle produisait des dizaines d'alertes par jour sur des balayages venus d'Internet vers le WAN, déjà bloqués par Suricata en mode IPS.
+
+**Exclusions ajoutées :**
+
+- le trafic entrant vers le WAN d'OPNsense (`192.168.1.203` dans le lab, à remplacer) **et** déjà bloqué (`event.alert.action = blocked`). Le trafic sortant bloqué reste détecté : un hôte du LAN qui tente de joindre une destination malveillante est un signal ;
+- le trafic Microsoft Delivery Optimization, identifié par son agent HTTP.
+
+**Autre correction :** la règle native déclarait `adversary: target`, ce qui présentait le WAN comme la source et l'attaquant comme la cible. Le clone utilise `adversary: origin`.
+
+✅ **Statut v11.3.0 :** en service dans le lab depuis le 3 novembre 2026.
+
+```yaml
+name: Medium level Suricata alert (lab)
+dataTypes:
+  - suricata
+impact:
+  confidentiality: 2
+  integrity: 2
+  availability: 2
+category: Discovery
+technique: T1046 - Network Service Discovery
+adversary: origin
+references:
+  - https://docs.suricata.io/en/latest/rules/meta.html
+description: 'Alerte Suricata de sévérité moyenne : reconnaissance, anomalie de protocole ou tentative d''exploitation non bloquée. Next Steps: 1. Identifier la signature via event.alert.signature et sa catégorie. 2. Vérifier la direction du flux (event.direction) : un flux entrant vers le WAN 192.168.1.203 vise un service publié par NAT (reverse proxy nginx vers la sous-CA), un flux sortant désigne un hôte du LAN masqué derrière le NAT, à identifier dans les logs NAT d''OPNsense. 3. Contrôler si le flux a été bloqué (event.alert.action). 4. Pour un flux entrant, vérifier les logs du service ciblé et le code de réponse. 5. Pour un flux sortant, investiguer le processus à l''origine sur l''hôte du LAN. Note technique : clone de la règle native 876 (v11.3.0), qui exclut le trafic entrant vers le WAN déjà bloqué et le trafic Microsoft Delivery Optimization.'
+where: |-
+  equals("event.eventType", "alert") &&
+  equals("severity", "warning") &&
+  !(equals("target.ip", "192.168.1.203") && equals("event.alert.action", "blocked")) &&
+  !contains("event.http.http_user_agent", "Microsoft-Delivery-Optimization")
+afterEvents:
+  - indexPattern: v11-log-suricata-*
+    with:
+      - field: target.ip
+        operator: filter_term
+        value: "{{.target.ip}}"
+    or: null
+    within: 15m
+    count: 5
+groupBy: []
+deduplicateBy: []
+```
+
+### Windows : Suspicious PowerShell (clone de la 1424)
+
+La règle native « Windows: Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) » se déclenche sur le contenu des blocs de scripts (EID 4104). Dans le lab, elle a produit deux alertes sur DC01 : un script du dossier `DataCollection` de Microsoft Defender for Endpoint, le scanner Log4Shell (CVE-2021-44228) signé par Microsoft. Les deux alertes correspondent aux deux fragments 4104 du même script.
+
+**Exclusion ajoutée :** les scripts exécutés depuis `…\Windows Defender Advanced Threat Protection\DataCollection\`. Écrire dans ce dossier demande les droits SYSTEM ou administrateur : l'exclusion ne réduit la couverture que face à un attaquant déjà privilégié. Le garde `exists("event.data.Path")` est nécessaire, car un bloc tapé dans une console ne porte pas de chemin.
+
+✅ **Statut v11.3.0 :** validée sur DC01, après activation de la journalisation des blocs de scripts (voir les prérequis de collecte).
+
+```yaml
+name: Windows - Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) (lab)
+dataTypes:
+  - wineventlog
+impact:
+  confidentiality: 2
+  integrity: 3
+  availability: 2
+category: Execution
+technique: 'T1059.001 - Command and Scripting Interpreter: PowerShell'
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1059/001/
+description: 'Contenu de script PowerShell à haut risque détecté dans un événement 4104 (Script Block Logging) : téléchargement suivi d''exécution (download cradle), exécution encodée ou masquée, chargement réflectif ou contournement d''AMSI. Next Steps: 1. Lire le contenu du script via event.eventDataScriptBlockText et son chemin via event.data.Path. 2. Identifier l''hôte via dataSource et le compte ayant lancé PowerShell. 3. Si le script télécharge du contenu, identifier l''URL et l''IP de destination, puis rechercher ces flux dans les logs OPNsense et Suricata. 4. Rechercher les autres fragments du même script (un long script produit plusieurs 4104 portant le même ScriptBlockId). 5. Isoler l''hôte si le script n''est pas légitime. Note technique : clone de la règle native 1424 (v11.3.0, version 1.3.0 du fournisseur). La condition native est conservée à l''identique, y compris l''exclusion du harnais d''instrumentation « sentinel ». Le clone exclut en plus les scripts exécutés depuis le dossier DataCollection de Microsoft Defender for Endpoint (scanner Log4Shell signé Microsoft, CVE-2021-44228). Écrire dans ce dossier demande les droits SYSTEM ou administrateur, l''exclusion ne réduit donc la couverture que face à un attaquant déjà privilégié.'
+where: |-
+  equals("event.eventCode", "4104") &&
+  !(exists("event.data.Path") && contains("event.data.Path", "\\Windows Defender Advanced Threat Protection\\DataCollection\\")) &&
+  !regexMatch("event.eventDataScriptBlockText", "(?i)(sentinelbreakpoints|windows.sentinel.[0-9]|po_wer_spl_oit_indicators)") &&
+  (regexMatch("event.eventDataScriptBlockText", "(?i)(amsiutils|amsiinitfailed|amsiscanbuffer|virtualalloc|writeprocessmemory|getdelegateforfunctionpointer|invoke-mimikatz|invoke-shellcode|invoke-dllinjection|createremotethread)") || (regexMatch("event.eventDataScriptBlockText", "(?i)(downloadstring|downloadfile|downloaddata|invoke-webrequest|net.webclient|start-bitstransfer)") && regexMatch("event.eventDataScriptBlockText", "(?i)(iex|invoke-expression|-enc |-encodedcommand|-w hidden|-windowstyle hidden|frombase64string)")))
+afterEvents: []
+groupBy: []
+deduplicateBy: []
+```
+
+**Test de déclenchement :** sur une machine où la journalisation des blocs de scripts est activée, dans une **nouvelle** console PowerShell :
+
+```powershell
+IEX (New-Object Net.WebClient).DownloadString('http://127.0.0.1:1/test')
+```
+
+Rien n'écoute sur le port 1 : le téléchargement échoue, mais le bloc est journalisé avant son exécution et l'alerte se déclenche. Vérifier d'abord la présence du 4104 en local :
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-PowerShell/Operational'; Id=4104; StartTime=(Get-Date).AddMinutes(-5)} |
+  Where-Object Message -match 'DownloadString'
+```
 
 ---
 
 ## Matrice de couverture MITRE ATT&CK
 
-Le tableau suivant récapitule les techniques ATT&CK déclarées dans le champ `technique` des fichiers YAML publiés (une technique par règle). Les règles non implémentables (M13, W8) figurent pour mémoire avec la mention *(annexe)*.
+Le tableau suivant récapitule les techniques ATT&CK déclarées dans le champ `technique` des fichiers YAML actifs en v11.3.0 (une technique par règle). Les règles retirées n'y figurent plus : leurs techniques sont couvertes par les règles natives qui les remplacent. Les règles Azure y figurent bien qu'elles ne soient pas revalidées. M13, non implémentable, figure pour mémoire.
 
 | Technique | ID | Règles |
 |---|---|---|
 | OS Credential Dumping LSASS Memory | T1003.001 | S2 |
 | OS Credential Dumping NTDS | T1003.003 | S4 |
 | Rootkit | T1014 | W5b |
+| Network Service Discovery | T1046 | Clone 876 |
 | Scheduled Task | T1053.005 | W4 |
+| Command and Scripting Interpreter: PowerShell | T1059.001 | Clone 1424 |
 | Software Deployment Tools | T1072 | A6 |
-| Valid Accounts | T1078 | M3 (Impossible Travel) |
-| Valid Accounts Cloud Accounts | T1078.004 | A7, M5, M14 |
-| Account Manipulation | T1098 | W2, W3 |
-| Account Manipulation Additional Cloud Credentials | T1098.001 | M-new-2 |
-| Account Manipulation Additional Cloud Roles | T1098.003 | M6, M-new-1 |
+| Valid Accounts | T1078 | Impossible Travel |
+| Valid Accounts Cloud Accounts | T1078.004 | A7, M14 |
+| Account Manipulation | T1098 | W3 |
+| Account Manipulation Additional Cloud Roles | T1098.003 | M6 |
 | Brute Force | T1110 | W1 |
-| Brute Force Password Guessing | T1110.001 | Brute Force, L1 |
+| Brute Force Password Guessing | T1110.001 | L1, Brute Force |
 | Brute Force Password Spraying | T1110.003 | Password Spray |
 | Email Collection Remote Email Collection | T1114.002 | M12 |
 | Create Account Cloud Account | T1136.003 | M7 |
@@ -2371,8 +2752,9 @@ Le tableau suivant récapitule les techniques ATT&CK déclarées dans le champ `
 | Data Destruction | T1485 | A2, A9, A11 |
 | Steal Application Access Token | T1528 | M2 |
 | System Shutdown/Reboot | T1529 | A3 |
+| Steal Web Session Cookie | T1539 | Mailbox Activity |
 | Create or Modify System Process Windows Service | T1543.003 | W5a |
-| Boot or Logon Autostart Execution Registry Run Keys | T1547.001 | S5, W8 *(annexe)* |
+| Boot or Logon Autostart Execution Registry Run Keys | T1547.001 | S5, S5b |
 | Abuse Elevation Control Mechanism Sudo and Sudo Caching | T1548.003 | L2 |
 | Pass the Hash | T1550.002 | W6 |
 | Unsecured Credentials | T1552 | A1, A5 |
@@ -2382,8 +2764,7 @@ Le tableau suivant récapitule les techniques ATT&CK déclarées dans le champ `
 | Impair Defenses Disable or Modify Tools | T1562.001 | WD2, WD3, WD5 |
 | Impair Defenses Disable or Modify Cloud Firewall | T1562.007 | A4a, A4b |
 | Impair Defenses Disable Cloud Logs | T1562.008 | A8, M8 |
-| Exfiltration Over Web Service | T1567 | DLP Sensitive Data, M10, M11, M13 *(annexe)* |
-
+| Exfiltration Over Web Service | T1567 | M10, M13 *(non implémentable)* |
 
 ---
 
@@ -2393,9 +2774,11 @@ Ce chapitre illustre une approche de détection en trois axes :
 
 **Détection comportementale pérenne** : les règles W1 à A6 documentées ici couvrent des techniques ATT&CK qui restent pertinentes indépendamment des CVE publiées. Une attaque par Kerberoasting (W7), par Pass-the-Hash (W6), par consentement OAuth malveillant (M2) ou par listing de clés Azure (A1) utilise les mêmes mécanismes depuis des années. Ces règles constituent le socle de détection permanent, indépendamment du calendrier des patchs.
 
-**Réponse événementielle aux CVE critiques** : certaines vulnérabilités nécessitent une réponse immédiate dans la fenêtre entre publication et déploiement du patch. CVE-2026-41089 (Netlogon RCE, CVSS 9.8, publiée en mai 2026) affectait les DCs du lab sous Windows Server 2025 : la réponse adaptée est le patch des contrôleurs de domaine, distribué par Windows Update. CVE-2026-62869 (Entra ID Spoofing, août 2026) concerne un service cloud Microsoft : M5 et M3 peuvent signaler des connexions anormales consécutives, sans détecter la vulnérabilité elle-même. CVE-2026-69836 (Entra ID RCE, CVSS 10.0, corrigée côté Microsoft, initialement signalée comme exploitée puis corrigée par Microsoft en « non exploitée ») illustre un cas différent : la vulnérabilité est dans l'infrastructure Microsoft elle-même, indétectable côté client. La réponse adaptée est un audit rétrospectif des journaux Entra ID (role assignments, credentials ajoutés sur des service principals, modifications de Conditional Access) et des règles comportementales couvrant les actions post-exploitation : M-new-1 et M-new-2 ont été ajoutées à cette fin. La bonne pratique est d'évaluer si une règle existante couvre déjà le comportement exploité par la CVE avant d'en créer une nouvelle.
+**Réponse événementielle aux CVE critiques** : certaines vulnérabilités nécessitent une réponse immédiate dans la fenêtre entre publication et déploiement du patch. CVE-2026-41089 (Netlogon RCE, CVSS 9.8, publiée en mai 2026) affectait les DCs du lab sous Windows Server 2025 : la réponse adaptée est le patch des contrôleurs de domaine, distribué par Windows Update. CVE-2026-62869 (Entra ID Spoofing, août 2026) concerne un service cloud Microsoft : Impossible Travel et Mailbox Activity peuvent signaler des connexions anormales consécutives, sans détecter la vulnérabilité elle-même. CVE-2026-69836 (Entra ID RCE, CVSS 10.0, corrigée côté Microsoft, initialement signalée comme exploitée puis corrigée par Microsoft en « non exploitée ») illustre un cas différent : la vulnérabilité est dans l'infrastructure Microsoft elle-même, indétectable côté client. La réponse adaptée est un audit rétrospectif des journaux Entra ID (role assignments, credentials ajoutés sur des service principals, modifications de Conditional Access) et des règles comportementales couvrant les actions post-exploitation : M-new-1 et M-new-2 ont été ajoutées à cette fin, puis retirées en v11.3.0 au profit des règles natives qui couvrent les mêmes actions. La bonne pratique est d'évaluer si une règle existante couvre déjà le comportement exploité par la CVE avant d'en créer une nouvelle.
 
 **Tuning continu** : les faux positifs identifiés lors des tests font partie du processus normal. Quelques exemples concrets issus de ce lab : VMware Tools qui accède légitimement à LSASS (S2), `PcaSvc.dll` qui charge rundll32 lors de diagnostics système (S1), la différence entre `Administrateurs` et `Administrators` selon la langue du système (W2), les services automatiques Azure qui listent régulièrement les clés de stockage (A1), et la boucle DLP/notification décrite en détail dans la section M ci-dessus. Chaque exclusion documentée améliore la précision sans sacrifier la couverture. L'approche défensive retenue, capturer large, exclure chirurgicalement, est préférable à une liste blanche de patterns dangereux.
+
+**Revalider après chaque mise à jour** : la migration v11.3.0 a montré qu'une règle peut cesser de fonctionner sans le moindre message d'erreur. Elle a aussi révélé trois règles (S3, WD1, S4) qui n'avaient en réalité jamais fonctionné ou qui manquaient leur cible depuis leur publication, sans que rien ne le signale. Une règle n'est validée que par un événement de test réel qui produit une alerte. Après chaque mise à jour majeure d'UTMStack, rejouer les tests de ce chapitre, et vérifier au passage si une règle native nouvelle ne rend pas une règle personnalisée redondante.
 
 **Complémentarité MDE et UTMStack** : MDE bloque en temps réel (S1 LOLBAS, S3 named pipes, S4 NTDS), UTMStack contextualise, corrèle et conserve la trace pour l'investigation. Les deux couches se sont illustrées tout au long de ce chapitre, une alerte MDE sans corrélation SIEM perd son contexte ; une règle SIEM sans EDR ne bloque rien. La valeur du lab est précisément de faire fonctionner ces deux systèmes ensemble sur des événements réels, pas en simulation.
 
