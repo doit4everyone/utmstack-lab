@@ -1,6 +1,6 @@
 ---
 title: "Chapitre 11 : Règles de corrélation YAML personnalisées | DoIt4Everyone"
-description: "Création et validation de règles de corrélation YAML personnalisées pour UTMStack v11.3.0 CE : séries W (Windows natif), WD (Windows Defender), S (Sysmon via WEF), L (Linux auditd), M (Microsoft 365/Entra ID), A (Azure Activity Log) et clones de règles natives. Migration du schéma log.* vers event.*, règles d'écriture, prérequis de collecte et méthode de correction des règles natives."
+description: "Création et validation de règles de corrélation YAML personnalisées pour UTMStack v11.3.0 CE : séries W (Windows natif), WD (Windows Defender), S (Sysmon via WEF), L (Linux auditd), M (Microsoft 365/Entra ID), A (Azure Activity Log) et clones de règles natives. Migration du schéma log.* vers event.*, bonnes pratiques d'écriture des règles, prérequis de collecte et méthode de correction des règles natives."
 lang: fr
 ---
 <style>
@@ -133,7 +133,7 @@ groupBy: []
 deduplicateBy: []
 ```
 
-### Règles d'écriture (v11.3.0)
+### Bonnes pratiques d'écriture des règles (v11.3.0)
 
 Ces points ont tous été constatés dans le lab. Les ignorer ne produit en général aucune erreur visible : la règle s'importe, reste active et ne se déclenche jamais.
 
