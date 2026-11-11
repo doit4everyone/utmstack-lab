@@ -11,7 +11,7 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1003/001/
   - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
-description: 'Un processus a accédé à la mémoire de lsass.exe avec des droits suspects (Sysmon EID 10). LSASS contient les credentials des sessions actives, un accès non autorisé peut permettre l''extraction de hashes NTLM, tickets Kerberos et mots de passe en clair. Les accès légitimes de MDE, Defender, de l''agent Azure AD Connect Health et les masques 5120 (0x1400, query-only) et 5200 (0x1450, qui inclut VM_READ : choix de tuning à réévaluer) sont exclus. Pour les environnements VMware, utiliser s2-lsass-access-vmware.yml qui exclut vmtoolsd.exe. Next Steps: 1. Identifier le processus source via event.data.SourceImage. 2. Vérifier les droits d''accès via event.data.GrantedAccess, les valeurs 4112 (0x1010) et 5136 (0x1410) sont caractéristiques de Mimikatz et des outils de dumping. Attention : UTMStack stocke ce champ en décimal, pas en hexadécimal. 3. Analyser event.data.CallTrace pour identifier les modules chargés, la présence de frames UNKNOWN indique une DLL non mappée sur disque, signe possible d''injection. 4. Isoler la machine si un outil de dumping est confirmé. 5. Réinitialiser tous les mots de passe si compromise confirmée.'
+description: 'Un processus a accédé à la mémoire de lsass.exe avec des droits suspects (Sysmon EID 10). LSASS contient les credentials des sessions actives, un accès non autorisé peut permettre l''extraction de hashes NTLM, tickets Kerberos et mots de passe en clair. Les accès légitimes de MDE, Defender, de l''agent Azure AD Connect Health et les masques 5120 (0x1400, query-only) et 5200 (0x1450, qui inclut VM_READ : choix de tuning à réévaluer) sont exclus. Pour les environnements VMware, utiliser s2-lsass-access-vmware.yml qui exclut vmtoolsd.exe. Windows Installer (msiexec.exe) est exclu uniquement quand l''accès passe par perfproc.dll : pendant une installation, il interroge les compteurs de performance pour repérer les processus qui utilisent les fichiers à remplacer, et ouvre alors LSASS avec tous les droits (0x1FFFFF), par exemple lors d''une mise à jour des VMware Tools. Next Steps: 1. Identifier le processus source via event.data.SourceImage. 2. Vérifier les droits d''accès via event.data.GrantedAccess, les valeurs 4112 (0x1010) et 5136 (0x1410) sont caractéristiques de Mimikatz et des outils de dumping. Attention : UTMStack stocke ce champ en décimal, pas en hexadécimal. 3. Analyser event.data.CallTrace pour identifier les modules chargés, la présence de frames UNKNOWN indique une DLL non mappée sur disque, signe possible d''injection. 4. Isoler la machine si un outil de dumping est confirmé. 5. Réinitialiser tous les mots de passe si compromise confirmée.'
 where: |-
   equals("event.eventCode", 10) &&
   contains("event.channel", "Sysmon") &&
@@ -23,7 +23,8 @@ where: |-
   !contains("event.data.SourceImage", "Azure AD Connect Health Agent") &&
   !contains("event.data.SourceImage", "UTMStack") &&
   !contains("event.data.SourceImage", "MRT.exe") &&
-  !contains("event.data.SourceImage", "taskmgr.exe")
+  !contains("event.data.SourceImage", "taskmgr.exe") &&
+  !(regexMatch("event.data.SourceImage", "(?i)\\\\system32\\\\msiexec[.]exe$") && exists("event.data.CallTrace") && contains("event.data.CallTrace", "perfproc.dll"))
 afterEvents: []
 groupBy: []
 deduplicateBy: []
