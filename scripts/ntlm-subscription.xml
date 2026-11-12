@@ -18,7 +18,7 @@
       <QueryList>
         <Query Id="0">
           <Select Path="Microsoft-Windows-NTLM/Operational">
-            *[System[EventID=4020 or EventID=4021 or EventID=4022 or EventID=4023 or EventID=4024 or EventID=4025]]
+            *[System[EventID=4020 or EventID=4021 or EventID=4022 or EventID=4023 or EventID=4024 or EventID=4025 or EventID=4032 or EventID=4033 or EventID=8001 or EventID=8002 or EventID=8003 or EventID=8004]]
           </Select>
         </Query>
       </QueryList>
