@@ -10,12 +10,26 @@ technique: T1046 - Network Service Discovery
 adversary: origin
 references:
   - https://docs.suricata.io/en/latest/rules/meta.html
-description: 'Alerte Suricata de sévérité moyenne : reconnaissance, anomalie de protocole ou tentative d''exploitation non bloquée. Next Steps: 1. Identifier la signature via event.alert.signature et sa catégorie. 2. Vérifier la direction du flux (event.direction) : un flux entrant vers le WAN 192.168.1.203 vise un service publié par NAT (reverse proxy nginx vers la sous-CA), un flux sortant désigne un hôte du LAN masqué derrière le NAT, à identifier dans les logs NAT d''OPNsense. 3. Contrôler si le flux a été bloqué (event.alert.action). 4. Pour un flux entrant, vérifier les logs du service ciblé et le code de réponse. 5. Pour un flux sortant, investiguer le processus à l''origine sur l''hôte du LAN. Note technique : clone de la règle native 876 (v11.3.0), qui exclut le trafic entrant vers le WAN déjà bloqué et le trafic Microsoft Delivery Optimization.'
+description: 'Alerte Suricata de sévérité moyenne : reconnaissance, anomalie de protocole ou tentative d''exploitation non bloquée. Next Steps: 1. Identifier la signature via event.alert.signature et sa catégorie. 2. Vérifier la direction du flux (event.direction) : un flux entrant vers le WAN 192.168.1.203 vise un service publié par NAT (reverse proxy nginx vers la sous-CA), un flux sortant désigne un hôte du LAN masqué derrière le NAT, à identifier dans les logs NAT d''OPNsense. 3. Contrôler si le flux a été bloqué (event.alert.action). 4. Pour un flux entrant, vérifier les logs du service ciblé et le code de réponse. 5. Pour un flux sortant, investiguer le processus à l''origine sur l''hôte du LAN. Note technique : clone de la règle native 876 (v11.3.0), qui exclut le trafic entrant vers le WAN déjà bloqué, le trafic Microsoft Delivery Optimization, les réponses 403 du reverse proxy (sid 2101201) et les requêtes du pipeline SOC vers Ollama (port 11434), dont les prompts contiennent des noms de signatures d''attaque. Elle exclut aussi les signatures traitées par la règle « Suricata - Inbound Attack Allowed on WAN (lab) », dont les adresses sont bannies automatiquement par le flow SOAR 5002 : les deux listes de signatures doivent rester identiques.'
 where: |-
   equals("event.eventType", "alert") &&
   equals("severity", "warning") &&
   !(equals("target.ip", "192.168.1.203") && equals("event.alert.action", "blocked")) &&
-  !contains("event.http.http_user_agent", "Microsoft-Delivery-Optimization")
+  !contains("event.http.http_user_agent", "Microsoft-Delivery-Optimization") &&
+  !equals("event.alert.signature_id", 2101201) &&
+  !(equals("origin.ip", "192.168.1.203") && equals("target.port", 11434)) &&
+  !(equals("target.ip", "192.168.1.203") &&
+  equals("event.alert.action", "allowed") &&
+  (equals("event.alert.signature_id", 5024801) ||
+  equals("event.alert.signature_id", 2023753) ||
+  equals("event.alert.signature_id", 1000043) ||
+  equals("event.alert.signature_id", 1000019) ||
+  equals("event.alert.signature_id", 2016683) ||
+  equals("event.alert.signature_id", 2024916) ||
+  equals("event.alert.signature_id", 2034508) ||
+  equals("event.alert.signature_id", 2610542) ||
+  equals("event.alert.signature_id", 2610850) ||
+  regexMatch("event.alert.signature", "^ETN AGGRESSIVE IPs Group [0-9]+$")))
 afterEvents:
   - indexPattern: v11-log-suricata-*
     with:
