@@ -29,7 +29,8 @@ where: |-
   equals("event.alert.signature_id", 2034508) ||
   equals("event.alert.signature_id", 2610542) ||
   equals("event.alert.signature_id", 2610850) ||
-  regexMatch("event.alert.signature", "^ETN AGGRESSIVE IPs Group [0-9]+$")))
+  regexMatch("event.alert.signature", "^ETN AGGRESSIVE IPs Group [0-9]+$") ||
+  regexMatch("event.alert.signature", "^ET SCAN ")))
 afterEvents:
   - indexPattern: v11-log-suricata-*
     with:

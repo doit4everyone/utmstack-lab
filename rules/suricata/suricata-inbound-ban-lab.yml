@@ -11,7 +11,7 @@ adversary: origin
 references:
   - https://attack.mitre.org/techniques/T1190/
   - https://attack.mitre.org/techniques/T1046/
-description: 'Une adresse IP externe a déclenché, vers l''interface WAN d''OPNsense, une signature Suricata de sonde ou d''attaque explicite, et le flux n''a pas été bloqué. Cette règle sert de déclencheur au flow SOAR 5002, qui bannit l''adresse source pendant 24 heures dans CrowdSec. La liste des signatures a été établie à partir d''un bilan de 7 jours des alertes « Medium level Suricata alert (lab) » : sondes SSH et RDP sur port non standard, scans de ports et flood HTTP (règles locales 1000043 et 1000019), tentatives d''exploitation (WebShell, Netgear DGN, Laravel, dépôt git exposé) et listes de réputation ETN AGGRESSIVE IPs. Next Steps: 1. Vérifier dans /var/log/soar_ban.log sur OPNsense que l''adresse a été bannie. 2. Identifier la signature via event.alert.signature et le port visé via target.port. 3. Pour une tentative d''exploitation, vérifier les journaux du service publié (reverse proxy nginx) et le code de réponse. 4. Si l''adresse revient après l''expiration du ban, envisager un blocage permanent. Note technique : 192.168.1.203 est l''interface WAN d''OPNsense dans le lab, à remplacer.'
+description: 'Une adresse IP externe a déclenché, vers l''interface WAN d''OPNsense, une signature Suricata de sonde ou d''attaque explicite, et le flux n''a pas été bloqué. Cette règle sert de déclencheur au flow SOAR 5002, qui bannit l''adresse source pendant 24 heures dans CrowdSec. La liste des signatures a été établie à partir d''un bilan de 7 jours des alertes « Medium level Suricata alert (lab) » : sondes SSH et RDP sur port non standard, scans de ports et flood HTTP (règles locales 1000043 et 1000019), tentatives d''exploitation (WebShell, Netgear DGN, Laravel, dépôt git exposé), listes de réputation ETN AGGRESSIVE IPs, et toute signature ET SCAN (reconnaissance) ajoutée le 12 novembre après un scanner web laissé passer (sid 2010088). Next Steps: 1. Vérifier dans /var/log/soar_ban.log sur OPNsense que l''adresse a été bannie. 2. Identifier la signature via event.alert.signature et le port visé via target.port. 3. Pour une tentative d''exploitation, vérifier les journaux du service publié (reverse proxy nginx) et le code de réponse. 4. Si l''adresse revient après l''expiration du ban, envisager un blocage permanent. Note technique : 192.168.1.203 est l''interface WAN d''OPNsense dans le lab, à remplacer.'
 where: |-
   equals("event.eventType", "alert") &&
   equals("target.ip", "192.168.1.203") &&
@@ -29,7 +29,8 @@ where: |-
   equals("event.alert.signature_id", 2034508) ||
   equals("event.alert.signature_id", 2610542) ||
   equals("event.alert.signature_id", 2610850) ||
-  regexMatch("event.alert.signature", "^ETN AGGRESSIVE IPs Group [0-9]+$"))
+  regexMatch("event.alert.signature", "^ETN AGGRESSIVE IPs Group [0-9]+$") ||
+  regexMatch("event.alert.signature", "^ET SCAN "))
 afterEvents: []
 groupBy: []
 deduplicateBy: []
