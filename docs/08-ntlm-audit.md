@@ -1,6 +1,6 @@
 ---
 title: "Audit NTLM & Migration NTLM vers Kerberos | DoIt4Everyone"
-description: "Audit complet de l'authentification NTLM via UTMStack SIEM — WEF, GPO/Intune, dashboard, roadmap de migration NTLM → Kerberos selon la roadmap Microsoft."
+description: "Audit complet de l'authentification NTLM via UTMStack SIEM : WEF, GPO/Intune, dashboard, roadmap de migration NTLM → Kerberos selon la roadmap Microsoft."
 lang: fr
 ---
 <style>
@@ -37,18 +37,18 @@ NTLM est un protocole d'authentification legacy datant de plus de 30 ans. Il est
 
 | Phase | Disponibilité | Contenu |
 |---|---|---|
-| **1 — Audit** | Disponible maintenant | Journalisation améliorée pour cartographier l'usage NTLM |
-| **2 — Remédiation** | 2ème semestre 2026 | IAKerb + Local KDC pour éliminer les fallbacks NTLM |
-| **3 — Désactivation** | Prochain Windows Server majeur | NTLM désactivé par défaut sur le réseau |
+| **1 : Audit** | Disponible maintenant | Journalisation améliorée pour cartographier l'usage NTLM |
+| **2 : Remédiation** | 2ème semestre 2026 | IAKerb + Local KDC pour éliminer les fallbacks NTLM |
+| **3 : Désactivation** | Prochain Windows Server majeur | NTLM désactivé par défaut sur le réseau |
 
 Références Microsoft :
 - [Advancing Windows security: Disabling NTLM by default](https://techcommunity.microsoft.com/blog/windows-itpro-blog/advancing-windows-security-disabling-ntlm-by-default/4489526)
-- [Vue d'ensemble des améliorations d'audit NTLM — Windows 11 24H2 / Server 2025](https://support.microsoft.com/fr-fr/topic/vue-d-ensemble-des-am%C3%A9liorations-apport%C3%A9es-%C3%A0-l-audit-ntlm-dans-windows-11-version-24h2-et-windows-server-2025-b7ead732-6fc5-46a3-a943-27a4571d9e7b)
+- [Vue d'ensemble des améliorations d'audit NTLM : Windows 11 24H2 / Server 2025](https://support.microsoft.com/fr-fr/topic/vue-d-ensemble-des-am%C3%A9liorations-apport%C3%A9es-%C3%A0-l-audit-ntlm-dans-windows-11-version-24h2-et-windows-server-2025-b7ead732-6fc5-46a3-a943-27a4571d9e7b)
 - [Active Directory Hardening Series - Part 8 – Disabling NTLM](https://techcommunity.microsoft.com/blog/coreinfrastructureandsecurityblog/active-directory-hardening-series---part-8-%E2%80%93-disabling-ntlm/4485782)
 
 ---
 
-## Phase 1 — Audit NTLM
+## Phase 1 : Audit NTLM
 
 ### Event IDs couverts
 
@@ -62,7 +62,7 @@ Références Microsoft :
 | **4648** | Toutes machines | Connexion avec credentials explicites (net use, runas) |
 | **6038** | Serveurs | Détection NTLM par LsaSRV (1 par boot, 1ère utilisation) |
 
-#### Journaux NTLM/Operational (Windows 11 24H2 / Server 2025 — nécessite WEF)
+#### Journaux NTLM/Operational (Windows 11 24H2 / Server 2025 : nécessite WEF)
 
 À activer via GPO : « Journalisation NTLM améliorée » (Modèles d'administration → Système → NTLM) et « Journaliser les journaux NTLM étendus à l'échelle du domaine » (Modèles d'administration → Système → Net Logon).
 
@@ -81,11 +81,11 @@ Chaque type d'événement existe en deux variantes : **Information** (NTLMv2 nor
 
 > ⚠️ L'agent UTMStack v11.2.8 CE ne collecte pas `Microsoft-Windows-NTLM/Operational` nativement. Il faut router ces événements vers `ForwardedEvents` via Windows Event Forwarding.
 
-### Prérequis GPO — Activer l'audit NTLM
+### Prérequis GPO : Activer l'audit NTLM
 
 Deux familles de stratégies GPO permettent d'auditer NTLM, avec des objectifs distincts. Les deux doivent être activées pour une couverture complète.
 
-#### Stratégies historiques — Génèrent les événements Security log (4624, 4625, 4776)
+#### Stratégies historiques : Génèrent les événements Security log (4624, 4625, 4776)
 
 Disponibles depuis Windows Server 2008 R2. Elles se trouvent dans :
 `Configuration ordinateur` → `Paramètres Windows` → `Paramètres de sécurité` → `Stratégies locales` → `Options de sécurité`
@@ -96,9 +96,9 @@ Disponibles depuis Windows Server 2008 R2. Elles se trouvent dans :
 | Sécurité réseau : Restreindre NTLM : Auditer le trafic NTLM entrant | Tous ordinateurs (DC compris) | Activer l'audit pour tous les comptes |
 | Sécurité réseau : Restreindre NTLM : Trafic NTLM sortant vers des serveurs distants | Tous ordinateurs (DC compris) | Auditer tout |
 
-> **Important :** « Auditer l'authentification NTLM dans ce domaine » se configure **uniquement sur les DC** via une GPO liée à l'OU Domain Controllers (elle n'a aucun effet sur les autres machines). Les deux autres stratégies (trafic entrant et sortant) se configurent sur **tous les ordinateurs, DC compris** — via une GPO liée au domaine entier. Exclure les DC de ces deux stratégies ferait perdre la visibilité sur le trafic NTLM le plus critique (loopback RPC, passthrough).
+> **Important :** « Auditer l'authentification NTLM dans ce domaine » se configure **uniquement sur les DC** via une GPO liée à l'OU Domain Controllers (elle n'a aucun effet sur les autres machines). Les deux autres stratégies (trafic entrant et sortant) se configurent sur **tous les ordinateurs, DC compris** : via une GPO liée au domaine entier. Exclure les DC de ces deux stratégies ferait perdre la visibilité sur le trafic NTLM le plus critique (loopback RPC, passthrough).
 
-#### Nouvelles stratégies 24H2 / Server 2025 — Génèrent les événements NTLM/Operational (4020-4025)
+#### Nouvelles stratégies 24H2 / Server 2025 : Génèrent les événements NTLM/Operational (4020-4025)
 
 Introduites en juillet 2025 spécifiquement pour Windows 11 24H2 et Windows Server 2025. Elles répondent aux questions **Qui / Pourquoi / Où** que les anciennes stratégies ne permettaient pas d'auditer :
 
@@ -113,7 +113,7 @@ Elles incluent aussi un niveau d'avertissement spécifique pour détecter NTLMv1
 | **Journalisation NTLM améliorée** | `Modèles d'administration → Système → NTLM` | Clients + Serveurs | Events 4020-4023 |
 | **Journaliser les journaux NTLM étendus à l'échelle du domaine** | `Modèles d'administration → Système → Net Logon` | DC uniquement | Events 4024-4025 |
 
-> ⚠️ Ces deux stratégies ne sont **pas activées par défaut** — elles doivent être activées manuellement via GPO. Sans elles, le canal `Microsoft-Windows-NTLM/Operational` reste vide même sur Windows 11 24H2 / Server 2025.
+> ⚠️ Ces deux stratégies ne sont **pas activées par défaut** : elles doivent être activées manuellement via GPO. Sans elles, le canal `Microsoft-Windows-NTLM/Operational` reste vide même sur Windows 11 24H2 / Server 2025.
 
 #### Niveaux d'événements (nouvelles stratégies)
 
@@ -135,11 +135,11 @@ Après configuration des deux familles de stratégies, forcer la mise à jour :
 gpupdate /force
 ```
 
-### Déploiement WEF — Self-subscription locale
+### Déploiement WEF : Self-subscription locale
 
 #### Architecture choisie
 
-Un collecteur WEF **local par machine** — aucun trafic réseau inter-machines, aucun port WinRM ouvert entre DCs.
+Un collecteur WEF **local par machine** : aucun trafic réseau inter-machines, aucun port WinRM ouvert entre DCs.
 
 ```
 Microsoft-Windows-NTLM/Operational  (local)
@@ -158,7 +158,7 @@ Microsoft-Windows-NTLM/Operational  (local)
 
 Les deux variantes partagent le même comportement (idempotence, gestion ACL, configuration WinRM, agrandissement ForwardedEvents). Seule la source du XML diffère, ce qui permet à chaque variante de fonctionner dans son contexte sans dépendance externe.
 
-#### Méthode 1 — Déploiement GPO (environnements AD on-prem)
+#### Méthode 1 : Déploiement GPO (environnements AD on-prem)
 
 **1. Placer les fichiers en SYSVOL**
 
@@ -172,9 +172,9 @@ Les deux variantes partagent le même comportement (idempotence, gestion ACL, co
 
 **2. Créer une GPO ciblant l'ensemble du domaine**
 
-Le script doit s'exécuter sur **toutes les machines** — DC, serveurs membres, et postes clients. Les Event IDs 4020-4023 (client/serveur) se génèrent sur n'importe quelle machine 24H2/Server 2025, y compris les postes de travail ; seuls 4024-4025 sont spécifiques au rôle DC.
+Le script doit s'exécuter sur **toutes les machines** : DC, serveurs membres, et postes clients. Les Event IDs 4020-4023 (client/serveur) se génèrent sur n'importe quelle machine 24H2/Server 2025, y compris les postes de travail ; seuls 4024-4025 sont spécifiques au rôle DC.
 
-Limiter le déploiement aux seuls serveurs ferait perdre la visibilité côté postes clients — c'est souvent là que se trouvent les cas les plus utiles pour la Phase 2 : applications métier qui forcent NTLM, accès par IP, vieux logiciels qui ne négocient pas Kerberos.
+Limiter le déploiement aux seuls serveurs ferait perdre la visibilité côté postes clients : c'est souvent là que se trouvent les cas les plus utiles pour la Phase 2 (applications métier qui forcent NTLM, accès par IP, vieux logiciels qui ne négocient pas Kerberos).
 
 ```
 GPO Name : SEC - WEF NTLM Operational Logging (GPO)
@@ -182,9 +182,9 @@ Lien     : DC=lab,DC=local
            (racine du domaine, ou toute OU englobant DC + serveurs + postes clients ciblés)
 ```
 
-> Si l'OU `Domain Controllers` est utilisée pour activer « Auditer l'authentification NTLM dans ce domaine » (stratégie spécifique aux DC, voir Phase 1), la GPO de **déploiement WEF** elle-même doit rester liée au niveau du domaine — sous peine de n'auditer qu'une partie du parc.
+> Si l'OU `Domain Controllers` est utilisée pour activer « Auditer l'authentification NTLM dans ce domaine » (stratégie spécifique aux DC, voir Phase 1), la GPO de **déploiement WEF** elle-même doit rester liée au niveau du domaine : sous peine de n'auditer qu'une partie du parc.
 
-> **Sur un grand parc :** pousser WEF sur plusieurs centaines de postes d'un coup peut générer un volume d'événements significatif — chaque navigation SMB, chaque connexion imprimante réseau, chaque service legacy compte. Pour un déploiement en production, mieux vaut cibler une GPO par vagues successives (un groupe pilote, puis OU par OU) plutôt que lier directement au domaine entier, afin de valider le volume et l'impact sur `ForwardedEvents` avant généralisation. Pour un lab de quelques machines, cette précaution n'est pas nécessaire.
+> **Sur un grand parc :** pousser WEF sur plusieurs centaines de postes d'un coup peut générer un volume d'événements significatif, chaque navigation SMB, chaque connexion imprimante réseau, chaque service legacy compte. Pour un déploiement en production, mieux vaut cibler une GPO par vagues successives (un groupe pilote, puis OU par OU) plutôt que lier directement au domaine entier, afin de valider le volume et l'impact sur `ForwardedEvents` avant généralisation. Pour un lab de quelques machines, cette précaution n'est pas nécessaire.
 
 **3. Activer les services via GPO**
 
@@ -197,9 +197,9 @@ Configuration ordinateur → Stratégies → Paramètres Windows
 
 **4. Configurer le Gestionnaire d'abonnements cible**
 
-Cette étape est indispensable — sans elle, la souscription WEF existe mais aucune machine ne sait qu'elle doit y envoyer des événements. Dans une self-subscription locale, chaque machine s'envoie les événements à elle-même.
+Cette étape est indispensable, sans elle, la souscription WEF existe mais aucune machine ne sait qu'elle doit y envoyer des événements. Dans une self-subscription locale, chaque machine s'envoie les événements à elle-même.
 
-> ⚠️ `localhost` ne fonctionne pas comme cible — le forwarder WinRM exige un vrai nom résolvable. Utiliser le FQDN de la machine.
+> ⚠️ `localhost` ne fonctionne pas comme cible : le forwarder WinRM exige un vrai nom résolvable. Utiliser le FQDN de la machine.
 
 ```
 Configuration ordinateur → Stratégies → Modèles d'administration
@@ -212,7 +212,7 @@ Le script de déploiement gère cette étape automatiquement via WMI (`$env:COMP
 
 **5. Déployer le script via Script de démarrage GPO**
 
-Les scripts de démarrage sont plus fiables que les tâches planifiées GPO Preferences — ils tournent en tant que SYSTEM à chaque boot, sans configuration de compte ni problème de création.
+Les scripts de démarrage sont plus fiables que les tâches planifiées GPO Preferences : ils tournent en tant que SYSTEM à chaque boot, sans configuration de compte ni problème de création.
 
 ```
 Configuration ordinateur → Paramètres Windows
@@ -222,13 +222,13 @@ Configuration ordinateur → Paramètres Windows
   Ordre : Exécuter les scripts Windows PowerShell en dernier
 ```
 
-> Le script intègre une boucle d'attente SYSVOL (jusqu'à 5 minutes) et construit le FQDN dynamiquement via WMI — il fonctionne au boot sans session utilisateur connectée.
+> Le script intègre une boucle d'attente SYSVOL (jusqu'à 5 minutes) et construit le FQDN dynamiquement via WMI : il fonctionne au boot sans session utilisateur connectée.
 
-#### Méthode 2 — Déploiement Intune (environnements cloud / hybrides)
+#### Méthode 2 : Déploiement Intune (environnements cloud / hybrides)
 
 Pour les endpoints gérés via Intune (AAD-joined ou Hybrid AAD-joined), GPO n'est pas applicable. Le déploiement passe par **Intune Remediations** (anciennement Proactive Remediations) qui supporte l'exécution récurrente sur planification, contrairement aux Platform Scripts qui ne s'exécutent qu'une fois.
 
-> La variante Intune n'utilise pas SYSVOL — le XML est embarqué en Base64 directement dans le script. Cela permet le déploiement sur des machines AAD-joined sans aucune connexion AD on-prem.
+> La variante Intune n'utilise pas SYSVOL : le XML est embarqué en Base64 directement dans le script. Cela permet le déploiement sur des machines AAD-joined sans aucune connexion AD on-prem.
 
 **1. Créer une Remediation Intune**
 
@@ -311,7 +311,7 @@ Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-NTLM/Operational'; St
   Group-Object { $_.TimeCreated.ToString('MM-dd') + ' ' + $_.Id } | Sort-Object Name | Select-Object Count, Name
 ```
 
-### Dashboard NTLM — Widgets validés en lab
+### Dashboard NTLM : Widgets validés en lab
 
 Construit et testé dans UTMStack sur `v11-log-wineventlog-*`, avec le filtre `event.providerName` = `Microsoft-Windows-NTLM`. La définition complète des visualisations et leur réparation après le passage à la v11.3.0 sont décrites au [chapitre 04](04-dashboards.html#tableau-de-bord-ntlm).
 
@@ -332,28 +332,28 @@ Construit et testé dans UTMStack sur `v11-log-wineventlog-*`, avec le filtre `e
 
 | Observation | Event ID | NtlmUsageId | Niveau |
 |---|---|---|---|
-| `DC01-MAIN-SITE$` s'authentifie en NTLM via RPC vers DC01-RM (réplication AD) | 4021 | 10 | Normal — voir cas d'étude ci-dessus |
-| PC admin (MDM-WIN11-01) → SYSVOL via IP → NTLM v2 | 4022 | — | Normal — accès par IP |
-| Test simulé `fakeuser` → échec d'authentification | 4022 | — | Test — à surveiller si récurrent en prod |
+| `DC01-MAIN-SITE$` s'authentifie en NTLM via RPC vers DC01-RM (réplication AD) | 4021 | 10 | Normal : voir cas d'étude ci-dessus |
+| PC admin (MDM-WIN11-01) → SYSVOL via IP → NTLM v2 | 4022 |  | Normal : accès par IP |
+| Test simulé `fakeuser` → échec d'authentification | 4022 |  | Test : à surveiller si récurrent en prod |
 
-#### Référence — Reason ID côté client (événements 4020/4021)
+#### Référence : Reason ID côté client (événements 4020/4021)
 
 Le `NtlmUsageReason` indique pourquoi NTLM a été utilisé plutôt que Kerberos. C'est l'information clé pour la remédiation Phase 2 :
 
 | ID | Description | Action de remédiation |
 |---|---|---|
 | 0 | Raison inconnue | Investiguer le processus appelant |
-| 1 | NTLM appelé directement par l'application | Contacter l'éditeur — fallback applicatif forcé |
+| 1 | NTLM appelé directement par l'application | Contacter l'éditeur : fallback applicatif forcé |
 | 2 | Authentification d'un compte local | Migrer vers un compte de domaine si possible |
-| 3 | RÉSERVÉ — non utilisé | — |
+| 3 | RÉSERVÉ : non utilisé |  |
 | 4 | Authentification d'un compte cloud | Vérifier la configuration AAD/Entra |
-| 5 | Nom de la cible manquant ou vide | Corriger la configuration — SPN ou cible mal définie |
+| 5 | Nom de la cible manquant ou vide | Corriger la configuration : SPN ou cible mal définie |
 | 6 | Nom cible non résolu par Kerberos | DNS ou SPN manquant |
 | 7 | Nom cible contient une adresse IP | Remplacer IP par FQDN |
 | 8 | Nom cible dupliqué dans Active Directory | `setspn -X` pour identifier le doublon |
 | 9 | Aucune ligne de vue avec un DC | Problème réseau / firewall vers le DC |
 | 10 | NTLM appelé via interface loopback ou réplication AD par IP | Voir cas d'étude réplication AD ci-dessus, et Phase 3 |
-| 11 | NTLM appelé avec session null | Authentification anonyme — auditer le service |
+| 11 | NTLM appelé avec session null | Authentification anonyme : auditer le service |
 
 ---
 
@@ -365,37 +365,37 @@ Lors de l'analyse des journaux `Microsoft-Windows-NTLM/Operational` sur un contr
 
 | Champ | Valeur |
 |---|---|
-| Event ID | **4021** (Warning — client NTLM sortant) |
+| Event ID | **4021** (Warning : client NTLM sortant) |
 | Process | `lsass` (LSA Subsystem) |
 | Username | `DC01$` (compte machine du contrôleur de domaine) |
 | Target | `RPC/10.100.2.1` (DC distant, adressé par IP) |
 | NtlmUsageId | **10** |
 | NtlmUsageReason | `The target name contains an IP address.` |
 | NtlmVersion | NTLMv2 |
-| DNS | Forward et reverse DNS fonctionnels — le FQDN est résolvable |
+| DNS | Forward et reverse DNS fonctionnels : le FQDN est résolvable |
 
 ### Explication architecturale
 
 Ce comportement, bien que surprenant, est **normal et par design** dans toutes les versions de Windows, y compris Server 2025. Certaines fonctions internes de réplication Active Directory (KCC, topologie RPC) initient des appels inter-serveurs en passant une adresse IP brute comme argument au lieu d'un FQDN.
 
-Kerberos étant structurellement incapable de générer un ticket de service (TGS) basé sur une adresse IP — le format `RPC/10.100.2.1` ne correspond à aucun SPN valide dans l'annuaire — la couche de sécurité SSPI Windows applique un comportement hérité : elle dégrade silencieusement le protocole et effectue un **fallback automatique vers NTLMv2**.
+Kerberos étant structurellement incapable de générer un ticket de service (TGS) basé sur une adresse IP (le format `RPC/10.100.2.1` ne correspond à aucun SPN valide dans l'annuaire), la couche de sécurité SSPI Windows applique un comportement hérité : elle dégrade silencieusement le protocole et effectue un **fallback automatique vers NTLMv2**.
 
 Ce comportement est confirmé par Microsoft :
 
-> « By default Windows will not attempt Kerberos authentication for a host if the hostname is an IP address. It will fall back to other enabled authentication protocols like NTLM. » — [Microsoft Learn, Configuring Kerberos for IP Address](https://learn.microsoft.com/en-us/windows-server/security/kerberos/configuring-kerberos-over-ip)
+> « By default Windows will not attempt Kerberos authentication for a host if the hostname is an IP address. It will fall back to other enabled authentication protocols like NTLM. » : [Microsoft Learn, Configuring Kerberos for IP Address](https://learn.microsoft.com/en-us/windows-server/security/kerberos/configuring-kerberos-over-ip)
 
 ### Pourquoi ce cas est notable pour la migration
 
 - **Toute entreprise multi-sites** avec des DC dans des sites AD distincts peut être concernée
-- Le DNS fonctionne parfaitement — ce n'est pas un problème de résolution
+- Le DNS fonctionne parfaitement : ce n'est pas un problème de résolution
 - Ce trafic NTLM était **totalement invisible** avant les Event IDs 4020-4025 introduits avec Server 2025 / Windows 11 24H2
-- Voir le test de validation ci-dessous : ce comportement s'est révélé **opportuniste plutôt que bloquant** dans les conditions testées — la désactivation de NTLM n'a pas cassé la réplication après reboot des DC
+- Voir le test de validation ci-dessous : ce comportement s'est révélé **opportuniste plutôt que bloquant** dans les conditions testées, la désactivation de NTLM n'a pas cassé la réplication après reboot des DC
 
 ### Impact pour la Phase 3 (Désactivation)
 
-Ce comportement de fallback illustre l'un des cas que Microsoft cite pour justifier l'introduction d'**IAKerb** (Phase 2, prévu second semestre 2026), qui permettra à Kerberos de fonctionner avec des cibles identifiées par IP. Le test de validation ci-dessous montre cependant que ce fallback n'est pas nécessairement une dépendance bloquante dans toutes les conditions — voir l'analyse détaillée plus bas avant de conclure à un risque de casse en Phase 3.
+Ce comportement de fallback illustre l'un des cas que Microsoft cite pour justifier l'introduction d'**IAKerb** (Phase 2, prévu second semestre 2026), qui permettra à Kerberos de fonctionner avec des cibles identifiées par IP. Le test de validation ci-dessous montre cependant que ce fallback n'est pas nécessairement une dépendance bloquante dans toutes les conditions : voir l'analyse détaillée plus bas avant de conclure à un risque de casse en Phase 3.
 
-### Précision terrain — réplication manuelle vs automatique
+### Précision terrain : réplication manuelle vs automatique
 
 Observation supplémentaire en lab : forcer une réplication manuelle via `repadmin /replicate <DC_destination> <DC_source> <DN_partition>` **ne génère aucun event NTLM**, alors que l'event 4021 documenté plus haut a été observé lors d'une réplication automatique déclenchée par le KCC (Knowledge Consistency Checker).
 
@@ -404,9 +404,9 @@ repadmin /replicate DC01-MAIN-SITE DC01-RM DC=lab,DC=local
 → Aucun event 4021 généré
 ```
 
-Raison : `repadmin` résout le DC source/destination par son **nom DNS** passé en argument → Kerberos fonctionne normalement. Le KCC, lui, déclenche la réplication automatiquement via la topologie de sites AD, qui adresse les partenaires de réplication **par IP** (configuration de sous-réseau du site) — c'est ce chemin qui a produit le fallback NTLM observé et documenté ci-dessus.
+Raison : `repadmin` résout le DC source/destination par son **nom DNS** passé en argument → Kerberos fonctionne normalement. Le KCC, lui, déclenche la réplication automatiquement via la topologie de sites AD, qui adresse les partenaires de réplication **par IP** (configuration de sous-réseau du site) : c'est ce chemin qui a produit le fallback NTLM observé et documenté ci-dessus.
 
-### Test de validation — le blocage NTLM casse-t-il vraiment la réplication ?
+### Test de validation : le blocage NTLM casse-t-il vraiment la réplication ?
 
 Pour vérifier si ce fallback NTLM est une **dépendance bloquante** (la réplication s'arrêterait sans NTLM) ou un comportement **opportuniste** (NTLM est utilisé quand disponible, mais pas requis), le blocage complet de NTLM a été testé en lab, dans les deux sens, avec reboot des deux DC pour repartir sur un état de session RPC vierge :
 
@@ -414,21 +414,21 @@ Pour vérifier si ce fallback NTLM est une **dépendance bloquante** (la réplic
 |---|---|---|
 | NTLM sortant refusé (les deux DC) | `Sécurité réseau : Restreindre NTLM : Trafic NTLM sortant vers des serveurs distants` → Refuser tout, GPO appliquée sur les deux DC, reboot | Réplication intacte (`dcdiag /test:Replications` : succès) |
 | NTLM entrant refusé (DC01-RM) | `Sécurité réseau : Restreindre NTLM : Auditer le trafic NTLM entrant` → Refuser tout, reboot | Réplication intacte, SYSVOL/NETLOGON disponibles |
-| Événements NTLM post-reboot | — | **Aucun** généré, même après création forcée d'un utilisateur et déclenchement manuel du KCC (`repadmin /kcc`) |
+| Événements NTLM post-reboot |  | **Aucun** généré, même après création forcée d'un utilisateur et déclenchement manuel du KCC (`repadmin /kcc`) |
 
-**Conclusion du test :** dans cette topologie (DNS fonctionnel des deux côtés, deux sites AD, deux DC), le blocage complet de NTLM — sortant et entrant — **n'a pas cassé la réplication**. Après un redémarrage à froid des deux DC avec les deux politiques de refus actives, aucun nouvel événement NTLM/Operational n'a été généré, ce qui suggère que la réplication a négocié son canal RPC entièrement via Kerberos dès l'établissement de la connexion.
+**Conclusion du test :** dans cette topologie (DNS fonctionnel des deux côtés, deux sites AD, deux DC), le blocage complet de NTLM, sortant et entrant, **n'a pas cassé la réplication**. Après un redémarrage à froid des deux DC avec les deux politiques de refus actives, aucun nouvel événement NTLM/Operational n'a été généré, ce qui suggère que la réplication a négocié son canal RPC entièrement via Kerberos dès l'établissement de la connexion.
 
-Ce résultat **nuance** l'observation initiale : l'event 4021 documenté plus haut est réel et reproductible dans certaines conditions (probablement liées à l'état de la session RPC au moment de l'observation — cache de connexion établi avant l'activation des stratégies d'audit, ou opération RPC ponctuelle), mais il ne représente pas une dépendance NTLM systématique et bloquante de la réplication AD régulière. Le NTLM observé semble **opportuniste plutôt que requis** : utilisé quand le contexte s'y prête, mais contournable une fois le canal RPC renégocié à froid.
+Ce résultat **nuance** l'observation initiale : l'event 4021 documenté plus haut est réel et reproductible dans certaines conditions (probablement liées à l'état de la session RPC au moment de l'observation, cache de connexion établi avant l'activation des stratégies d'audit, ou opération RPC ponctuelle), mais il ne représente pas une dépendance NTLM systématique et bloquante de la réplication AD régulière. Le NTLM observé semble **opportuniste plutôt que requis** : utilisé quand le contexte s'y prête, mais contournable une fois le canal RPC renégocié à froid.
 
-> ⚠️ À ce jour (juin 2026), aucune documentation officielle francophone ne documente ce cas précis ni cette nuance. Les administrateurs qui activent les GPO d'audit NTLM et découvrent l'event 4021/Reason ID 10 peuvent le confondre avec une dépendance bloquante — en pratique, son caractère bloquant ou opportuniste semble dépendre de l'état de la session RPC au moment de l'observation, et mérite d'être testé dans chaque environnement avant de conclure à une dépendance de production.
+> ⚠️ À ce jour (juin 2026), aucune documentation officielle francophone ne documente ce cas précis ni cette nuance. Les administrateurs qui activent les GPO d'audit NTLM et découvrent l'event 4021/Reason ID 10 peuvent le confondre avec une dépendance bloquante : en pratique, son caractère bloquant ou opportuniste semble dépendre de l'état de la session RPC au moment de l'observation, et mérite d'être testé dans chaque environnement avant de conclure à une dépendance de production.
 
 ---
 
-## Phase 2 — Remédiation (préparation Kerberos)
+## Phase 2 : Remédiation (préparation Kerberos)
 
 > **Objectif :** réduire l'usage NTLM jusqu'à un minimum résiduel sans casser la production. Cette phase peut durer plusieurs mois selon la complexité de l'environnement.
 
-### Étape 1 — Classification des usages détectés
+### Étape 1 : Classification des usages détectés
 
 Avant toute remédiation, chaque flux NTLM identifié dans le dashboard doit être classé :
 
@@ -439,7 +439,7 @@ Avant toute remédiation, chaque flux NTLM identifié dans le dashboard doit êt
 | 🔴 **Legacy** | NTLMv1 détecté | Éliminer en priorité |
 | 🚨 **Inconnu** | Application non identifiée déclenchant du NTLM | Investiguer en priorité |
 
-### Étape 2 — Éliminer NTLM lié à l'accès par IP
+### Étape 2 : Éliminer NTLM lié à l'accès par IP
 
 **Cas observé en lab :** PC admin → `\\10.100.1.1\SYSVOL` → NTLM forcé car Kerberos nécessite un nom DNS.
 
@@ -448,7 +448,7 @@ Actions :
 - Vérifier la résolution DNS forward et reverse sur l'ensemble du parc
 - Auditer les scripts, GPO, tâches planifiées contenant des accès UNC par IP
 
-### Étape 3 — Corriger Kerberos via SPN
+### Étape 3 : Corriger Kerberos via SPN
 
 **Cas observé en lab :** `lsass` → LDAP/DC01-MAIN-SITE → NTLMv1 avec « target name was missing or empty ».
 
@@ -474,7 +474,7 @@ setspn -A LDAP/server.domain.local DOMAIN\service-account
 
 > **Cas particulier confirmé en prod :** un environnement SQL Server avec NTLM verrouillé et SPN absents pour le compte de service SQL produit l'erreur « Login failed for untrusted domain ». Vérifier systématiquement les SPN avant tout verrouillage NTLM.
 
-### Étape 4 — Éliminer NTLMv1 (priorité absolue)
+### Étape 4 : Éliminer NTLMv1 (priorité absolue)
 
 NTLMv1 est obsolète depuis plus de 15 ans et déjà retiré de Windows 11 24H2 / Server 2025. Stratégie progressive :
 
@@ -490,7 +490,7 @@ Configuration ordinateur → Stratégies → Paramètres Windows
 | 2. Warning | Send NTLM response only | Refuse LM, accepte NTLMv1+v2 |
 | 3. Enforcement | Send NTLMv2 response only. Refuse LM & NTLM | Refuse LM et NTLMv1 |
 
-### Étape 5 — Identifier et corriger les comptes de service
+### Étape 5 : Identifier et corriger les comptes de service
 
 Les comptes de service mal configurés sont l'une des causes majeures de fallback NTLM :
 
@@ -499,7 +499,7 @@ Les comptes de service mal configurés sont l'une des causes majeures de fallbac
 - Éviter le « Run as Local System » pour les services réseau
 - Documenter les applications incompatibles gMSA pour traitement spécifique
 
-### Étape 6 — Services et appliances legacy
+### Étape 6 : Services et appliances legacy
 
 Inventaire typique des sources NTLM résiduelles :
 - ERP et applications métier anciennes
@@ -510,7 +510,7 @@ Inventaire typique des sources NTLM résiduelles :
 
 Pour chaque source identifiée : mise à jour si possible, isolation réseau sinon, et documentation des exceptions à maintenir.
 
-### Étape 7 — Liste d'exceptions NTLM
+### Étape 7 : Liste d'exceptions NTLM
 
 Avant tout blocage en Phase 3, configurer la **liste blanche** des serveurs auxquels les clients peuvent encore s'authentifier en NTLM. Sans cette liste, activer le blocage sortant fait échouer **toutes** les authentifications NTLM en cours.
 
@@ -518,7 +518,7 @@ Avant tout blocage en Phase 3, configurer la **liste blanche** des serveurs auxq
 Network security: Restrict NTLM: Add remote server exceptions for NTLM authentication
 ```
 
-Format de la liste — noms NetBIOS, un par ligne, wildcard `*` autorisé :
+Format de la liste : noms NetBIOS, un par ligne, wildcard `*` autorisé :
 
 ```
 legacyapp01
@@ -534,7 +534,7 @@ NAS-MAIN
 
 ---
 
-## Phase 3 — Désactivation NTLM
+## Phase 3 : Désactivation NTLM
 
 > **Règle absolue :** NE JAMAIS désactiver NTLM sans avoir complété la Phase 2. Le risque d'incident majeur (perte d'accès fichiers, authentification utilisateur, applications métier) est garanti sinon.
 
@@ -550,9 +550,9 @@ Microsoft documente trois stratégies de blocage avec une granularité croissant
 
 À chaque étape : passer d'abord par **Audit** complet, attendre une période d'observation suffisante (au minimum 2 semaines), corriger toutes les remontées, puis passer à **Deny**.
 
-### Piège critique — RPC EPM loopback
+### Piège critique : RPC EPM loopback
 
-**Cas directement observé en lab :** `DC01-MAIN-SITE$` s'authentifie en NTLM via RPC vers `DC01-RM`. Ce trafic est en réalité du **loopback RPC EPM** — la machine s'authentifie à elle-même via un compte machine, ou un DC s'authentifie à un autre DC pour des appels RPC qui devraient être en Kerberos.
+**Cas directement observé en lab :** `DC01-MAIN-SITE$` s'authentifie en NTLM via RPC vers `DC01-RM`. Ce trafic est en réalité du **loopback RPC EPM** : la machine s'authentifie à elle-même via un compte machine, ou un DC s'authentifie à un autre DC pour des appels RPC qui devraient être en Kerberos.
 
 #### Origine du problème
 
@@ -580,7 +580,7 @@ Si l'une de ces politiques est active **et** qu'on active le blocage NTLM (sorta
 
 #### Procédure de correction (ordre obligatoire)
 
-**Étape 1 — Vérifier l'état actuel sur les DC**
+**Étape 1 : vérifier l'état actuel sur les DC**
 
 ```powershell
 # Vérifier les clés de registre correspondantes
@@ -591,7 +591,7 @@ Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Rpc" `
 
 Toute valeur non nulle ou non existante indique que les politiques sont actives.
 
-**Étape 2 — Désactiver les deux politiques**
+**Étape 2 : Désactiver les deux politiques**
 
 Dans la GPO liée à l'OU Domain Controllers :
 
@@ -606,15 +606,15 @@ Forcer la mise à jour :
 gpupdate /force
 ```
 
-**Étape 3 — Redémarrer**
+**Étape 3 : redémarrer**
 
 Les changements de ces deux paramètres nécessitent un reboot pour prendre effet. Programmer une fenêtre de maintenance pour chaque DC, un à la fois pour préserver la disponibilité AD.
 
-**Étape 4 — Vérifier la disparition du loopback NTLM dans UTMStack**
+**Étape 4 : vérifier la disparition du loopback NTLM dans UTMStack**
 
 Après reboot, surveiller pendant 24-48h dans le dashboard NTLM. Les événements 4023 / 8003 avec `Username: <ComputerName>$` doivent disparaître ou diminuer fortement.
 
-**Étape 5 — Activer ensuite le blocage NTLM progressif**
+**Étape 5 : Activer ensuite le blocage NTLM progressif**
 
 Une fois les politiques RPC désactivées et le reboot effectué, suivre la procédure Phase 3 sans casser le loopback :
 
@@ -628,11 +628,11 @@ Si CIS ou STIG sont obligatoires dans le contexte, la désactivation de ces poli
 
 - Désactiver ces paramètres n'autorise **pas** l'accès anonyme aux services RPC, car chaque service RPC dispose de son propre security descriptor pour restreindre l'accès
 - L'exploit RPC EPM redouté dans les années 90 ne s'est jamais matérialisé en production
-- Microsoft recommande explicitement : *« If faced with a choice between restricting NTLM and using EnableAuthEpResolution, the recommended approach is that you restrict NTLM in your environment. »* (source : [Restrict NTLM Outgoing traffic — Microsoft Learn](https://learn.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-security-restrict-ntlm-outgoing-ntlm-traffic-to-remote-servers))
+- Microsoft recommande explicitement : *« If faced with a choice between restricting NTLM and using EnableAuthEpResolution, the recommended approach is that you restrict NTLM in your environment. »* (source : [Restrict NTLM Outgoing traffic, Microsoft Learn](https://learn.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-security-restrict-ntlm-outgoing-ntlm-traffic-to-remote-servers))
 
 Documenter ce choix dans le registre des exceptions de sécurité avec la référence à la position Microsoft suffit généralement à satisfaire les auditeurs sérieux.
 
-#### Alternative pour environnements à conformité stricte — IPsec
+#### Alternative pour environnements à conformité stricte : IPsec
 
 Pour les environnements où CIS/STIG sont strictement obligatoires sans dérogation, une approche alternative consiste à protéger RPC via IPsec :
 - Exiger l'authentification IPsec sur TCP 135 entrant
@@ -669,7 +669,7 @@ Sécurité réseau : Restreindre NTLM : Authentification NTLM dans ce domaine
 
 ---
 
-## Intégration SIEM — Indicateurs de migration
+## Intégration SIEM : Indicateurs de migration
 
 Le dashboard NTLM construit en Phase 1 devient l'outil de mesure du projet de migration.
 
@@ -702,10 +702,10 @@ Le dashboard NTLM construit en Phase 1 devient l'outil de mesure du projet de mi
 
 La désactivation de NTLM n'est pas une simple modification technique. C'est un **projet de transformation du système d'information** qui nécessite :
 
-- Une **visibilité complète** sur l'usage NTLM (Phase 1 — assurée par le SIEM)
-- Une **remédiation progressive et documentée** des dépendances (Phase 2 — plusieurs mois)
+- Une **visibilité complète** sur l'usage NTLM (Phase 1 : assurée par le SIEM)
+- Une **remédiation progressive et documentée** des dépendances (Phase 2 : plusieurs mois)
 - Une **validation rigoureuse** par tests fonctionnels avant chaque étape de blocage (Phase 3)
-- Un **plan de rollback** à chaque étape — les stratégies GPO permettent un retour rapide en Allow All
+- Un **plan de rollback** à chaque étape : les stratégies GPO permettent un retour rapide en Allow All
 - Une **communication aux équipes applicatives** car certains correctifs nécessitent l'implication des éditeurs
 
 Le SIEM UTMStack joue un rôle central dans les trois phases : cartographie en Phase 1, mesure de progression en Phase 2, détection des violations résiduelles en Phase 3.
@@ -722,13 +722,13 @@ Le SIEM UTMStack joue un rôle central dans les trois phases : cartographie en P
 | Canal ForwardedEvents désactivé par défaut sur Server 2025 | Souscription WEF active mais aucun événement reçu (erreur 3ae9) | `wevtutil sl ForwardedEvents /e:true` (intégré dans le script) |
 | `localhost` ne fonctionne pas comme Subscription Manager | Forwarder WinRM refuse la connexion (erreur 2150859027) | Utiliser le FQDN dynamique via WMI `(Get-WmiObject Win32_ComputerSystem).Domain` |
 | SYSVOL inaccessible par chemin local sur Server 2025 | Lien symbolique DFS apparaît vide | Toujours utiliser le chemin UNC `\\domaine\SYSVOL\...` |
-| WEF nécessite WinRM actif localement | Surface d'attaque légèrement élargie | Self-subscription locale uniquement — pas d'exposition réseau inter-machines |
+| WEF nécessite WinRM actif localement | Surface d'attaque légèrement élargie | Self-subscription locale uniquement, pas d'exposition réseau inter-machines |
 | Intune Remediations nécessite licence appropriée | Coût supplémentaire | Platform Scripts (exécution unique) si licence absente |
 | Loopback RPC EPM casse avec blocage NTLM entrant sans préparation | Risque incident sur DC | Désactiver politiques RPC concernées avant blocage |
 
 ---
 
-## Annexes — Fichiers de déploiement
+## Annexes : Fichiers de déploiement
 
 Les scripts sont disponibles dans le repository du projet :
 [github.com/doit4everyone/utmstack-lab/scripts](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts)
@@ -738,7 +738,7 @@ Les scripts sont disponibles dans le repository du projet :
 | [`Deploy-WEF-NTLM-GPO.ps1`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/Deploy-WEF-NTLM-GPO.ps1) | Machines domaine | Script idempotent, lit XML depuis SYSVOL |
 | [`Deploy-WEF-NTLM-Intune.ps1`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/Deploy-WEF-NTLM-Intune.ps1) | Endpoints Intune | Script idempotent, XML embarqué Base64 |
 | [`Detect-WEF-NTLM.ps1`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/Detect-WEF-NTLM.ps1) | Endpoints Intune | Script de détection pour Remediation |
-| [`ntlm-subscription.xml`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/ntlm-subscription.xml) | Source XML | Référence — embarqué dans le script Intune |
+| [`ntlm-subscription.xml`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/ntlm-subscription.xml) | Source XML | Référence : embarqué dans le script Intune |
 
 ---
 

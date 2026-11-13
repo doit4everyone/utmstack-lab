@@ -1,6 +1,6 @@
 ---
-title: "Sysmon — Déploiement et configuration | DoIt4Everyone"
-description: "Déploiement de Sysmon v15.21 en environnement hybride AD + Intune — méthode registre ANSSI, deux configurations XML commentées (postes et DC), collecte via WEF vers ForwardedEvents."
+title: "Sysmon : Déploiement et configuration | DoIt4Everyone"
+description: "Déploiement de Sysmon v15.21 en environnement hybride AD + Intune : méthode registre ANSSI, deux configurations XML commentées (postes et DC), collecte via WEF vers ForwardedEvents."
 ---
 <style>
   header, footer { display: none !important; }
@@ -14,33 +14,33 @@ description: "Déploiement de Sysmon v15.21 en environnement hybride AD + Intune
   table { width: 100%; display: table; margin: 20px 0; }
 </style>
 
-# Chapitre 10b — Sysmon : déploiement et configuration
+# Chapitre 10b : déploiement et configuration de Sysmon
 
-Sysmon (System Monitor) est un driver Windows qui étend considérablement la télémétrie native des journaux d'événements. Là où Windows ne logue que l'ID de processus au démarrage, Sysmon capture la ligne de commande complète, le hash du binaire, le processus parent, les connexions réseau par processus, les accès LSASS, les modifications de clés de registre sensibles et les named pipes — autant de données indispensables pour une détection efficace des techniques d'attaque modernes.
+Sysmon (System Monitor) est un driver Windows qui étend considérablement la télémétrie native des journaux d'événements. Là où Windows ne logue que l'ID de processus au démarrage, Sysmon capture la ligne de commande complète, le hash du binaire, le processus parent, les connexions réseau par processus, les accès LSASS, les modifications de clés de registre sensibles et les named pipes : autant de données indispensables pour une détection efficace des techniques d'attaque modernes.
 
-Ce chapitre couvre le déploiement de Sysmon v15.21 dans un environnement hybride Active Directory et Intune, avec deux configurations distinctes selon la cible — postes membres et contrôleurs de domaine. La méthode de déploiement retenue protège le fichier de configuration contre la lecture par un attaquant en transit sur le réseau.
+Ce chapitre couvre le déploiement de Sysmon v15.21 dans un environnement hybride Active Directory et Intune, avec deux configurations distinctes selon la cible : postes membres et contrôleurs de domaine. La méthode de déploiement retenue protège le fichier de configuration contre la lecture par un attaquant en transit sur le réseau.
 
-La collecte des événements Sysmon par UTMStack passe obligatoirement par le Windows Event Forwarding (WEF) — l'agent UTMStack ne collecte pas nativement le canal `Microsoft-Windows-Sysmon/Operational`. Ce chapitre couvre l'intégralité de la chaîne : déploiement Sysmon, configuration WEF, et vérification dans UTMStack.
+La collecte des événements Sysmon par UTMStack passe obligatoirement par le Windows Event Forwarding (WEF) : l'agent UTMStack ne collecte pas nativement le canal `Microsoft-Windows-Sysmon/Operational`. Ce chapitre couvre l'intégralité de la chaîne : déploiement Sysmon, configuration WEF, et vérification dans UTMStack.
 
-**Téléchargement officiel :** [Sysmon — Microsoft Sysinternals](https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon) — lien direct ZIP : `https://download.sysinternals.com/files/Sysmon.zip`
+**Téléchargement officiel :** [Sysmon, Microsoft Sysinternals](https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon), lien direct ZIP : `https://download.sysinternals.com/files/Sysmon.zip`
 
-> Version utilisée dans ce lab : **v15.21** (juin 2026), schéma **4.91**. Vérifier la version avant de déployer — la valeur `schemaversion` dans les fichiers XML doit correspondre à la version installée. La commande `.\edgeIT.exe -? config` affiche le schéma supporté par le binaire.
+> Version utilisée dans ce lab : **v15.21** (juin 2026), schéma **4.91**. Vérifier la version avant de déployer : la valeur `schemaversion` dans les fichiers XML doit correspondre à la version installée. La commande `.\edgeIT.exe -? config` affiche le schéma supporté par le binaire.
 
 ---
 
 ## Table des matières
 
-**Partie 1 — Déploiement Sysmon**
+**Partie 1 : Déploiement Sysmon**
 
 - [1. Architecture de la solution](#1-architecture-de-la-solution)
 - [2. Event IDs retenus et justification](#2-event-ids-retenus-et-justification)
 - [3. GPO d'audit avancé Windows](#3-gpo-daudit-avancé-windows)
 - [4. Configurations XML Sysmon](#4-configurations-xml-sysmon)
 - [5. Déploiement sur la machine de référence](#5-déploiement-sur-la-machine-de-référence)
-- [6. Déploiement GPO — méthode registre ANSSI](#6-déploiement-gpo--méthode-registre-anssi)
-- [7. Déploiement Intune — Win32 App](#7-déploiement-intune--win32-app)
+- [6. Déploiement GPO : méthode registre ANSSI](#6-déploiement-gpo--méthode-registre-anssi)
+- [7. Déploiement Intune : Win32 App](#7-déploiement-intune--win32-app)
 
-**Partie 2 — WEF Sysmon → UTMStack**
+**Partie 2 : WEF Sysmon → UTMStack**
 
 - [8. Pourquoi le WEF est obligatoire](#8-pourquoi-le-wef-est-obligatoire)
 - [9. Architecture WEF self-subscription locale](#9-architecture-wef-self-subscription-locale)
@@ -52,52 +52,52 @@ La collecte des événements Sysmon par UTMStack passe obligatoirement par le Wi
 
 ## 1. Architecture de la solution
 
-### Vue d'ensemble — trois couches
+### Vue d'ensemble : trois couches
 
 La collecte Sysmon dans UTMStack repose sur trois couches distinctes :
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Couche 1 — Sysmon driver                                   │
+│  Couche 1 : Sysmon driver                                   │
 │  Surveille l'activité système et écrit dans                 │
 │  Microsoft-Windows-Sysmon/Operational                       │
 └──────────────────────────┬──────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
-│  Couche 2 — WEF self-subscription locale                    │
+│  Couche 2 : WEF self-subscription locale                    │
 │  Forwarde les events Sysmon vers ForwardedEvents            │
-│  (même machine — self-subscription)                         │
+│  (même machine : self-subscription)                         │
 └──────────────────────────┬──────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
-│  Couche 3 — Agent UTMStack                                  │
+│  Couche 3 : Agent UTMStack                                  │
 │  Collecte ForwardedEvents et envoie vers UTMStack           │
 │  (ForwardedEvents est dans la liste native de l'agent)      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Le WEF est indispensable parce que l'agent UTMStack ne collecte pas `Microsoft-Windows-Sysmon/Operational` directement — voir section 8 pour l'explication complète.
+Le WEF est indispensable parce que l'agent UTMStack ne collecte pas `Microsoft-Windows-Sysmon/Operational` directement : voir section 8 pour l'explication complète.
 
 ### Pourquoi deux configurations distinctes
 
-Les contrôleurs de domaine sont les cibles prioritaires de toute attaque sur un environnement Active Directory. DCSync, Golden Ticket, Pass-the-Hash, Kerberoasting — toutes ces techniques passent par ou visent le DC. Ne pas surveiller les DC avec Sysmon serait un angle mort majeur.
+Les contrôleurs de domaine sont les cibles prioritaires de toute attaque sur un environnement Active Directory. DCSync, Golden Ticket, Pass-the-Hash, Kerberoasting : toutes ces techniques passent par ou visent le DC. Ne pas surveiller les DC avec Sysmon serait un angle mort majeur.
 
-Cependant, la configuration Sysmon sur un DC doit être différente de celle d'un poste de travail. Les DC génèrent des milliers de connexions réseau légitimes par heure — réplication AD, Kerberos, LDAP, DNS — qui rendraient la surveillance réseau (EID 3) inexploitable. Les exclusions de processus sont également plus étendues pour couvrir ADWS, DFSR, DNS Server et Netlogon.
+Cependant, la configuration Sysmon sur un DC doit être différente de celle d'un poste de travail. Les DC génèrent des milliers de connexions réseau légitimes par heure (réplication AD, Kerberos, LDAP, DNS), qui rendraient la surveillance réseau (EID 3) inexploitable. Les exclusions de processus sont également plus étendues pour couvrir ADWS, DFSR, DNS Server et Netlogon.
 
 | Paramètre | sysmon-workstation.xml | sysmon-dc.xml |
 |---|---|---|
 | Cible | gest-srv, WIN11-AD-TESTS | DC01-MAIN-SITE, DC01-RM |
-| EID 1 ProcessCreate | ✅ — exclusions standard | ✅ — exclusions AD DS étendues |
-| EID 3 NetworkConnect | ✅ — processus suspects | ❌ — désactivé (volume AD) |
-| EID 10 ProcessAccess | ✅ — accès LSASS | ✅ — **critique** (DCSync) |
-| EID 11 FileCreate | ✅ — startup + temp | ✅ — NTDS + SYSVOL uniquement |
-| EID 12/13 RegistryEvent | ✅ — Run keys | ✅ — Run keys + LSA packages |
-| EID 16 SysmonConfig | ❌ — supprimé schéma 4.91 | ❌ — supprimé schéma 4.91 |
-| EID 17/18 PipeEvent | ✅ — named pipes C2 | ✅ — + exclusions pipes AD |
+| EID 1 ProcessCreate | ✅ exclusions standard | ✅ exclusions AD DS étendues |
+| EID 3 NetworkConnect | ✅ processus suspects | ❌ désactivé (volume AD) |
+| EID 10 ProcessAccess | ✅ accès LSASS | ✅ **critique** (DCSync) |
+| EID 11 FileCreate | ✅ startup + temp | ✅ NTDS + SYSVOL uniquement |
+| EID 12/13 RegistryEvent | ✅ Run keys | ✅ Run keys + LSA packages |
+| EID 16 SysmonConfig | ❌ supprimé schéma 4.91 | ❌ supprimé schéma 4.91 |
+| EID 17/18 PipeEvent | ✅ named pipes C2 | ✅ + exclusions pipes AD |
 
 ### Obfuscation du binaire
 
-Le binaire `Sysmon64.exe` est renommé en `edgeIT.exe` dans ce lab. Un attaquant qui liste les processus en cours (`tasklist`, `Get-Process`) ne voit pas immédiatement "Sysmon" — ce qui laisse du temps avant qu'il adapte ses techniques d'évasion.
+Le binaire `Sysmon64.exe` est renommé en `edgeIT.exe` dans ce lab. Un attaquant qui liste les processus en cours (`tasklist`, `Get-Process`) ne voit pas immédiatement "Sysmon" : ce qui laisse du temps avant qu'il adapte ses techniques d'évasion.
 
 Le driver conserve son nom `SysmonDrv` par défaut sur les deux méthodes de déploiement (GPO et Intune). Cette cohérence simplifie la gestion et la vérification.
 
@@ -107,37 +107,37 @@ Le driver conserve son nom `SysmonDrv` par défaut sur les deux méthodes de dé
 
 | EID | Événement | Valeur | Activé |
 |---|---|---|---|
-| 1 | ProcessCreate | Ligne de commande, hash, parent — cœur de la détection LOLBIN | ✅ |
-| 3 | NetworkConnect | Connexion réseau par processus — détection C2 | ✅ (poste) / ❌ (DC) |
-| 10 | ProcessAccess | Accès LSASS — credential dumping, DCSync | ✅ |
+| 1 | ProcessCreate | Ligne de commande, hash, parent : cœur de la détection LOLBIN | ✅ |
+| 3 | NetworkConnect | Connexion réseau par processus : détection C2 | ✅ (poste) / ❌ (DC) |
+| 10 | ProcessAccess | Accès LSASS : credential dumping, DCSync | ✅ |
 | 11 | FileCreate | Dépôt dans startup folders, NTDS, SYSVOL | ✅ |
 | 12/13 | RegistryEvent | Modification Run keys, LSA packages | ✅ |
-| 16 | SysmonConfigState | Modification de la config Sysmon | ❌ — supprimé dans schéma 4.91 |
-| 17/18 | PipeEvent | Named pipes — PsExec, Cobalt Strike | ✅ |
-| 7 | ImageLoad | Chargement de DLL | ❌ — volume excessif |
-| 8 | RemoteThread | Injection de thread | ❌ — FP navigateurs/runtimes |
-| 22 | DNSEvent | Requêtes DNS | ❌ — volume AD excessif |
+| 16 | SysmonConfigState | Modification de la config Sysmon | ❌ supprimé dans schéma 4.91 |
+| 17/18 | PipeEvent | Named pipes : PsExec, Cobalt Strike | ✅ |
+| 7 | ImageLoad | Chargement de DLL | ❌ volume excessif |
+| 8 | RemoteThread | Injection de thread | ❌ FP navigateurs/runtimes |
+| 22 | DNSEvent | Requêtes DNS | ❌ volume AD excessif |
 
-**EID 8 (RemoteThread) — pourquoi désactivé.** Les navigateurs modernes (Chrome, Edge) et les runtimes .NET créent légitimement des threads distants dans d'autres processus — ce qui génère un bruit considérable. La détection d'injection mémoire passe mieux par EID 10 (accès LSASS) pour les cas critiques.
+**EID 8 (RemoteThread) : pourquoi désactivé.** Les navigateurs modernes (Chrome, Edge) et les runtimes .NET créent légitimement des threads distants dans d'autres processus, ce qui génère un bruit considérable. La détection d'injection mémoire passe mieux par EID 10 (accès LSASS) pour les cas critiques.
 
-**EID 22 (DNS) — pourquoi désactivé.** En environnement Active Directory, chaque opération génère des résolutions DNS — authentification Kerberos, réplication, LDAP, GPO. Activer EID 22 produit plusieurs milliers d'événements par heure sur un DC, sans valeur ajoutée significative face à EID 1 et EID 3 qui capturent déjà le contexte d'exécution.
+**EID 22 (DNS) : pourquoi désactivé.** En environnement Active Directory, chaque opération génère des résolutions DNS (authentification Kerberos, réplication, LDAP, GPO). Activer EID 22 produit plusieurs milliers d'événements par heure sur un DC, sans valeur ajoutée significative face à EID 1 et EID 3 qui capturent déjà le contexte d'exécution.
 
 ---
 
 ## 3. GPO d'audit avancé Windows
 
-Avant de déployer Sysmon et d'écrire des règles de corrélation, il faut s'assurer que Windows génère effectivement les événements attendus. Sans la politique d'audit avancé correctement configurée, les Event IDs 4624, 4740, 4769, 4698 ou 7045 n'apparaissent tout simplement pas dans le journal Security — et les règles YAML du chapitre 11 ne déclencheront jamais d'alerte.
+Avant de déployer Sysmon et d'écrire des règles de corrélation, il faut s'assurer que Windows génère effectivement les événements attendus. Sans la politique d'audit avancé correctement configurée, les Event IDs 4624, 4740, 4769, 4698 ou 7045 n'apparaissent tout simplement pas dans le journal Security, et les règles YAML du chapitre 11 ne déclencheront jamais d'alerte.
 
 <cite index="18-1">Un point critique souvent négligé : si la politique d'audit avancé est configurée dans une GPO mais que le paramètre "Audit: Force audit policy subcategory settings to override audit policy category settings" n'est pas activé, la politique de base (legacy) peut continuer à prendre le dessus sur les paramètres avancés.</cite> Ce paramètre doit être activé en priorité.
 
-### Point de vigilance — politique de base vs politique avancée
+### Point de vigilance : politique de base vs politique avancée
 
 Windows dispose de deux niveaux de configuration d'audit :
 
-- **Politique de base** — Configuration ordinateur > Paramètres Windows > Paramètres de sécurité > Stratégies locales > Stratégie d'audit — 9 catégories grossières, paramètres conflictuels possibles
-- **Politique avancée** — Configuration ordinateur > Paramètres Windows > Paramètres de sécurité > Configuration avancée de la stratégie d'audit — 53 sous-catégories précises, recommandée par l'ANSSI, CIS et Microsoft
+- **Politique de base** : Configuration ordinateur > Paramètres Windows > Paramètres de sécurité > Stratégies locales > Stratégie d'audit, 9 catégories grossières, paramètres conflictuels possibles
+- **Politique avancée** : Configuration ordinateur > Paramètres Windows > Paramètres de sécurité > Configuration avancée de la stratégie d'audit, 53 sous-catégories précises, recommandée par l'ANSSI, CIS et Microsoft
 
-<cite index="19-1">Pour vérifier ce qui est réellement appliqué sur un DC, la commande `auditpol /get /category:*` affiche la politique effective — pas ce que la GPO prétend appliquer. Il est fréquent que la catégorie "Audit logon events" soit configurée en Success et Failure dans la GPO, mais que `auditpol` n'affiche que Success à cause d'une politique locale qui prend le dessus sur un ancien DC.</cite>
+<cite index="19-1">Pour vérifier ce qui est réellement appliqué sur un DC, la commande `auditpol /get /category:*` affiche la politique effective, pas ce que la GPO prétend appliquer. Il est fréquent que la catégorie "Audit logon events" soit configurée en Success et Failure dans la GPO, mais que `auditpol` n'affiche que Success à cause d'une politique locale qui prend le dessus sur un ancien DC.</cite>
 
 ### Paramètre préalable obligatoire
 
@@ -155,7 +155,7 @@ Configuration ordinateur
                         de catégorie de stratégie d'audit → Activé
 ```
 
-### Sous-catégories à activer — tableau complet
+### Sous-catégories à activer : tableau complet
 
 Le tableau ci-dessous liste les sous-catégories de la politique d'audit avancé, les Event IDs générés, et le niveau requis (Succès / Échec / Les deux) pour couvrir toutes les règles YAML du chapitre 11.
 
@@ -167,31 +167,31 @@ Chemin GPO pour chaque sous-catégorie :
 | **Account Logon** | Credential Validation | ✅ | ✅ | 4776 | Pass-the-Hash |
 | **Account Logon** | Kerberos Authentication Service | ✅ | ✅ | 4768 | Kerberoasting |
 | **Account Logon** | Kerberos Service Ticket Operations | ✅ | ✅ | 4769, 4770 | W7 Kerberoasting RC4 |
-| **Account Management** | Computer Account Management | ✅ | ✅ | 4741, 4742 | — |
+| **Account Management** | Computer Account Management | ✅ | ✅ | 4741, 4742 |  |
 | **Account Management** | Security Group Management | ✅ | ✅ | 4728, 4732, 4756 | W3 Privileged Group |
 | **Account Management** | User Account Management | ✅ | ✅ | 4720, 4722, 4723, 4725, 4726, 4738, 4740 | W1 Lockout, W2 Admin créé |
-| **Detailed Tracking** | Process Creation | ✅ | — | 4688 | LOLBIN (complémentaire Sysmon) |
-| **DS Access** | Directory Service Changes | ✅ | — | 5136, 5137, 5139, 5141 | DCSync (via 4662) |
+| **Detailed Tracking** | Process Creation | ✅ |  | 4688 | LOLBIN (complémentaire Sysmon) |
+| **DS Access** | Directory Service Changes | ✅ |  | 5136, 5137, 5139, 5141 | DCSync (via 4662) |
 | **DS Access** | Directory Service Access | ✅ | ✅ | 4662 | DCSync detection |
 | **Logon/Logoff** | Logon | ✅ | ✅ | 4624, 4625 | W6 Pass-the-Hash LogonType3 |
-| **Logon/Logoff** | Account Lockout | ✅ | — | 4625 | W1 Lockout |
-| **Logon/Logoff** | Special Logon | ✅ | — | 4672 | Comptes privilégiés |
+| **Logon/Logoff** | Account Lockout | ✅ |  | 4625 | W1 Lockout |
+| **Logon/Logoff** | Special Logon | ✅ |  | 4672 | Comptes privilégiés |
 | **Logon/Logoff** | Other Logon/Logoff Events | ✅ | ✅ | 4648 | Pass-the-Hash explicit creds |
 | **Object Access** | Kernel Object | ✅ | ✅ | 4656, 4663 | Accès LSASS (complémentaire Sysmon EID10) |
 | **Policy Change** | Audit Policy Change | ✅ | ✅ | 4719 | Modification politique d'audit |
-| **Policy Change** | Authentication Policy Change | ✅ | — | 4706, 4713, 4716 | Changement politique Kerberos |
-| **Privilege Use** | Sensitive Privilege Use | ✅ | ✅ | 4673, 4674 | — |
+| **Policy Change** | Authentication Policy Change | ✅ |  | 4706, 4713, 4716 | Changement politique Kerberos |
+| **Privilege Use** | Sensitive Privilege Use | ✅ | ✅ | 4673, 4674 |  |
 | **System** | Security System Extension | ✅ | ✅ | 7045 | W5 Service Installed |
-| **System** | Security State Change | ✅ | ✅ | 4608, 4621 | — |
+| **System** | Security State Change | ✅ | ✅ | 4608, 4621 |  |
 | **Task Scheduler** | Other Object Access Events | ✅ | ✅ | 4698, 4699, 4700, 4701, 4702 | W4 Scheduled Task |
 
 **S** = Succès, **E** = Échec
 
-### Paramètre complémentaire — ligne de commande dans 4688
+### Paramètre complémentaire : ligne de commande dans 4688
 
 Par défaut, l'Event 4688 (Process Creation) ne contient pas la ligne de commande du processus. Pour inclure la ligne de commande, il faut activer séparément : Modèles d'administration > Système > Audit de création de processus > Inclure la ligne de commande dans les événements de création de processus.
 
-Avec Sysmon déployé, ce paramètre devient secondaire — Sysmon capture la ligne de commande bien plus complètement dans l'EID 1. Mais l'activer reste utile pour les machines sans Sysmon.
+Avec Sysmon déployé, ce paramètre devient secondaire : Sysmon capture la ligne de commande bien plus complètement dans l'EID 1. Mais l'activer reste utile pour les machines sans Sysmon.
 
 ```
 Configuration ordinateur
@@ -204,7 +204,7 @@ Configuration ordinateur
 
 ### Taille des journaux de sécurité
 
-<cite index="22-1">La taille maximale recommandée par Microsoft pour les journaux de sécurité sur les systèmes modernes est de 4 Go, avec un maximum total de 16 Go pour l'ensemble des journaux.</cite> Dans un environnement lab où UTMStack ingère les événements en continu, une taille plus modeste suffit — l'important est que les événements soient collectés avant que le tampon ne soit écrasé.
+<cite index="22-1">La taille maximale recommandée par Microsoft pour les journaux de sécurité sur les systèmes modernes est de 4 Go, avec un maximum total de 16 Go pour l'ensemble des journaux.</cite> Dans un environnement lab où UTMStack ingère les événements en continu, une taille plus modeste suffit : l'important est que les événements soient collectés avant que le tampon ne soit écrasé.
 
 ```
 Configuration ordinateur
@@ -217,12 +217,12 @@ Configuration ordinateur
                 └── Retention method for Security log → Overwrite events as needed
 ```
 
-### Deux GPO distinctes — DC et postes membres
+### Deux GPO distinctes : DC et postes membres
 
 Exactement comme pour Sysmon, les politiques d'audit doivent être séparées :
 
-- **GPO "Audit Avancé - Domain Controllers"** liée à l'OU Domain Controllers — inclut les sous-catégories DS Access et Directory Service Changes, critiques uniquement sur DC
-- **GPO "Audit Avancé - Workstations"** liée à l'OU des postes et serveurs membres — sous-catégories standard sans DS Access
+- **GPO "Audit Avancé - Domain Controllers"** liée à l'OU Domain Controllers : inclut les sous-catégories DS Access et Directory Service Changes, critiques uniquement sur DC
+- **GPO "Audit Avancé - Workstations"** liée à l'OU des postes et serveurs membres : sous-catégories standard sans DS Access
 
 ### Vérification de l'application effective
 
@@ -255,7 +255,7 @@ Les deux fichiers XML sont commentés section par section. Chaque règle précis
 
 ### Pourquoi le XML ne doit pas rester sur les postes
 
-Un fichier de configuration Sysmon expose exactement ce qui est surveillé et ce qui ne l'est pas. Un attaquant disposant d'un accès en lecture à `C:\Windows\sysmon-config.xml` peut adapter ses techniques d'évasion en temps réel. La méthode registre ANSSI (section 4) élimine ce risque — Sysmon charge la configuration en registre en format binaire au moment de l'application, puis n'a plus besoin du fichier XML.
+Un fichier de configuration Sysmon expose exactement ce qui est surveillé et ce qui ne l'est pas. Un attaquant disposant d'un accès en lecture à `C:\Windows\sysmon-config.xml` peut adapter ses techniques d'évasion en temps réel. La méthode registre ANSSI (section 4) élimine ce risque : Sysmon charge la configuration en registre en format binaire au moment de l'application, puis n'a plus besoin du fichier XML.
 
 ### Téléchargement
 
@@ -266,46 +266,46 @@ Les fichiers XML sont disponibles dans le dépôt GitHub du lab :
 | `sysmon-workstation.xml` | Postes membres, serveurs membres | [Télécharger](https://raw.githubusercontent.com/doit4everyone/utmstack-lab/main/configs/sysmon/sysmon-workstation.xml) |
 | `sysmon-dc.xml` | Contrôleurs de domaine | [Télécharger](https://raw.githubusercontent.com/doit4everyone/utmstack-lab/main/configs/sysmon/sysmon-dc.xml) |
 
-⚠️ Ces fichiers sont fournis à titre de référence pour comprendre les règles déployées. La procédure de déploiement (section 6) utilise la méthode registre ANSSI — le XML ne doit jamais rester sur les machines cibles en production.
+⚠️ Ces fichiers sont fournis à titre de référence pour comprendre les règles déployées. La procédure de déploiement (section 6) utilise la méthode registre ANSSI : le XML ne doit jamais rester sur les machines cibles en production.
 
-### sysmon-workstation.xml — vue d'ensemble des règles clés
+### sysmon-workstation.xml : vue d'ensemble des règles clés
 
-**EID 1 — ProcessCreate : LOLBIN**
+**EID 1 (ProcessCreate) : LOLBIN**
 
-Les "Living Off the Land Binaries" sont des exécutables Windows légitimes détournés pour exécuter du code malveillant. La liste couvre les suspects classiques : `certutil.exe`, `mshta.exe`, `wscript.exe`, `cscript.exe`, `regsvr32.exe`, `rundll32.exe` et une vingtaine d'autres. La règle capture également les patterns PowerShell suspects — commandes encodées (`-EncodedCommand`, `-enc`), download cradles (`DownloadString`, `WebClient`), contournements AMSI (`AmsiInitFailed`).
+Les "Living Off the Land Binaries" sont des exécutables Windows légitimes détournés pour exécuter du code malveillant. La liste couvre les suspects classiques : `certutil.exe`, `mshta.exe`, `wscript.exe`, `cscript.exe`, `regsvr32.exe`, `rundll32.exe` et une vingtaine d'autres. La règle capture également les patterns PowerShell suspects : commandes encodées (`-EncodedCommand`, `-enc`), download cradles (`DownloadString`, `WebClient`), contournements AMSI (`AmsiInitFailed`).
 
-**EID 3 — NetworkConnect : processus qui ne devraient pas se connecter**
+**EID 3 (NetworkConnect) : processus qui ne devraient pas se connecter**
 
-Cette règle capture les connexions réseau initiées par des processus qui n'ont normalement aucune raison de contacter Internet — `mshta.exe`, `wscript.exe`, `certutil.exe`, `regsvr32.exe`. Toute connexion réseau depuis ces binaires est un signal d'alerte fort. Les navigateurs et agents UTMStack sont exclus pour éviter le bruit.
+Cette règle capture les connexions réseau initiées par des processus qui n'ont normalement aucune raison de contacter Internet : `mshta.exe`, `wscript.exe`, `certutil.exe`, `regsvr32.exe`. Toute connexion réseau depuis ces binaires est un signal d'alerte fort. Les navigateurs et agents UTMStack sont exclus pour éviter le bruit.
 
-**EID 10 — ProcessAccess : accès LSASS**
+**EID 10 (ProcessAccess) : accès LSASS**
 
-Le processus LSASS stocke les credentials des sessions Windows en mémoire. Tout accès à LSASS depuis un processus non système est suspect — c'est ainsi que fonctionnent Mimikatz, ProcDump ciblant LSASS, et la majorité des outils de credential dumping. Les exclusions couvrent les accès légitimes système (wininit, csrss, services, svchost) et Windows Defender.
+Le processus LSASS stocke les credentials des sessions Windows en mémoire. Tout accès à LSASS depuis un processus non système est suspect : c'est ainsi que fonctionnent Mimikatz, ProcDump ciblant LSASS, et la majorité des outils de credential dumping. Les exclusions couvrent les accès légitimes système (wininit, csrss, services, svchost) et Windows Defender.
 
-**EID 12/13 — RegistryEvent : Run keys et persistance**
+**EID 12/13 (RegistryEvent) : Run keys et persistance**
 
 Les clés `HKLM\...\Run` et `HKCU\...\Run` sont le mécanisme de persistance le plus utilisé par les malwares. La règle surveille également `AppInit_DLLs` (injection de DLL), `Image File Execution Options` (détournement de processus) et les clés Winlogon. Les modifications par le système lui-même (services.exe, svchost.exe) sont exclues.
 
-### sysmon-dc.xml — différences critiques
+### sysmon-dc.xml : différences critiques
 
-**EID 10 encore plus critique sur DC.** Un accès à LSASS sur un DC peut indiquer une tentative de DCSync — technique qui imite le protocole de réplication AD pour extraire les hash de tous les comptes, y compris krbtgt. Les exclusions sont étendues pour couvrir ADWS, DFSR et les autres composants AD DS qui accèdent légitimement à LSASS.
+**EID 10 encore plus critique sur DC.** Un accès à LSASS sur un DC peut indiquer une tentative de DCSync : technique qui imite le protocole de réplication AD pour extraire les hash de tous les comptes, y compris krbtgt. Les exclusions sont étendues pour couvrir ADWS, DFSR et les autres composants AD DS qui accèdent légitimement à LSASS.
 
-**Clés LSA supplémentaires en EID 12/13.** La modification de `LSA\Security Packages`, `LSA\Authentication Packages` ou `LSA\Notification Packages` permet à un attaquant d'installer un SSP (Security Support Provider) malveillant qui capture les credentials de tous les utilisateurs qui se connectent au DC. Ce vecteur — connu sous le nom de "LSA SSP injection" — est rarement surveillé.
+**Clés LSA supplémentaires en EID 12/13.** La modification de `LSA\Security Packages`, `LSA\Authentication Packages` ou `LSA\Notification Packages` permet à un attaquant d'installer un SSP (Security Support Provider) malveillant qui capture les credentials de tous les utilisateurs qui se connectent au DC. Ce vecteur, connu sous le nom de "LSA SSP injection", est rarement surveillé.
 
-**WDigest surveille sur DC.** La clé `WDigest\UseLogonCredential = 1` force Windows à conserver les mots de passe en clair en mémoire LSASS. Cette modification sur un DC est un signal d'alerte critique — elle permet à l'attaquant de récupérer les credentials en clair de tous les comptes qui se connectent.
+**WDigest surveille sur DC.** La clé `WDigest\UseLogonCredential = 1` force Windows à conserver les mots de passe en clair en mémoire LSASS. Cette modification sur un DC est un signal d'alerte critique : elle permet à l'attaquant de récupérer les credentials en clair de tous les comptes qui se connectent.
 
 ---
 
 ## 5. Déploiement sur la machine de référence
 
-Avant de créer les GPOs, Sysmon doit être appliqué sur une machine de référence pour générer les valeurs registre qui seront ensuite distribuées via GPP. Ce déploiement initial utilise le fichier XML directement — c'est la seule exception à la règle "pas de XML en production".
+Avant de créer les GPOs, Sysmon doit être appliqué sur une machine de référence pour générer les valeurs registre qui seront ensuite distribuées via GPP. Ce déploiement initial utilise le fichier XML directement : c'est la seule exception à la règle "pas de XML en production".
 
 ### Choix des machines de référence
 
 | Config | Machine de référence | Justification |
 |---|---|---|
 | sysmon-workstation.xml | WIN11-AD-TESTS | Machine AD-only, représentative des postes membres |
-| sysmon-dc.xml | DC01-MAIN-SITE | DC de production — appliquer en maintenance |
+| sysmon-dc.xml | DC01-MAIN-SITE | DC de production : appliquer en maintenance |
 
 ### Préparation sur WIN11-AD-TESTS
 
@@ -368,16 +368,16 @@ Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 5 |
     Select-Object Id, TimeCreated, Message
 ```
 
-La valeur `Rules` doit être présente et non vide — elle contient la configuration complète compilée en binaire. Si elle est absente, la configuration n'a pas été chargée correctement.
+La valeur `Rules` doit être présente et non vide : elle contient la configuration complète compilée en binaire. Si elle est absente, la configuration n'a pas été chargée correctement.
 
-### Export des valeurs registre — étape critique
+### Export des valeurs registre : étape critique
 
 ```powershell
 # Export en fichier .reg pour alimenter la GPO
 $regPath = "HKLM\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters"
 reg export $regPath "C:\Temp\sysmon-workstation-params.reg" /y
 
-# Vérifier le contenu — les 4 valeurs doivent être présentes
+# Vérifier le contenu : les 4 valeurs doivent être présentes
 Get-Content "C:\Temp\sysmon-workstation-params.reg"
 ```
 
@@ -393,12 +393,12 @@ Windows Registry Editor Version 5.00
 "Rules"=hex:...données binaires de la configuration compilée...
 ```
 
-**Conserver ce fichier** — il sera utilisé pour créer les éléments GPP Registre dans la section suivante.
+**Conserver ce fichier** : il sera utilisé pour créer les éléments GPP Registre dans la section suivante.
 
 ### Suppression du XML
 
 ```powershell
-# Le XML a été chargé en registre — il peut maintenant être supprimé
+# Le XML a été chargé en registre : il peut maintenant être supprimé
 Remove-Item "C:\Temp\SysmonDeploy\sysmon-workstation.xml" -Force
 
 # Archiver le XML dans le repo privé (jamais sur GitHub public)
@@ -414,7 +414,7 @@ Même procédure sur DC01-MAIN-SITE avec `sysmon-dc.xml`, de préférence pendan
 reg export "HKLM\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters" `
     "C:\Temp\sysmon-dc-params.reg" /y
 
-# Supprimer le XML — adapter le chemin selon l'emplacement utilisé
+# Supprimer le XML : adapter le chemin selon l'emplacement utilisé
 Remove-Item "C:\Temp\SysmonDeploy\sysmon-dc.xml" -Force
 
 # Vérifier qu'aucun XML ne reste accessible sur le DC
@@ -423,44 +423,44 @@ Get-ChildItem "C:\Temp\SysmonDeploy\" | Where-Object { $_.Extension -eq ".xml" }
 
 ---
 
-## 6. Déploiement GPO — méthode registre ANSSI
+## 6. Déploiement GPO : méthode registre ANSSI
 
 Cette méthode, recommandée par l'ANSSI dans son guide de journalisation Windows, garantit qu'aucun fichier XML de configuration n'est présent sur les postes en production.
 
 ### Principe de fonctionnement
 
-Sysmon lit le fichier XML **une seule fois** pour convertir la configuration en format binaire et la stocker dans le registre sous `HKLM\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters`. Une fois cette conversion effectuée, le XML peut être supprimé — Sysmon n'a plus besoin de lui et travaille exclusivement depuis le registre.
+Sysmon lit le fichier XML **une seule fois** pour convertir la configuration en format binaire et la stocker dans le registre sous `HKLM\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters`. Une fois cette conversion effectuée, le XML peut être supprimé : Sysmon n'a plus besoin de lui et travaille exclusivement depuis le registre.
 
 Les quatre valeurs créées sont : `DnsLookup`, `HashingAlgorithm`, `Options` et `Rules`.
 
-### Étape 1 — Générer la configuration sur une machine de référence
+### Étape 1 : Générer la configuration sur une machine de référence
 
 Appliquer chaque XML sur une machine dédiée (pas une machine de production) :
 
 ```powershell
-# Pour la config workstation — appliquer sur gest-srv ou WIN11-AD-TESTS
+# Pour la config workstation : appliquer sur gest-srv ou WIN11-AD-TESTS
 edgeIT.exe -accepteula -i sysmon-workstation.xml
 
-# Pour la config DC — appliquer sur DC01-MAIN-SITE
+# Pour la config DC : appliquer sur DC01-MAIN-SITE
 edgeIT.exe -accepteula -i sysmon-dc.xml
 ```
 
 Après application, le XML peut être archivé hors ligne. Il n'a plus aucun rôle sur la machine.
 
-### Étape 2 — Exporter les valeurs registre
+### Étape 2 : Exporter les valeurs registre
 
 ```powershell
 # Export des 4 valeurs SysmonDrv\Parameters en fichier .reg
 $regPath = "HKLM\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters"
 reg export $regPath "C:\Temp\sysmon-workstation-params.reg" /y
 
-# Vérification — les 4 valeurs attendues
+# Vérification : les 4 valeurs attendues
 Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters"
 ```
 
 Les valeurs `DnsLookup`, `HashingAlgorithm`, `Options` et `Rules` doivent toutes être présentes. La valeur `Rules` contient la configuration complète en format binaire.
 
-### Étape 3 — Créer le filtre WMI d'exclusion des DC
+### Étape 3 : Créer le filtre WMI d'exclusion des DC
 
 Les machines du domaine sont réparties dans des OUs différentes. Plutôt que de gérer des liens GPO par OU, les deux GPOs Sysmon sont liées au **domaine racine** et un filtre WMI exclut automatiquement les contrôleurs de domaine. Cette approche couvre tous les postes membres, serveurs membres et hôtes Hyper-V sans configuration supplémentaire.
 
@@ -475,7 +475,7 @@ La propriété `DomainRole` de WMI identifie le rôle de la machine :
 | 4 | Backup Domain Controller |
 | 5 | Primary Domain Controller |
 
-La requête `DomainRole < 4` cible tout sauf les DC — postes, serveurs membres, hôtes Hyper-V en cluster inclus.
+La requête `DomainRole < 4` cible tout sauf les DC : postes, serveurs membres, hôtes Hyper-V en cluster inclus.
 
 Dans la GPMC :
 
@@ -487,9 +487,9 @@ Dans la GPMC :
    - Requête : `SELECT * FROM Win32_ComputerSystem WHERE DomainRole < 4`
 5. **Enregistrer**
 
-### Étape 4 — Créer la GPO d'installation
+### Étape 4 : Créer la GPO d'installation
 
-Placer les fichiers dans le SYSVOL — accessible par toutes les machines du domaine :
+Placer les fichiers dans le SYSVOL : accessible par toutes les machines du domaine :
 
 ```
 \\lab.local\SYSVOL\lab.local\Sysmon\
@@ -510,7 +510,7 @@ Dans la GPMC :
 7. Fermer l'éditeur → retour dans GPMC
 8. Onglet **Étendue** de la GPO → **Filtrage WMI** → sélectionner `Exclure Domain Controllers`
 
-### Étape 5 — Créer la GPO de configuration (GPP Registre)
+### Étape 5 : Créer la GPO de configuration (GPP Registre)
 
 Cette GPO pousse les quatre valeurs registre sur toutes les machines cibles, sans fichier XML en transit.
 
@@ -526,11 +526,11 @@ Dans la GPMC :
 8. Cocher les 4 valeurs : `DnsLookup`, `HashingAlgorithm`, `Options`, `Rules`
 9. **Suivant** → **Terminer**
 
-Les 4 éléments apparaissent dans la liste. Vérifier que `Rules` est bien de type `REG_BINARY` — c'est la valeur qui contient toute la configuration compilée. Changer l'action de chaque valeur de **Mettre à jour** → **Remplacer** pour garantir l'application même si les valeurs sont absentes.
+Les 4 éléments apparaissent dans la liste. Vérifier que `Rules` est bien de type `REG_BINARY` : c'est la valeur qui contient toute la configuration compilée. Changer l'action de chaque valeur de **Mettre à jour** → **Remplacer** pour garantir l'application même si les valeurs sont absentes.
 
 10. Fermer l'éditeur → onglet **Étendue** → **Filtrage WMI** → sélectionner `Exclure Domain Controllers`
 
-> **Alternative si l'Assistant Registre ne peut pas atteindre WIN11-AD-TESTS** : utiliser le fichier `sysmon-workstation-params.reg` exporté précédemment. Copier ce fichier sur le DC, puis dans l'Assistant Registre sélectionner **Ordinateur local** après avoir importé le `.reg` localement via `reg import` — ou saisir les valeurs manuellement depuis le contenu du `.reg`.
+> **Alternative si l'Assistant Registre ne peut pas atteindre WIN11-AD-TESTS** : utiliser le fichier `sysmon-workstation-params.reg` exporté précédemment. Copier ce fichier sur le DC, puis dans l'Assistant Registre sélectionner **Ordinateur local** après avoir importé le `.reg` localement via `reg import`, ou saisir les valeurs manuellement depuis le contenu du `.reg`.
 
 ### Vérification du déploiement
 
@@ -549,9 +549,9 @@ Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 5 |
     Select-Object Id, TimeCreated
 ```
 
-### GPO DC — déploiement séparé
+### GPO DC : déploiement séparé
 
-Les DC utilisent une configuration distincte (`sysmon-dc.xml`) exportée depuis DC01-MAIN-SITE. La procédure est identique mais sans filtre WMI — les GPOs sont liées directement à l'**OU Domain Controllers**.
+Les DC utilisent une configuration distincte (`sysmon-dc.xml`) exportée depuis DC01-MAIN-SITE. La procédure est identique mais sans filtre WMI : les GPOs sont liées directement à l'**OU Domain Controllers**.
 
 **GPO `Sysmon - Install DC`**
 
@@ -560,7 +560,7 @@ Les DC utilisent une configuration distincte (`sysmon-dc.xml`) exportée depuis 
 3. Clic droit → **Modifier**
 4. `Configuration ordinateur > Stratégies > Paramètres Windows > Scripts (démarrage/arrêt) > Démarrage`
 5. Onglet **Scripts PowerShell** → **Ajouter** → même script `Deploy-Sysmon.ps1`
-6. Pas de filtre WMI — la liaison à l'OU Domain Controllers suffit
+6. Pas de filtre WMI : la liaison à l'OU Domain Controllers suffit
 
 **GPO `Sysmon - Config DC`**
 
@@ -576,7 +576,7 @@ Les DC utilisent une configuration distincte (`sysmon-dc.xml`) exportée depuis 
 
 ---
 
-## 7. Déploiement Intune — Win32 App
+## 7. Déploiement Intune : Win32 App
 
 Le déploiement Intune cible uniquement MDM-WIN11-01 dans ce lab. La méthode diffère de GPO car Intune dépose les fichiers du package dans `C:\Windows\IMECache` avant l'installation, ce qui expose temporairement le XML. La commande d'installation supprime ce dossier immédiatement après.
 
@@ -585,7 +585,7 @@ Le déploiement Intune cible uniquement MDM-WIN11-01 dans ce lab. La méthode di
 ```
 SYSMON_edgeIT\
 ├── edgeIT.exe          ← Sysmon64.exe renommé
-└── sysmonconfig.xml    ← Config XML — supprimée après installation
+└── sysmonconfig.xml    ← Config XML : supprimée après installation
 ```
 
 Le package est converti en `.intunewin` avec l'outil Microsoft Win32 Content Prep Tool.
@@ -612,9 +612,9 @@ Le `&&` garantit que la suppression du XML ne s'effectue qu'après une installat
 edgeIT.exe -u force
 ```
 
-**Règle de détection :** Registre — `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters` — existence de la clé.
+**Règle de détection :** existence de la clé de registre `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters`.
 
-Cette clé n'est créée que si l'installation a réussi et que la configuration a été chargée correctement — c'est une détection fiable qui ne peut pas être satisfaite par la simple présence du binaire.
+Cette clé n'est créée que si l'installation a réussi et que la configuration a été chargée correctement : c'est une détection fiable qui ne peut pas être satisfaite par la simple présence du binaire.
 
 ---
 
@@ -624,7 +624,7 @@ Cette clé n'est créée que si l'installation a réussi et que la configuration
 
 ### Limite de l'agent UTMStack
 
-L'agent UTMStack v11.2.12 CE ne collecte pas nativement le canal `Microsoft-Windows-Sysmon/Operational`. La liste des canaux collectés est codée en dur dans le binaire de l'agent — elle inclut `Security`, `System`, `Application`, `Windows PowerShell`, `Microsoft-Windows-PowerShell/Operational`, `Microsoft-Windows-Windows Firewall With Advanced Security/Firewall`, `Microsoft-Windows-Windows Defender/Operational`, et `ForwardedEvents`, mais pas Sysmon.
+L'agent UTMStack v11.2.12 CE ne collecte pas nativement le canal `Microsoft-Windows-Sysmon/Operational`. La liste des canaux collectés est codée en dur dans le binaire de l'agent : elle inclut `Security`, `System`, `Application`, `Windows PowerShell`, `Microsoft-Windows-PowerShell/Operational`, `Microsoft-Windows-Windows Firewall With Advanced Security/Firewall`, `Microsoft-Windows-Windows Defender/Operational`, et `ForwardedEvents`, mais pas Sysmon.
 
 Cette limitation a été confirmée par analyse du binaire `utmstack_agent_service_windows_amd64.exe` :
 
@@ -633,14 +633,14 @@ Cette limitation a été confirmée par analyse du binaire `utmstack_agent_servi
 docker cp $(docker ps -q -f name=utmstack_agentmanager):/dependencies/agent/utmstack_agent_service_windows_amd64.exe /tmp/
 cat /tmp/utmstack_agent_service_windows_amd64.exe | \
   grep -oa 'ForwardedEvents\|Microsoft-Windows-Sysmon[^[:space:]]*' | sort -u
-# Résultat : ForwardedEvents présent — Microsoft-Windows-Sysmon/Operational absent
+# Résultat : ForwardedEvents présent, Microsoft-Windows-Sysmon/Operational absent
 ```
 
 Un ticket a été ouvert auprès d'UTMStack pour demander l'ajout natif de ce canal ou un mécanisme de configuration des canaux collectés : [GitHub issue #2446](https://github.com/utmstack/UTMStack/issues/2446).
 
 ### La solution : WEF self-subscription locale
 
-`ForwardedEvents` **est** collecté nativement par l'agent. Le WEF permet à chaque machine de forwarder ses propres events Sysmon vers son propre canal `ForwardedEvents` — sans collecteur central, sans exposition réseau entre machines. L'agent UTMStack collecte ensuite `ForwardedEvents` normalement.
+`ForwardedEvents` **est** collecté nativement par l'agent. Le WEF permet à chaque machine de forwarder ses propres events Sysmon vers son propre canal `ForwardedEvents`, sans collecteur central, sans exposition réseau entre machines. L'agent UTMStack collecte ensuite `ForwardedEvents` normalement.
 
 Les events arrivent dans UTMStack en conservant leurs métadonnées d'origine :
 - `event.providerName` : `Microsoft-Windows-Sysmon`
@@ -659,9 +659,9 @@ Le WEF self-subscription locale a été validé sur :
 | WIN11-AD-TESTS | Windows 11 24H2 | ❌ Non fonctionnel |
 | MDM-WIN11-01 | Windows 11 24H2 (Intune) | ❌ Non fonctionnel |
 
-Sur Windows 11, le service `Wecsvc` ne parvient pas à s'enregistrer comme source auprès de son propre Subscription Manager local — erreur `2150859027` (`/SubscriptionManager/WEC` non exposé sur les SKUs client). Ce comportement a été reproduit sur deux postes Win11 distincts après diagnostic exhaustif (DNS, pare-feu, URL ACL WinRM, `SvcHostSplitDisable`, dépréciation VBScript). Il s'agit d'une limitation de conception de Windows 11, pas d'un problème de configuration.
+Sur Windows 11, le service `Wecsvc` ne parvient pas à s'enregistrer comme source auprès de son propre Subscription Manager local : erreur `2150859027` (`/SubscriptionManager/WEC` non exposé sur les SKUs client). Ce comportement a été reproduit sur deux postes Win11 distincts après diagnostic exhaustif (DNS, pare-feu, URL ACL WinRM, `SvcHostSplitDisable`, dépréciation VBScript). Il s'agit d'une limitation de conception de Windows 11, pas d'un problème de configuration.
 
-Pour les postes Windows 11, Sysmon reste déployé et actif — les events sont présents dans le canal local `Microsoft-Windows-Sysmon/Operational` mais ne remontent pas dans UTMStack faute de WEF fonctionnel.
+Pour les postes Windows 11, Sysmon reste déployé et actif : les events sont présents dans le canal local `Microsoft-Windows-Sysmon/Operational` mais ne remontent pas dans UTMStack faute de WEF fonctionnel.
 
 ---
 
@@ -669,7 +669,7 @@ Pour les postes Windows 11, Sysmon reste déployé et actif — les events sont 
 
 ### Principe
 
-Chaque machine gère sa propre subscription WEF en mode `SourceInitiated`. Elle se déclare elle-même comme source et comme collecteur — d'où le terme "self-subscription". Les events Sysmon sont forwarded vers le canal `ForwardedEvents` local, que l'agent UTMStack collecte ensuite.
+Chaque machine gère sa propre subscription WEF en mode `SourceInitiated`. Elle se déclare elle-même comme source et comme collecteur : d'où le terme "self-subscription". Les events Sysmon sont forwarded vers le canal `ForwardedEvents` local, que l'agent UTMStack collecte ensuite.
 
 Ce mode ne nécessite aucun collecteur WEF central dédié, aucune ouverture réseau entre machines, et aucune modification de l'architecture existante.
 
@@ -677,19 +677,19 @@ Ce mode ne nécessite aucun collecteur WEF central dédié, aucune ouverture ré
 
 Pour que la self-subscription fonctionne, plusieurs conditions doivent être réunies :
 
-**WinRM et Wecsvc actifs** — WinRM écoute sur le port 5985, `Wecsvc` démarre automatiquement.
+**WinRM et Wecsvc actifs** : WinRM écoute sur le port 5985, `Wecsvc` démarre automatiquement.
 
-**ACL sur le canal Sysmon** — Le canal `Microsoft-Windows-Sysmon/Operational` utilise l'isolation `Custom`, ce qui signifie que seuls les processus explicitement autorisés peuvent le lire. `Network Service` (le compte sous lequel tourne `Wecsvc`) doit avoir le droit de lecture sur ce canal.
+**ACL sur le canal Sysmon** : le canal `Microsoft-Windows-Sysmon/Operational` utilise l'isolation `Custom`, ce qui signifie que seuls les processus explicitement autorisés peuvent le lire. `Network Service` (le compte sous lequel tourne `Wecsvc`) doit avoir le droit de lecture sur ce canal.
 
-**Network Service dans Event Log Readers** — En complément de l'ACL canal, `Network Service` doit appartenir au groupe local `Lecteurs du journal d'événements`. Ce groupe est requis pour accéder aux canaux en isolation Custom.
+**Network Service dans Event Log Readers** : en complément de l'ACL canal, `Network Service` doit appartenir au groupe local `Lecteurs du journal d'événements`. Ce groupe est requis pour accéder aux canaux en isolation Custom.
 
-**URL ACL WinRM correctes** — Les URL ACL HTTP.sys doivent autoriser explicitement les SID des services `WinRM` et `Wecsvc`. Sur certaines machines, ces ACL peuvent être corrompues ou incomplètes, ce qui bloque silencieusement l'enregistrement de la source. C'est la cause racine la plus fréquente du problème "0 ordinateur" dans la subscription.
+**URL ACL WinRM correctes** : les URL ACL HTTP.sys doivent autoriser explicitement les SID des services `WinRM` et `Wecsvc`. Sur certaines machines, ces ACL peuvent être corrompues ou incomplètes, ce qui bloque silencieusement l'enregistrement de la source. C'est la cause racine la plus fréquente du problème "0 ordinateur" dans la subscription.
 
-**Canal ForwardedEvents activé** — Désactivé par défaut sur les serveurs membres et les DC, il doit être activé et dimensionné (500 MB recommandé dans ce lab).
+**Canal ForwardedEvents activé** : Désactivé par défaut sur les serveurs membres et les DC, il doit être activé et dimensionné (500 MB recommandé dans ce lab).
 
-**Canal Microsoft-Windows-Forwarding/Operational activé** — Indispensable pour que le service de forwarding puisse journaliser ses propres opérations.
+**Canal Microsoft-Windows-Forwarding/Operational activé** : indispensable pour que le service de forwarding puisse journaliser ses propres opérations.
 
-**Reboot obligatoire** — Après la première configuration complète, un redémarrage est nécessaire pour que `Network Service` hérite effectivement des droits du groupe `Event Log Readers`. Sans ce reboot, la source ne s'enregistre pas même si toutes les autres conditions sont réunies.
+**Reboot obligatoire** : après la première configuration complète, un redémarrage est nécessaire pour que `Network Service` hérite effectivement des droits du groupe `Event Log Readers`. Sans ce reboot, la source ne s'enregistre pas même si toutes les autres conditions sont réunies.
 
 ### Fichier de subscription
 
@@ -731,11 +731,11 @@ Le fichier `sysmon-wef-subscription.xml` définit la subscription déployée sur
 
 Points critiques de ce fichier :
 
-`ContentFormat: Events` est obligatoire. Le mode `RenderedText` échoue silencieusement sur les canaux en isolation Custom comme Sysmon — les events sont forwarded mais arrivent vides ou malformés.
+`ContentFormat: Events` est obligatoire. Le mode `RenderedText` échoue silencieusement sur les canaux en isolation Custom comme Sysmon : les events sont forwarded mais arrivent vides ou malformés.
 
 `ConfigurationMode: MinLatency` garantit une latence de forwarding de 30 secondes maximum, adapté à un usage SOC.
 
-`AllowedSourceDomainComputers` contient le SDDL qui autorise les Domain Computers (`DC`), Network Service (`NS`) et Domain Admins (`DD`) — les trois identités nécessaires pour la self-subscription sur des machines membres du domaine.
+`AllowedSourceDomainComputers` contient le SDDL qui autorise les Domain Computers (`DC`), Network Service (`NS`) et Domain Admins (`DD`) : les trois identités nécessaires pour la self-subscription sur des machines membres du domaine.
 
 ---
 
@@ -743,7 +743,7 @@ Points critiques de ce fichier :
 
 ### Script de déploiement
 
-Le script `Deploy-WEF-Sysmon-GPO.ps1` est déposé dans le SYSVOL et exécuté via GPO au démarrage de chaque machine. Il est idempotent — il vérifie si la subscription existe déjà et si la source est enregistrée avant d'agir.
+Le script `Deploy-WEF-Sysmon-GPO.ps1` est déposé dans le SYSVOL et exécuté via GPO au démarrage de chaque machine. Il est idempotent : il vérifie si la subscription existe déjà et si la source est enregistrée avant d'agir.
 
 ```
 \\lab.local\SYSVOL\lab.local\scripts\
@@ -753,16 +753,16 @@ Le script `Deploy-WEF-Sysmon-GPO.ps1` est déposé dans le SYSVOL et exécuté v
 
 Le script effectue dans l'ordre :
 
-1. Vérification que `SysmonDrv` est installé — si absent, abandon propre (inutile de configurer WEF sans Sysmon)
+1. Vérification que `SysmonDrv` est installé : si absent, abandon propre (inutile de configurer WEF sans Sysmon)
 2. Attente SYSVOL accessible (jusqu'à 300 secondes)
-3. Idempotence — si la subscription existe et a une source active, sortie immédiate
-4. `Set-WSManQuickConfig` et `Enable-PSRemoting` — configuration WinRM sans passer par VBScript (sur Windows 11 24H2, `winrm quickconfig` passe par `winrm.vbs` via `cscript.exe`, dont le comportement est modifié par la dépréciation de VBScript)
+3. Idempotence : si la subscription existe et a une source active, sortie immédiate
+4. `Set-WSManQuickConfig` et `Enable-PSRemoting` : configuration WinRM sans passer par VBScript (sur Windows 11 24H2, `winrm quickconfig` passe par `winrm.vbs` via `cscript.exe`, dont le comportement est modifié par la dépréciation de VBScript)
 5. Activation de `Wecsvc` en démarrage automatique
-6. ACL sur le canal `Microsoft-Windows-Sysmon/Operational` — droit de lecture pour `Network Service`
+6. ACL sur le canal `Microsoft-Windows-Sysmon/Operational` : droit de lecture pour `Network Service`
 7. Ajout de `Network Service` au groupe `Lecteurs du journal d'événements` (détection bilingue FR/EN)
 8. Activation du canal `Microsoft-Windows-Forwarding/Operational`
 9. Activation et dimensionnement de `ForwardedEvents` (500 MB)
-10. Correction des URL ACL WinRM — étape critique :
+10. Correction des URL ACL WinRM : étape critique :
 
 ```powershell
 $sddl = "D:(A;;GX;;;S-1-5-80-569256582-2953403351-2909559716-1301513147-412116970)(A;;GX;;;S-1-5-80-4059739203-877974739-1245631912-527174227-2996563517)"
@@ -770,9 +770,9 @@ cmd.exe /c "netsh http delete urlacl url=http://+:5985/wsman/"
 cmd.exe /c "netsh http add urlacl url=http://+:5985/wsman/ sddl=$sddl"
 ```
 
-Cette étape corrige les URL ACL HTTP.sys qui peuvent être incomplètes ou corrompues. Sans elle, `Wecsvc` ne peut pas s'enregistrer comme source même si toutes les autres conditions sont réunies — c'est la cause racine du problème "0 ordinateur" observé en lab.
+Cette étape corrige les URL ACL HTTP.sys qui peuvent être incomplètes ou corrompues. Sans elle, `Wecsvc` ne peut pas s'enregistrer comme source même si toutes les autres conditions sont réunies : c'est la cause racine du problème "0 ordinateur" observé en lab.
 
-11. Configuration du Subscription Manager en registre — FQDN construit dynamiquement :
+11. Configuration du Subscription Manager en registre : FQDN construit dynamiquement :
 
 ```powershell
 $domain    = (Get-WmiObject Win32_ComputerSystem).Domain
@@ -782,7 +782,7 @@ $smValue = "Server=http://${MachineFQDN}:5985/wsman/SubscriptionManager/WEC"
 Set-ItemProperty -Path $smKey -Name "1" -Value $smValue -Type String
 ```
 
-Le FQDN est construit via WMI et non via `$env:USERDNSDOMAIN` — cette variable d'environnement est vide au démarrage en l'absence de session utilisateur.
+Le FQDN est construit via WMI et non via `$env:USERDNSDOMAIN` : cette variable d'environnement est vide au démarrage en l'absence de session utilisateur.
 
 12. Redémarrage de WinRM et Wecsvc
 13. Création de la subscription via `wecutil cs`
@@ -790,7 +790,7 @@ Le FQDN est construit via WMI et non via `$env:USERDNSDOMAIN` — cette variable
 
 ### GPO de déploiement
 
-La GPO `Sysmon - WEF Operational` est liée au domaine racine sans filtre WMI. Le script se charge lui-même de vérifier la présence de `SysmonDrv` — si Sysmon n'est pas installé, il sort proprement sans erreur.
+La GPO `Sysmon - WEF Operational` est liée au domaine racine sans filtre WMI. Le script se charge lui-même de vérifier la présence de `SysmonDrv` : si Sysmon n'est pas installé, il sort proprement sans erreur.
 
 Dans la GPMC :
 
@@ -892,11 +892,11 @@ reg export "HKLM\SYSTEM\CurrentControlSet\Services\SysmonDrv\Parameters" `
 4. Mettre à jour les éléments GPP Registre dans la GPO `Sysmon - Config Workstations` (ou `Sysmon - Config DC`)
 5. Les machines reçoivent les nouvelles valeurs au prochain refresh GPO
 
-La prise en compte est immédiate — Sysmon surveille les modifications de ses clés registre et recharge la configuration sans redémarrage de service.
+La prise en compte est immédiate : Sysmon surveille les modifications de ses clés registre et recharge la configuration sans redémarrage de service.
 
 ### Via Intune (MDM-WIN11-01)
 
-La mise à jour de configuration passe par une révision du package. La commande d'installation utilise le nom générique `sysmonconfig.xml` — renommer le nouveau XML en `sysmonconfig.xml` avant de packager pour ne pas avoir à modifier la commande dans Intune.
+La mise à jour de configuration passe par une révision du package. La commande d'installation utilise le nom générique `sysmonconfig.xml` : renommer le nouveau XML en `sysmonconfig.xml` avant de packager pour ne pas avoir à modifier la commande dans Intune.
 
 **Préparation du package :**
 
@@ -923,7 +923,7 @@ Intune détecte le changement de version et redéploie sur MDM-WIN11-01, même s
 
 ---
 
-> [← Retour à l'index](../) | [→ Chapitre 11 — Règles de corrélation custom](11-correlation-rules)
+> [← Retour à l'index](../) | [→ Chapitre 11 : Règles de corrélation custom](11-correlation-rules)
 
-*Procédures testées et validées sur UTMStack v11.2.12 CE — Infrastructure lab PME Suisse*  
+*Procédures testées et validées sur UTMStack v11.2.12 CE : Infrastructure lab PME Suisse*  
 *Références et aide à la rédaction assistées par IA, avec validation humaine finale.*

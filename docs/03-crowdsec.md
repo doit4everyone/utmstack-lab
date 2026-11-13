@@ -23,7 +23,7 @@ lang: fr
   table { width: 100%; display: table; margin: 20px 0; }
 </style>
 
-# Intégration CrowdSec — OPNsense → UTMStack
+# Intégration CrowdSec : OPNsense → UTMStack
 
 > [← Retour à l'index](../)
 
@@ -43,9 +43,9 @@ UTMStack (dataType: syslog, index v11-log-syslog-*)
 Ingest pipeline crowdsec-country → champ crowdsec_country
 ```
 
-> ℹ️ CrowdSec ne dispose pas d'un parseur natif dans UTMStack v11.2.8 — les décisions arrivent dans l'index syslog général et sont filtrées par la présence du tag `CROWDSEC_BAN` dans le champ `raw`. Un ingest pipeline OpenSearch (`crowdsec-country`) extrait ensuite le code pays comme champ structuré — voir `04-dashboards.md`.
+> ℹ️ CrowdSec ne dispose pas d'un parseur natif dans UTMStack v11.2.8 : les décisions arrivent dans l'index syslog général et sont filtrées par la présence du tag `CROWDSEC_BAN` dans le champ `raw`. Un ingest pipeline OpenSearch (`crowdsec-country`) extrait ensuite le code pays comme champ structuré (voir `04-dashboards.md`).
 
-> ⚠️ **Quota Community** — La version Community de CrowdSec Central est limitée à **500 signalements/mois**. Sans déduplication, chaque alerte Suricata sur une IP déjà connue génère un signalement supplémentaire et épuise rapidement le quota. La vérification `cscli decisions list --ip` dans `soar_ban.sh` est critique pour préserver ce quota.
+> ⚠️ **Quota Community** : la version Community de CrowdSec Central est limitée à **500 signalements/mois**. Sans déduplication, chaque alerte Suricata sur une IP déjà connue génère un signalement supplémentaire et épuise rapidement le quota. La vérification `cscli decisions list --ip` dans `soar_ban.sh` est critique pour préserver ce quota.
 
 ---
 
@@ -57,7 +57,7 @@ Ingest pipeline crowdsec-country → champ crowdsec_country
 
 ---
 
-## Étape 1 — Script de forwarding des décisions
+## Étape 1 : Script de forwarding des décisions
 
 Créer `/usr/local/bin/crowdsec-to-syslog.py` :
 
@@ -115,13 +115,13 @@ while True:
 chmod +x /usr/local/bin/crowdsec-to-syslog.py
 ```
 
-> ⚠️ Utiliser le chemin complet `/usr/local/bin/cscli` — le PATH des services daemon ne contient pas `/usr/local/bin` par défaut.
+> ⚠️ Utiliser le chemin complet `/usr/local/bin/cscli` : le PATH des services daemon ne contient pas `/usr/local/bin` par défaut.
 
-> ℹ️ Les alertes avec `reason=utmstack` sont ignorées — elles sont déjà loggées par `soar_ban.sh` pour éviter les doublons.
+> ℹ️ Les alertes avec `reason=utmstack` sont ignorées : elles sont déjà loggées par `soar_ban.sh` pour éviter les doublons.
 
 ---
 
-## Étape 2 — Service rc.d persistant
+## Étape 2 : Service rc.d persistant
 
 Créer `/usr/local/etc/rc.d/crowdsec_to_syslog` :
 
@@ -152,7 +152,7 @@ service crowdsec_to_syslog status
 
 ---
 
-## Étape 3 — Vérification du pipeline
+## Étape 3 : Vérification du pipeline
 
 **Test d'injection manuelle :**
 
@@ -161,7 +161,7 @@ logger -p local5.alert -t crowdsec \
   'CROWDSEC_BAN {"event_type":"ban","ip":"1.2.3.4","reason":"crowdsecurity/http-probing","country":"CN","as":"TestAS","type":"ban"}'
 ```
 
-Dans UTMStack → **Log Explorer** → filtre `raw CONTAINS CROWDSEC_BAN` — le message doit apparaître avec :
+Dans UTMStack → **Log Explorer** → filtre `raw CONTAINS CROWDSEC_BAN` : le message doit apparaître avec :
 
 | Champ | Valeur |
 |---|---|
@@ -190,7 +190,7 @@ Ce format JSON permet à l'ingest pipeline OpenSearch `crowdsec-country` d'extra
 
 ---
 
-## Whitelist — Exclure les IPs légitimes
+## Whitelist : Exclure les IPs légitimes
 
 Certaines IPs Microsoft Azure génèrent des alertes Suricata en masse (trafic MDE, Windows Update, M365). Les exclure de CrowdSec évite des bans sur du trafic légitime.
 
@@ -205,15 +205,15 @@ whitelist:
     - "20.0.0.0/8"       # Microsoft Azure global
     - "40.64.0.0/10"     # Microsoft Azure
     - "74.160.0.0/14"    # Microsoft Corp (AS8075)
-    - "192.168.0.0/16"   # RFC1918 — réseau interne
-    - "10.0.0.0/8"       # RFC1918 — réseau interne
+    - "192.168.0.0/16"   # RFC1918 : réseau interne
+    - "10.0.0.0/8"       # RFC1918 : réseau interne
 ```
 
 ```bash
 service crowdsec reload
 ```
 
-> ℹ️ Les IPs privées (192.168.x.x, 10.x.x.x) peuvent être bannies si Suricata génère une alerte sur du trafic LAN — les ajouter en whitelist prévient les bans accidentels.
+> ℹ️ Les IPs privées (192.168.x.x, 10.x.x.x) peuvent être bannies si Suricata génère une alerte sur du trafic LAN : les ajouter en whitelist prévient les bans accidentels.
 
 ---
 

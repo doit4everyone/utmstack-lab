@@ -23,7 +23,7 @@ lang: fr
   table { width: 100%; display: table; margin: 20px 0; }
 </style>
 
-# Intégration Suricata — OPNsense → UTMStack
+# Intégration Suricata : OPNsense → UTMStack
 
 > [← Retour à l'index](../)
 
@@ -42,11 +42,11 @@ Parseur natif Suricata UTMStack
 origin.ip / event.alert.signature / origin.geolocation.* / ...
 ```
 
-> ℹ️ OPNsense tourne sous FreeBSD — aucun agent UTMStack ou Filebeat n'est disponible. La source `file()` native syslog-ng lit directement `eve.json` en C de façon asynchrone — aucun script shell intermédiaire nécessaire.
+> ℹ️ OPNsense tourne sous FreeBSD : aucun agent UTMStack ou Filebeat n'est disponible. La source `file()` native syslog-ng lit directement `eve.json` en C de façon asynchrone, sans script shell intermédiaire nécessaire.
 
 ---
 
-## Étape 1 — Activer l'intégration Suricata dans UTMStack
+## Étape 1 : Activer l'intégration Suricata dans UTMStack
 
 Dans UTMStack → **Data Sources** → sélectionner l'agent **gest-srv** → activer l'intégration **Suricata**.
 
@@ -75,7 +75,7 @@ Résultat attendu : `0.0.0.0:7019 ... LISTENING`
 
 ---
 
-## Étape 2 — Configuration syslog-ng native sur OPNsense
+## Étape 2 : Configuration syslog-ng native sur OPNsense
 
 ### 2.1 Source eve.json
 
@@ -122,9 +122,9 @@ log {
 };
 ```
 
-> ⚠️ **`${HOUR}:${MIN}:${SEC}` et non `${TIME}`.** Avec `flags(no-parse)`, la variable `${TIME}` est vide — le timestamp disparaît du syslog header et UTMStack ne reconnaît plus le format. Utiliser les macros individuelles.
+> ⚠️ **`${HOUR}:${MIN}:${SEC}` et non `${TIME}`.** Avec `flags(no-parse)`, la variable `${TIME}` est vide : le timestamp disparaît du syslog header et UTMStack ne reconnaît plus le format. Utiliser les macros individuelles.
 
-> ℹ️ Le PID `[1]` est fictif mais obligatoire — UTMStack attend le format `suricata[PID]:` pour activer l'extraction des champs JSON.
+> ℹ️ Le PID `[1]` est fictif mais obligatoire : UTMStack attend le format `suricata[PID]:` pour activer l'extraction des champs JSON.
 
 Valider et redémarrer :
 
@@ -140,11 +140,11 @@ netstat -an | grep "10.100.1.16" | grep ESTABLISHED
 # Attendu : tcp4 ... 10.100.1.254.XXXXX 10.100.1.16.7019 ESTABLISHED
 ```
 
-> ℹ️ La connexion vers le port 7019 est établie de façon **lazy** — uniquement lors de l'arrivée du premier événement Suricata.
+> ℹ️ La connexion vers le port 7019 est établie de façon **lazy** : uniquement lors de l'arrivée du premier événement Suricata.
 
 ---
 
-## Étape 3 — Hook de démarrage (timing reboot)
+## Étape 3 : Hook de démarrage (timing reboot)
 
 syslog-ng démarre avant que l'agent UTMStack soit joignable au boot. Un hook rc.syshook force un restart après 60 secondes :
 
@@ -164,7 +164,7 @@ chmod +x /usr/local/etc/rc.syshook.d/start/99-syslog-ng-restart
 
 ---
 
-## Étape 4 — Vérification et test d'injection
+## Étape 4 : Vérification et test d'injection
 
 **Vérifier que Suricata génère du trafic :**
 
@@ -180,7 +180,7 @@ Des événements `http`, `dns`, `flow` doivent défiler en continu.
 echo '{"timestamp":"2026-05-28T11:00:00.000000+0200","flow_id":111111111,"in_iface":"em1","event_type":"alert","src_ip":"1.2.3.4","src_port":12345,"dest_ip":"192.168.1.203","dest_port":80,"proto":"TCP","alert":{"action":"blocked","gid":1,"signature_id":2029022,"rev":3,"signature":"ET SCAN Test Injection","category":"Attempted Administrator Privilege Gain","severity":1},"direction":"to_server"}' >> /var/log/suricata/eve.json
 ```
 
-Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événement doit apparaître avec tous les champs parsés :
+Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` : l'événement doit apparaître avec tous les champs parsés :
 
 | Champ UTMStack | Contenu |
 |---|---|
@@ -206,7 +206,7 @@ Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événe
 
 ### `${TIME}` vide avec `flags(no-parse)`
 
-**Symptôme :** Le raw dans UTMStack montre `<174>May 28 ms.lab.local suricata[1]:` sans heure — les champs ne sont pas parsés.
+**Symptôme :** Le raw dans UTMStack montre `<174>May 28 ms.lab.local suricata[1]:` sans heure, les champs ne sont pas parsés.
 
 **Cause :** `flags(no-parse)` empêche syslog-ng d'extraire le timestamp du message, laissant `${TIME}` vide.
 
@@ -214,7 +214,7 @@ Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événe
 
 ### `<13>` au lieu de `<174>`
 
-**Symptôme :** Les événements arrivent avec priorité `<13>` (user-level) — UTMStack les reçoit comme raw sans champs structurés.
+**Symptôme :** Les événements arrivent avec priorité `<13>` (user-level), UTMStack les reçoit comme raw sans champs structurés.
 
 **Cause :** `program-override("suricata")` absent de la source `file()`.
 
@@ -224,11 +224,11 @@ Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événe
 
 ## Points de vigilance
 
-- **Suricata WAN uniquement** — activer l'IDS sur l'interface LAN génère du bruit sur du trafic interne légitime (WinRM, Kerberos, etc.)
-- **Source unique** — syslog-ng interdit deux sources lisant le même fichier — si ntopng utilise déjà `eve.json`, réutilisez `s_suricata_eve` dans le `log {}` plutôt que d'en créer une nouvelle
+- **Suricata WAN uniquement** : activer l'IDS sur l'interface LAN génère du bruit sur du trafic interne légitime (WinRM, Kerberos, etc.)
+- **Source unique** : syslog-ng interdit deux sources lisant le même fichier. Si ntopng utilise déjà `eve.json`, réutilisez `s_suricata_eve` dans le `log {}` plutôt que d'en créer une nouvelle
 - **`suricata-native.conf`** survit aux reboots et aux mises à jour OPNsense
 - **Port 7014 TCP** doit rester ouvert sur gest-srv pour le pipeline CrowdSec (voir `03-crowdsec.md`)
-- **Page Suricata Alerts dans OPNsense UI** — bug connu : tourne en boucle sur "Processing request..." indépendamment du pipeline. Utiliser `tail -f /var/log/suricata/eve.json` en CLI à la place
+- **Page Suricata Alerts dans OPNsense UI** : bug connu, tourne en boucle sur "Processing request..." indépendamment du pipeline. Utiliser `tail -f /var/log/suricata/eve.json` en CLI à la place
 
 ---
 

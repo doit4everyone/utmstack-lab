@@ -1,6 +1,6 @@
 ---
-title: "Intégrations agents et sources de logs — UTMStack v11 | DoIt4Everyone"
-description: "Guide complet des intégrations UTMStack v11 : agent Windows, agent Linux, collecteur UTMStack, Microsoft 365, Azure Event Hub, SOC AI natif. Sources de logs et architecture de collecte — les règles de corrélation custom sont documentées dans le chapitre 11."
+title: "Intégrations agents et sources de logs : UTMStack v11 | DoIt4Everyone"
+description: "Guide complet des intégrations UTMStack v11 : agent Windows, agent Linux, collecteur UTMStack, Microsoft 365, Azure Event Hub, SOC AI natif. Sources de logs et architecture de collecte : les règles de corrélation custom sont documentées dans le chapitre 11."
 ---
 <style>
   header, footer { display: none !important; }
@@ -22,7 +22,7 @@ description: "Guide complet des intégrations UTMStack v11 : agent Windows, agen
   table { width: 100%; display: table; margin: 20px 0; }
 </style>
 
-# Chapitre 10 — Intégrations des agents et sources de logs
+# Chapitre 10 : Intégrations des agents et sources de logs
 
 > [← Retour à l'index](../)
 
@@ -34,7 +34,7 @@ Ce chapitre documente l'ensemble des sources de logs connectées au SIEM UTMStac
 2. [Agent Windows](#2-agent-windows)
    - [2.1 Installation et configuration](#21-installation-et-configuration)
    - [2.2 Canaux collectés par défaut](#22-canaux-collectés-par-défaut)
-   - [2.3 Windows Defender — événements collectés](#23-windows-defender--événements-collectés)
+   - [2.3 Windows Defender : événements collectés](#23-windows-defender--événements-collectés)
 3. [Syslog & Suricata (OPNsense)](#3-syslog--suricata-opnsense)
 4. [Agent Linux (docker-services)](#4-agent-linux-docker-services)
 5. [Collecteur UTMStack (auto-supervision)](#5-collecteur-utmstack-auto-supervision)
@@ -54,9 +54,9 @@ Ce chapitre documente l'ensemble des sources de logs connectées au SIEM UTMStac
    - [8.2 Connexion à Ollama local](#82-connexion-à-ollama-local)
    - [8.3 Mécanisme de création d'incidents](#83-mécanisme-de-création-dincidents)
    - [8.4 Mécanisme des Echoes](#84-mécanisme-des-echoes)
-   - [8.5 Exemple d'analyse — Mistral Small](#85-exemple-danalyse--mistral-small)
+   - [8.5 Exemple d'analyse : Mistral Small](#85-exemple-danalyse--mistral-small)
    - [8.6 Comparaison SOC AI natif vs Pipeline n8n](#86-comparaison-soc-ai-natif-vs-pipeline-n8n)
-9. [Index OpenSearch — Structure des données](#9-index-opensearch--structure-des-données)
+9. [Index OpenSearch : Structure des données](#9-index-opensearch--structure-des-données)
 
 ---
 
@@ -126,16 +126,16 @@ Le script crée le service Windows `UTMStackAgent` qui démarre automatiquement.
 
 L'agent UTMStack collecte nativement les canaux Windows suivants sans configuration supplémentaire :
 
-- `Security` — événements d'authentification (4624, 4625, 4648, 4768, 4769...)
-- `System` — événements système et services
-- `Application` — événements applicatifs
-- `Microsoft-Windows-Windows Defender/Operational` — **détections Defender complètes**
-- `Microsoft-Windows-Sysmon/Operational` — si Sysmon est installé
-- `ForwardedEvents` — événements WEF reçus par le collecteur
+- `Security` : événements d'authentification (4624, 4625, 4648, 4768, 4769...)
+- `System` : événements système et services
+- `Application` : événements applicatifs
+- `Microsoft-Windows-Windows Defender/Operational` : **détections Defender complètes**
+- `Microsoft-Windows-Sysmon/Operational` : si Sysmon est installé
+- `ForwardedEvents` : événements WEF reçus par le collecteur
 
-> ℹ️ **Découverte importante** : l'agent UTMStack collecte nativement et complètement les événements Windows Defender. Le déploiement WEF (Windows Event Forwarding) n'est donc **pas nécessaire** pour la supervision Defender — contrairement à ce qu'on pourrait supposer initialement.
+> ℹ️ **Découverte importante** : l'agent UTMStack collecte nativement et complètement les événements Windows Defender. Le déploiement WEF (Windows Event Forwarding) n'est donc **pas nécessaire** pour la supervision Defender : contrairement à ce qu'on pourrait supposer initialement.
 
-### 2.3 Windows Defender — événements collectés
+### 2.3 Windows Defender : événements collectés
 
 #### Event IDs supervisés
 
@@ -143,7 +143,7 @@ L'agent UTMStack collecte nativement les canaux Windows suivants sans configurat
 |---|---|---|---|
 | 1116 | Malware détecté | HIGH | ✅ EICAR test |
 | 1117 | Malware remédiéi (quarantaine/suppression) | INFO | ✅ EICAR test |
-| 1118 | Remédiation échouée — malware toujours présent | CRITICAL | ⚠️ Non testé |
+| 1118 | Remédiation échouée : malware toujours présent | CRITICAL | ⚠️ Non testé |
 | 5001 | Protection temps réel désactivée | HIGH | ⚠️ Bloqué Tamper Protection |
 | 5007 | Configuration modifiée (exclusions...) | HIGH | ✅ MDM-WIN11-01 |
 | 5013 | Modification bloquée par Tamper Protection | HIGH | ✅ MDM-WIN11-01 |
@@ -154,26 +154,26 @@ L'agent UTMStack collecte nativement les canaux Windows suivants sans configurat
 
 #### Règle native active
 
-La règle native UTMStack **"Windows Defender - Malware Detected (Event 1116)"** fonctionne correctement — aucune règle custom n'est nécessaire pour cet event.
+La règle native UTMStack **"Windows Defender - Malware Detected (Event 1116)"** fonctionne correctement : aucune règle custom n'est nécessaire pour cet event.
 
 #### Règles custom créées
 
-Quatre règles custom ont été développées pour compléter la couverture native. Elles sont documentées en détail dans le **[Chapitre 11 — Règles de corrélation YAML personnalisées](11-correlations-yaml.md)** (série WD) et disponibles dans le [dépôt GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/windows-defender).
+Quatre règles custom ont été développées pour compléter la couverture native. Elles sont documentées en détail dans le **[Chapitre 11 : Règles de corrélation YAML personnalisées](11-correlations-yaml.md)** (série WD) et disponibles dans le [dépôt GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/windows-defender).
 
-**Philosophie de tuning appliquée :** approche défensive — la règle capture large, les faux positifs connus sont exclus chirurgicalement. Cette approche minimise le risque de rater une vraie menace, au prix d'un tuning itératif en production.
+**Philosophie de tuning appliquée :** approche défensive, la règle capture large, les faux positifs connus sont exclus chirurgicalement. Cette approche minimise le risque de rater une vraie menace, au prix d'un tuning itératif en production.
 
 | Règle | Event | Série ch.11 | FP exclus documentés |
 |---|---|---|---|
 | windows-defender-tamper-protection.yml | 5013 | WD2 | Changed Type = Ignoré |
-| windows-defender-realtime-disabled.yml | 5001 | WD3 | — |
-| windows-defender-remediation-failed.yml | 1118 | WD4 | — |
+| windows-defender-realtime-disabled.yml | 5001 | WD3 |  |
+| windows-defender-remediation-failed.yml | 1118 | WD4 |  |
 | windows-defender-exclusion-added.yml | 5007 | WD5 | Sous-répertoire Diagnostics (WdConfigHash, UX Configuration, DLP Configs, EcsConfigs) |
 
 **Procédure d'import :**
 
 1. Dans UTMStack → **Threat Management** → **Correlation Rules** → **Import**
 2. Sélectionner le fichier `.yml`
-3. Redémarrer les event-processors — **obligatoire**, sans ce redémarrage la règle apparaît dans la liste mais ne déclenche pas :
+3. Redémarrer les event-processors : **obligatoire**, sans ce redémarrage la règle apparaît dans la liste mais ne déclenche pas :
 
 ```bash
 docker service update --force utmstack_event-processor-worker
@@ -181,7 +181,7 @@ sleep 30
 docker service update --force utmstack_event-processor-manager
 ```
 
-> ℹ️ **Stabilité** : les règles importées via l'UI (`system_owner = false`) ne sont **pas** réinitialisées au redémarrage des conteneurs UTMStack — contrairement aux règles natives. Le redémarrage ci-dessus n'est nécessaire qu'une seule fois, au moment de l'import.
+> ℹ️ **Stabilité** : les règles importées via l'UI (`system_owner = false`) ne sont **pas** réinitialisées au redémarrage des conteneurs UTMStack, contrairement aux règles natives. Le redémarrage ci-dessus n'est nécessaire qu'une seule fois, au moment de l'import.
 
 **Faux positifs documentés sur Event 5007 :**
 
@@ -205,8 +205,8 @@ Le pipeline OPNsense → UTMStack est documenté en détail dans les chapitres 0
 **Index OpenSearch :** `v11-log-suricata-*` pour les alertes Suricata, `v11-log-generic-*` pour les autres logs syslog.
 
 **Références :**
-- [Chapitre 02 — Intégration Suricata](https://doit4everyone.github.io/utmstack-lab/docs/02-suricata.html)
-- [Chapitre 07 — Règles Suricata avancées](https://doit4everyone.github.io/utmstack-lab/docs/07-custom-rules.html)
+- [Chapitre 02 : Intégration Suricata](https://doit4everyone.github.io/utmstack-lab/docs/02-suricata.html)
+- [Chapitre 07 : Règles Suricata avancées](https://doit4everyone.github.io/utmstack-lab/docs/07-custom-rules.html)
 
 ---
 
@@ -257,13 +257,13 @@ La machine apparaît dans **Data Sources** avec le type `linux` et le statut "Al
 | Service | `UTMStackAgent` (Windows Services) | `UTMStackAgent.service` (systemd) |
 | Plateformes | AMD64, ARM64 | Ubuntu/Debian AMD64/ARM64, Fedora/RedHat AMD64/ARM64 |
 
-> ℹ️ **Note docker-services** : la machine héberge de nombreuses interfaces réseau virtuelles Docker. UTMStack détecte et enregistre toutes les adresses MAC et IPv6 des interfaces Docker dans le détail de la source — comportement normal, non filtrable.
+> ℹ️ **Note docker-services** : la machine héberge de nombreuses interfaces réseau virtuelles Docker. UTMStack détecte et enregistre toutes les adresses MAC et IPv6 des interfaces Docker dans le détail de la source : comportement normal, non filtrable.
 
 ---
 
 ## 5. Collecteur UTMStack (auto-supervision)
 
-Le collecteur UTMStack est un composant distinct de l'agent standard — il est conçu spécifiquement pour superviser la VM SIEM elle-même.
+Le collecteur UTMStack est un composant distinct de l'agent standard : il est conçu spécifiquement pour superviser la VM SIEM elle-même.
 
 ### Procédure d'installation
 
@@ -305,7 +305,7 @@ Contrairement à l'agent standard qui collecte des logs syslog, le collecteur UT
 | `logs/` | Logs du collecteur |
 | `logs_process/` | Logs du processus de supervision |
 
-**Service systemd :** `UTMStackCollector.service` (noter la casse — différent de `UTMStackAgent.service`)
+**Service systemd :** `UTMStackCollector.service` (noter la casse, différent de `UTMStackAgent.service`)
 
 **Index OpenSearch :** `v11-log-utmstack-*` avec `dataType: utmstack` et `dataSource: utmstack`.
 
@@ -335,7 +335,7 @@ Contrairement à l'agent standard qui collecte des logs syslog, le collecteur UT
 
 **Index créé :** `v11-log-o365-*`
 
-> ⚠️ L'index est `v11-log-o365-*` et non `v11-log-office365-*` — important pour les requêtes OpenSearch et les règles de corrélation.
+> ⚠️ L'index est `v11-log-o365-*` et non `v11-log-office365-*` : important pour les requêtes OpenSearch et les règles de corrélation.
 
 **Latence observée :** ~5 minutes entre l'événement réel et son apparition dans UTMStack. Ce délai est lié au polling de l'API O365 Management, pas à un problème de configuration.
 
@@ -367,7 +367,7 @@ UTMStack inclut 15 règles de corrélation natives pour les logs O365, couvrant 
 | Impossible Travel natif Entra | ❌ | ✅ |
 | Privileged Identity Management | ❌ | ✅ |
 
-Les règles custom O365 développées dans ce lab comblent partiellement ces gaps pour les environnements P1 — documentées en détail dans le **[Chapitre 11 — Série M](11-correlations-yaml.md#série-m--microsoft-365-et-entra-id)** et disponibles sur [GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/microsoft-365).
+Les règles custom O365 développées dans ce lab comblent partiellement ces gaps pour les environnements P1. Elles sont documentées en détail dans le **[Chapitre 11, série M](11-correlations-yaml.md#série-m--microsoft-365-et-entra-id)** et disponibles sur [GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules/microsoft-365).
 
 ---
 
@@ -375,7 +375,7 @@ Les règles custom O365 développées dans ce lab comblent partiellement ces gap
 
 ### 7.1 Pourquoi Event Hub et pas Log Analytics
 
-Azure propose deux mécanismes d'export de logs : Log Analytics Workspace et Event Hub. UTMStack dispose d'un connecteur natif Event Hub — c'est donc le choix naturel pour cette intégration. Log Analytics est conçu pour rester dans l'écosystème Microsoft (Sentinel, Azure Monitor) et son export vers des SIEM tiers nécessite des workarounds (Logic Apps, Azure Functions).
+Azure propose deux mécanismes d'export de logs : Log Analytics Workspace et Event Hub. UTMStack dispose d'un connecteur natif Event Hub : c'est donc le choix naturel pour cette intégration. Log Analytics est conçu pour rester dans l'écosystème Microsoft (Sentinel, Azure Monitor) et son export vers des SIEM tiers nécessite des workarounds (Logic Apps, Azure Functions).
 
 ### 7.2 Procédure de configuration
 
@@ -393,7 +393,7 @@ Azure Event Grid ─────────────────────
                                          v11-log-azure-*
 ```
 
-**Étape 1 — Créer le namespace Event Hub**
+**Étape 1 : Créer le namespace Event Hub**
 
 portal.azure.com → **Event Hubs** → **+ Créer** :
 
@@ -405,9 +405,9 @@ portal.azure.com → **Event Hubs** → **+ Créer** :
 | Niveau tarifaire | Essentiel (Basic) |
 | Unités de débit | 1 |
 
-> ⚠️ **Limitation tier Essentiel** : un seul Consumer Group (`$Default`) — suffisant pour un lab avec UTMStack comme unique consommateur.
+> ⚠️ **Limitation tier Essentiel** : un seul Consumer Group (`$Default`), suffisant pour un lab avec UTMStack comme unique consommateur.
 
-**Étape 2 — Créer l'Event Hub**
+**Étape 2 : Créer l'Event Hub**
 
 Dans le namespace → **+ Event Hub** :
 
@@ -417,7 +417,7 @@ Dans le namespace → **+ Event Hub** :
 | Partitions | 1 |
 | Rétention | 1 heure (minimum) |
 
-**Étape 3 — Créer les stratégies d'accès partagé (SAS)**
+**Étape 3 : Créer les stratégies d'accès partagé (SAS)**
 
 Deux règles séparées par principe de moindre privilège :
 
@@ -428,7 +428,7 @@ Deux règles séparées par principe de moindre privilège :
 
 Récupérer la **connection string** de `utmstack-listen`.
 
-**Étape 4 — Storage Account**
+**Étape 4 : Storage Account**
 
 Nécessaire pour les checkpoints de position de lecture :
 
@@ -443,7 +443,7 @@ Nécessaire pour les checkpoints de position de lecture :
 
 Créer un **container** nommé `utmstack` (accès Privé). Récupérer la **connection string** depuis Clés d'accès → key1.
 
-**Étape 5 — Configurer les Diagnostic Settings**
+**Étape 5 : configurer les Diagnostic Settings**
 
 Abonnements → votre abonnement → **Journal d'activité** → **Paramètres de diagnostic** → **+ Ajouter** :
 
@@ -451,7 +451,7 @@ Abonnements → votre abonnement → **Journal d'activité** → **Paramètres d
 - Destination : **Diffuser vers Event Hub**
 - Namespace : `utmstack-azure`, Hub : `utmstack`, Stratégie : `azure-monitor-send`
 
-**Étape 6 — Configurer UTMStack**
+**Étape 6 : configurer UTMStack**
 
 Integrations → **Azure** → **Enabled** → onglet **Custom** → renseigner :
 
@@ -461,7 +461,7 @@ Integrations → **Azure** → **Enabled** → onglet **Custom** → renseigner 
 Endpoint=sb://utmstack-azure.servicebus.windows.net/;SharedAccessKeyName=utmstack-listen;SharedAccessKey=***;EntityPath=utmstack
 ```
 
-> ⚠️ **Important** : ajouter `;EntityPath=utmstack` à la fin — UTMStack l'exige mais Azure ne le génère pas automatiquement dans la connection string.
+> ⚠️ **Important** : ajouter `;EntityPath=utmstack` à la fin, UTMStack l'exige mais Azure ne le génère pas automatiquement dans la connection string.
 
 - Consumer Group Name : `$Default`
 - Storage Container Name : `utmstack`
@@ -469,13 +469,13 @@ Endpoint=sb://utmstack-azure.servicebus.windows.net/;SharedAccessKeyName=utmstac
 
 → **Save configuration** → **Enable integration**
 
-**Étape 7 — Event Grid (optionnel)**
+**Étape 7 : Event Grid (optionnel)**
 
 Vérifier que `Microsoft.EventGrid` est enregistré : Abonnements → Fournisseurs de ressources → statut **Registered** (automatique si Event Hub créé).
 
 Créer un abonnement aux événements : **Événements** → **+ Abonnement à un événement** → point de terminaison : **Hub d'événements** → `utmstack`.
 
-> ℹ️ Event Grid est optionnel pour un lab — les Diagnostic Settings seuls suffisent pour capturer l'Activity Log complet. Event Grid ajoute les événements de ressources en temps réel (créations, modifications, suppressions).
+> ℹ️ Event Grid est optionnel pour un lab : les Diagnostic Settings seuls suffisent pour capturer l'Activity Log complet. Event Grid ajoute les événements de ressources en temps réel (créations, modifications, suppressions).
 
 ### 7.3 Types d'événements observés
 
@@ -505,14 +505,14 @@ Deux canaux distincts avec des structures de champs différentes dans UTMStack. 
 }
 ```
 
-Ce pattern est un bon candidat pour une règle de corrélation — détection d'une tentative de destruction d'infrastructure bloquée par un verrou (accidentelle ou malveillante).
+Ce pattern est un bon candidat pour une règle de corrélation : détection d'une tentative de destruction d'infrastructure bloquée par un verrou (accidentelle ou malveillante).
 
 ### 7.4 Coûts et nettoyage
 
 Coût estimé pour 2-3 semaines de test : ~5 CHF (Event Hub Basic ~2-3 CHF/mois, Storage LRS < 1 CHF/mois).
 
 **Pour supprimer après les tests :**
-1. Supprimer le **groupe de ressources `utmstack-azure`** — supprime tout d'un coup (Event Hub, Storage Account)
+1. Supprimer le **groupe de ressources `utmstack-azure`** : supprime tout d'un coup (Event Hub, Storage Account)
 2. Désactiver le paramètre de diagnostic `utmstack` dans l'abonnement Azure
 3. Dans UTMStack → Integrations → Azure → **Disable integration**
 
@@ -538,7 +538,7 @@ UTMStack CE inclut un module SOC AI intégré accessible depuis l'onglet **SOC A
 
 ### 8.2 Connexion à Ollama local
 
-Le tab **Ollama** natif contient un bug en v11.2.12 — il envoie `POST /` au lieu de `POST /v1/chat/completions`, ce qui génère une erreur HTTP 405.
+Le tab **Ollama** natif contient un bug en v11.2.12 : il envoie `POST /` au lieu de `POST /v1/chat/completions`, ce qui génère une erreur HTTP 405.
 
 **Workaround** : utiliser le tab **Custom** avec l'URL complète :
 
@@ -552,13 +552,13 @@ Auth    : None
 
 ### 8.3 Mécanisme de création d'incidents
 
-Le mécanisme "Auto-create incidents" est purement mécanique — aucune intelligence n'intervient dans le groupement. UTMStack regroupe **toutes les alertes d'une même datasource sur les 24 dernières heures** en un incident unique.
+Le mécanisme "Auto-create incidents" est purement mécanique : aucune intelligence n'intervient dans le groupement. UTMStack regroupe **toutes les alertes d'une même datasource sur les 24 dernières heures** en un incident unique.
 
 La description générée est un template fixe :
 
 > *"AI GENERATED ANALYSIS: Multiple related alerts were detected and grouped in the [datasource] datasource during the last 24 hours. Artificial intelligence classified this grouping as a possible incident"*
 
-Les alertes groupées apparaissent avec le statut **pending** dans l'incident — comportement normal en CE.
+Les alertes groupées apparaissent avec le statut **pending** dans l'incident : comportement normal en CE.
 
 ### 8.4 Mécanisme des Echoes
 
@@ -570,7 +570,7 @@ Les **Echoes** (compteur visible dans la liste des alertes) représentent le mé
 
 Les Echoes sont visibles dans l'onglet dédié de chaque alerte avec leur timestamp et statut individuel.
 
-### 8.5 Exemple d'analyse — Mistral Small
+### 8.5 Exemple d'analyse : Mistral Small
 
 Résultat d'une analyse SOC AI sur une alerte Suricata avec Mistral Small (provider cloud) :
 
@@ -591,7 +591,7 @@ Next steps:
 • Monitor for Recurrence
 ```
 
-> ℹ️ **Résumé pré-rempli** : la section "Summary" visible dans l'onglet Detail de chaque alerte n'est pas générée par le LLM — c'est le champ `rule_description` de la règle de corrélation, défini en base PostgreSQL. Ce texte est identique pour toutes les alertes déclenchées par la même règle.
+> ℹ️ **Résumé pré-rempli** : la section "Summary" visible dans l'onglet Detail de chaque alerte n'est pas générée par le LLM, c'est le champ `rule_description` de la règle de corrélation, défini en base PostgreSQL. Ce texte est identique pour toutes les alertes déclenchées par la même règle.
 
 > ⚠️ **Clé free Mistral** : le plan "Experiment" de Mistral AI entraîne sur les données par défaut. Ne jamais utiliser une clé free avec des données réelles de production. Utiliser le plan Scale (pay-as-you-go) pour la conformité nLPD/RGPD.
 
@@ -610,7 +610,7 @@ Le SOC AI natif est un complément rapide pour les équipes sans ressources pour
 
 ---
 
-## 9. Index OpenSearch — Structure des données
+## 9. Index OpenSearch : Structure des données
 
 | Index | Source | DataType | Champs clés |
 |---|---|---|---|
@@ -637,21 +637,21 @@ Le SOC AI natif est un complément rapide pour les équipes sans ressources pour
 | `origin.ip` | IP source de l'événement |
 | `origin.user` | Utilisateur associé |
 | `origin.geolocation` | Géolocalisation de l'IP source |
-| `_hasOverflow` | `true` si l'event dépasse la limite d'affichage UI — artefact visuel, non stocké dans OpenSearch |
+| `_hasOverflow` | `true` si l'event dépasse la limite d'affichage UI : artefact visuel, non stocké dans OpenSearch |
 
 ---
 
 ## Ressources
 
 - [Bibliothèque de règles de corrélation (GitHub)](https://github.com/doit4everyone/utmstack-lab/tree/main/rules)
-- [Chapitre 11 — Règles de corrélation YAML personnalisées](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html)
-- [Réduction du bruit — Tuning des règles natives](https://doit4everyone.github.io/utmstack-lab/docs/correlation-rules-tuning.html)
-- [Chapitre 09 — Pipeline SOC augmenté par IA locale](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html)
+- [Chapitre 11 : Règles de corrélation YAML personnalisées](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html)
+- [Réduction du bruit : Tuning des règles natives](https://doit4everyone.github.io/utmstack-lab/docs/correlation-rules-tuning.html)
+- [Chapitre 09 : Pipeline SOC augmenté par IA locale](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html)
 
 ---
 
-> [← Retour à l'index](../) | [→ Chapitre 11 — Règles de corrélation YAML personnalisées](11-correlations-yaml.md)
+> [← Retour à l'index](../) | [→ Chapitre 11 : Règles de corrélation YAML personnalisées](11-correlations-yaml.md)
 
-*Procédures testées et validées sur UTMStack v11.2.12 CE — Infrastructure lab PME Suisse*
+*Procédures testées et validées sur UTMStack v11.2.12 CE : Infrastructure lab PME Suisse*
 
 *Références et aide à la rédaction assistées par IA, avec validation humaine finale.*

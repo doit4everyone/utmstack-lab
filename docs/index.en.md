@@ -1,6 +1,6 @@
 ---
-title: "UTMStack Lab — Deployment Guide | DoIt4Everyone"
-description: "UTMStack v11.2.8 Community Edition — Deployment guide for lab environment. Swiss SME IT consultant. VMware, Suricata, CrowdSec, SOAR."
+title: "UTMStack Lab: Deployment Guide | DoIt4Everyone"
+description: "UTMStack v11.2.8 Community Edition: Deployment guide for lab environment. Swiss SME IT consultant. VMware, Suricata, CrowdSec, SOAR."
 ---
 <style>
   header, footer { display: none !important; }
@@ -24,8 +24,8 @@ description: "UTMStack v11.2.8 Community Edition — Deployment guide for lab en
 
 # UTMStack Lab 🛡️
 
-**UTMStack v11.2.8 Community Edition — Deployment Guide**
-*Lab environment — Independent IT Consultant — Switzerland 🇨🇭*
+**UTMStack v11.2.8 Community Edition: Deployment Guide**
+*Lab environment · Independent IT Consultant · Switzerland 🇨🇭*
 
 > 🇫🇷 [Version française disponible](index.md)
 
@@ -87,7 +87,7 @@ OpenSearch visualizations, v11-log-suricata-* index, geolocation fields.
 YAML correlation rules, SOAR flows, automatic IP banning via SSH.
 
 ### 📋 OPNsense Post-Migration Checklist
-[→ OPNsense 26.1 — Key Points](06-migration-checklist.md)
+[→ OPNsense 26.1: Key Points](06-migration-checklist.md)
 
 GUI port 8081, OpenVPN TLS static key, syslog-ng restart hook.
 
@@ -115,4 +115,4 @@ These guides represent dozens of hours of testing in real environments.
 
 ℹ️ *References and writing assistance provided by AI, with final human validation.*
 
-Hosted on GitHub Pages — Theme by [orderedlist](https://github.com/orderedlist)
+Hosted on GitHub Pages · Theme by [orderedlist](https://github.com/orderedlist)

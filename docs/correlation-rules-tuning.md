@@ -1,5 +1,5 @@
 ---
-title: "Réduction du bruit — Règles de corrélation UTMStack | DoIt4Everyone"
+title: "Réduction du bruit : Règles de corrélation UTMStack | DoIt4Everyone"
 description: "Alert fatigue sur UTMStack v11 : diagnostic OpenSearch/PostgreSQL, 7 fixes de règles de corrélation (530/875/876/525/521/1424), dérive d'ID entre versions, automatisation double (boot + cron horaire), checklist post-update."
 lang: fr
 ---
@@ -23,7 +23,7 @@ lang: fr
   table { width: 100%; display: table; margin: 20px 0; }
 </style>
 
-# Réduction du bruit — Règles de corrélation UTMStack
+# Réduction du bruit : Règles de corrélation UTMStack
 
 > [← Retour à l'index](../)
 
@@ -36,26 +36,26 @@ lang: fr
 
 ---
 
-## Contexte — l'alert fatigue, un phénomène universel sur les SIEM
+## Contexte : l'alert fatigue, un phénomène universel sur les SIEM
 
-Les règles de corrélation built-in d'un SIEM (`system_owner=true` côté UTMStack) sont calibrées pour un périmètre générique — elles doivent fonctionner sur n'importe quel déploiement, donc elles pèchent presque toujours par excès de largeur plutôt que par excès de précision. Le tuning post-déploiement n'est pas une anomalie, c'est une discipline à part entière du métier SOC (le *detection engineering*), et ce comportement se retrouve sur tous les produits du marché (Splunk ES, QRadar, Sentinel, Elastic Security, Wazuh…).
+Les règles de corrélation built-in d'un SIEM (`system_owner=true` côté UTMStack) sont calibrées pour un périmètre générique : elles doivent fonctionner sur n'importe quel déploiement, donc elles pèchent presque toujours par excès de largeur plutôt que par excès de précision. Le tuning post-déploiement n'est pas une anomalie, c'est une discipline à part entière du métier SOC (le *detection engineering*), et ce comportement se retrouve sur tous les produits du marché (Splunk ES, QRadar, Sentinel, Elastic Security, Wazuh…).
 
-Ce lab amplifie particulièrement le phénomène : la plupart des déploiements SIEM en entreprise ne reçoivent les logs IDS/IPS qu'après un premier filtrage côté firewall managé. Ici, `HOME_NET` a été délibérément élargi pour inclure le réseau WAN (voir [07 — Règles Suricata avancées](07-custom-rules.md)), afin de capturer tout le trafic de scan Internet à des fins pédagogiques et documentaires. Conséquence directe : 100% du bruit de reconnaissance passive (scanners connus, listes de réputation IP) remonte jusqu'aux règles de corrélation UTMStack, alors qu'un déploiement pro filtrerait une bonne partie de ce volume en amont.
+Ce lab amplifie particulièrement le phénomène : la plupart des déploiements SIEM en entreprise ne reçoivent les logs IDS/IPS qu'après un premier filtrage côté firewall managé. Ici, `HOME_NET` a été délibérément élargi pour inclure le réseau WAN (voir [07 : Règles Suricata avancées](07-custom-rules.md)), afin de capturer tout le trafic de scan Internet à des fins pédagogiques et documentaires. Conséquence directe : 100% du bruit de reconnaissance passive (scanners connus, listes de réputation IP) remonte jusqu'aux règles de corrélation UTMStack, alors qu'un déploiement pro filtrerait une bonne partie de ce volume en amont.
 
 **Échelle observée** sur un mois de lab (`v11-alert-*`, 2026-05-31 → 2026-06-29) : **150 004 alertes "Open"**, dont trois règles built-in concentraient à elles seules 97% du volume.
 
 ---
 
-## Méthode de diagnostic — où vivent réellement les alertes
+## Méthode de diagnostic : où vivent réellement les alertes
 
 Architecture confirmée par inspection directe (OpenSearch + PostgreSQL) :
 
 | Composant | Contenu |
 |---|---|
-| **OpenSearch** — index `v11-alert-YYYY-MM-DD` | Instances d'alertes (un index par jour, géré par ISM) |
-| **PostgreSQL** — table `utm_correlation_rules` | Définitions des règles de corrélation (`rule_definition_def`) |
+| **OpenSearch** : index `v11-alert-YYYY-MM-DD` | Instances d'alertes (un index par jour, géré par ISM) |
+| **PostgreSQL** : table `utm_correlation_rules` | Définitions des règles de corrélation (`rule_definition_def`) |
 
-Le port OpenSearch (9200) n'est pas exposé sur l'hôte — toute requête passe par `docker exec` dans le conteneur `utmstack_node1` :
+Le port OpenSearch (9200) n'est pas exposé sur l'hôte : toute requête passe par `docker exec` dans le conteneur `utmstack_node1` :
 
 ```bash
 docker exec -it <container_id> curl -s -u 'admin:<password>' -k -X POST "https://localhost:9200/v11-alert-*/_search?pretty" \
@@ -96,11 +96,11 @@ docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmsta
 "SELECT id, rule_name, rule_category, system_owner, rule_active, rule_definition_def FROM utm_correlation_rules WHERE rule_name = '<nom>';"
 ```
 
-> ⚠️ **Ne jamais exclure les règles `Known Malicious IP Detected` et `Suricata Network Anomaly Detected`** — ce sont les déclencheurs des flows SOAR 5000/5001 (ban CrowdSec automatique, voir [05 — SOAR & Automatisation](05-soar.md)). Toute modification de filtre doit explicitement les laisser intactes.
+> ⚠️ **Ne jamais exclure les règles `Known Malicious IP Detected` et `Suricata Network Anomaly Detected`** : ce sont les déclencheurs des flows SOAR 5000/5001 (ban CrowdSec automatique, voir [05, SOAR et automatisation](05-soar.md)). Toute modification de filtre doit explicitement les laisser intactes.
 
 ---
 
-## Fix 1 — Règle 530 « Tunneling Detection »
+## Fix 1 : Règle 530 « Tunneling Detection »
 
 ### Diagnostic
 
@@ -123,7 +123,7 @@ rule_definition_def:
 )
 ```
 
-La branche 3 (`target.port=443 && !appProto=tls`) est conçue pour détecter du C2 caché sur le port 443 — un signal légitime. Mais en environnement WAN-facing, ce critère matche aussi massivement les scans Internet qui touchent le port 443 sans jamais compléter de handshake TLS.
+La branche 3 (`target.port=443 && !appProto=tls`) est conçue pour détecter du C2 caché sur le port 443 : un signal légitime. Mais en environnement WAN-facing, ce critère matche aussi massivement les scans Internet qui touchent le port 443 sans jamais compléter de handshake TLS.
 
 **Validation par agrégation** sur les hits "Tunneling Detection" :
 
@@ -131,9 +131,9 @@ La branche 3 (`target.port=443 && !appProto=tls`) est conçue pour détecter du 
 |---|---|
 | `target.port` | 443 → 118 994 / 119 105 (99,9%) |
 | `log.direction` | `to_server` → 118 191 (quasi 100%, donc trafic entrant uniquement) |
-| `log.appProto` identifié | 1 775 / ~119 000 (1,5% seulement — le reste n'a simplement jamais atteint un protocole identifiable) |
+| `log.appProto` identifié | 1 775 / ~119 000 (1,5% seulement : le reste n'a simplement jamais atteint un protocole identifiable) |
 
-Exemple représentatif : signature `SURICATA STREAM 3way handshake SYN resend different seq on SYN recv`, origine externe, cible `192.168.1.203` (WAN OPNsense) — une anomalie de stream TCP typique d'un scan superficiel, pas un vrai tunnel applicatif.
+Exemple représentatif : signature `SURICATA STREAM 3way handshake SYN resend different seq on SYN recv`, origine externe, cible `192.168.1.203` (WAN OPNsense), une anomalie de stream TCP typique d'un scan superficiel, pas un vrai tunnel applicatif.
 
 ### Fix appliqué
 
@@ -164,7 +164,7 @@ WHERE id = 530;
 
 ---
 
-## Fix 2 — Règle 876 « Medium level Suricata alert »
+## Fix 2 : Règle 876 « Medium level Suricata alert »
 
 ### Diagnostic
 
@@ -173,7 +173,7 @@ rule_definition_def:
 equals("log.eventType", "alert") && equals("severity", "medium")
 ```
 
-Règle volontairement générique — capte tout event Suricata de sévérité moyenne, sans distinction de direction ni de cible. Validation par agrégation :
+Règle volontairement générique : capte tout event Suricata de sévérité moyenne, sans distinction de direction ni de cible. Validation par agrégation :
 
 | Critère | Résultat |
 |---|---|
@@ -181,7 +181,7 @@ Règle volontairement générique — capte tout event Suricata de sévérité m
 | dont `target.ip = 192.168.1.203` (WAN) | 1 708 (99,8% du volume bloqué) |
 | `action: allowed` (à préserver) | 1 472 |
 
-Le trafic `blocked` + cible WAN est composé de signatures déjà neutralisées par Suricata (Dshield, NF Known Scanner) — risque réel nul. Le trafic `allowed`, lui, doit rester visible quelle que soit sa cible.
+Le trafic `blocked` + cible WAN est composé de signatures déjà neutralisées par Suricata (Dshield, NF Known Scanner) : risque réel nul. Le trafic `allowed`, lui, doit rester visible quelle que soit sa cible.
 
 ### Fix appliqué
 
@@ -198,13 +198,13 @@ WHERE id = 876;
 
 **Résultat attendu** : ~54% de réduction sur cette règle, sans toucher au trafic `allowed`.
 
-> ⚠️ **Cette version du fix a été complétée par la suite** — voir [Fix 6](#fix-6--règle-876-v2--medium-level-suricata-alert--deuxième-itération) plus bas pour un second profil de bruit découvert sur cette même règle. Si tu construis ton fichier `update-rule876.sql` pour la première fois, utilise directement la version complète du Fix 6, pas celle-ci.
+> ⚠️ **Cette version du fix a été complétée par la suite** : voir [Fix 6](#fix-6--règle-876-v2--medium-level-suricata-alert--deuxième-itération) plus bas pour un second profil de bruit découvert sur cette même règle. Si tu construis ton fichier `update-rule876.sql` pour la première fois, utilise directement la version complète du Fix 6, pas celle-ci.
 
 ---
 
-## Fix 3 — Règle 875 « High level Suricata alert »
+## Fix 3 : Règle 875 « High level Suricata alert »
 
-### Diagnostic — l'hypothèse initiale (action=blocked) ne s'est pas vérifiée ici
+### Diagnostic : l'hypothèse initiale (action=blocked) ne s'est pas vérifiée ici
 
 ```
 rule_definition_def:
@@ -218,7 +218,7 @@ Contrairement à la règle 876, l'agrégation sur `by_action` a montré l'invers
 | `allowed` | 28 413 |
 | `blocked` | 10 |
 
-Le critère "WAN + blocked" ne pouvait donc réduire que 10 documents sur 28 195 — inutile tel quel. L'agrégation sur `by_signature` a révélé le vrai dénominateur commun :
+Le critère "WAN + blocked" ne pouvait donc réduire que 10 documents sur 28 195 : inutile tel quel. L'agrégation sur `by_signature` a révélé le vrai dénominateur commun :
 
 | Signature | Volume | % du bucket |
 |---|---|---|
@@ -226,7 +226,7 @@ Le critère "WAN + blocked" ne pouvait donc réduire que 10 documents sur 28 195
 | SCAN Ultra-slow paranoid stealth scan | 12 162 | 43% |
 | *(8 autres signatures + reste)* | ~275 | 1% |
 
-Ces deux signatures sont des détections **comportementales** de scan furtif (paquets espacés dans le temps) — Suricata les classe en `alert`/`allowed` par nature, car ce ne sont jamais des règles de blocage par correspondance de paquet. D'où l'inefficacité du critère `action`.
+Ces deux signatures sont des détections **comportementales** de scan furtif (paquets espacés dans le temps) : Suricata les classe en `alert`/`allowed` par nature, car ce ne sont jamais des règles de blocage par correspondance de paquet. D'où l'inefficacité du critère `action`.
 
 ### Fix appliqué
 
@@ -243,11 +243,11 @@ SET rule_definition_def = $$(
 WHERE id = 875;
 ```
 
-Tout vrai scan furtif visant le réseau LAN (reconnaissance interne réelle) reste détecté — seul le bruit de reconnaissance passive contre le WAN est filtré.
+Tout vrai scan furtif visant le réseau LAN (reconnaissance interne réelle) reste détecté : seul le bruit de reconnaissance passive contre le WAN est filtré.
 
 ---
 
-## Fix 4 — Règle 525 « Port Scan Detection »
+## Fix 4 : Règle 525 « Port Scan Detection »
 
 ### Diagnostic
 
@@ -269,7 +269,7 @@ rule_definition_def:
 
 Règle large (4 branches OR). Volume : 241 docs sur 1 mois, **100% sur `target.ip = 192.168.1.203`** (WAN), répartition 151 `blocked` / 90 `allowed`. Même pattern que la règle 876 : le trafic déjà bloqué visant le WAN ne mérite pas de triage manuel.
 
-> ℹ️ Pour ce type de règle comportementale (scan furtif basé sur le timing des paquets), **ne pas passer Suricata en `drop`** — des services légitimes (Google, Azure, CDN) déclenchent régulièrement ces patterns sans intention malveillante. Si une IP est réellement malveillante, elle apparaîtra aussi dans les listes Dshield/CINS/Spamhaus déjà en `drop`. La couche comportementale reste en `alert` comme observateur, pas comme bloqueur.
+> ℹ️ Pour ce type de règle comportementale (scan furtif basé sur le timing des paquets), **ne pas passer Suricata en `drop`** : des services légitimes (Google, Azure, CDN) déclenchent régulièrement ces patterns sans intention malveillante. Si une IP est réellement malveillante, elle apparaîtra aussi dans les listes Dshield/CINS/Spamhaus déjà en `drop`. La couche comportementale reste en `alert` comme observateur, pas comme bloqueur.
 
 ### Fix appliqué
 
@@ -296,7 +296,7 @@ WHERE id = 525;
 
 ---
 
-## Fix 5 — Règle 1424 « Windows: Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) »
+## Fix 5 : Règle 1424 « Windows: Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) »
 
 ### Diagnostic
 
@@ -305,9 +305,9 @@ Règle endpoint (event Windows 4104 = PowerShell ScriptBlock Logging), 3 occurre
 C:\ProgramData\Microsoft\Windows Defender Advanced Threat Protection\DataCollection\...\36dc1ba5-....ps1
 ```
 
-**Fausse alerte** : c'est le **scanner Log4Shell/CVE-2021-44228** intégré à Microsoft Defender for Endpoint, exécuté en tâche de fond par MDE lui-même. Le script contient `Invoke-WebRequestWithRootCaVerification` (contient le mot-clé `Invoke-WebRequest`) et `FromBase64String` (décodage légitime de certificats) — combinaison matchant la deuxième branche regex de détection sans qu'il s'agisse d'une vraie tentative de contournement AMSI.
+**Fausse alerte** : c'est le **scanner Log4Shell/CVE-2021-44228** intégré à Microsoft Defender for Endpoint, exécuté en tâche de fond par MDE lui-même. Le script contient `Invoke-WebRequestWithRootCaVerification` (contient le mot-clé `Invoke-WebRequest`) et `FromBase64String` (décodage légitime de certificats) : combinaison matchant la deuxième branche regex de détection sans qu'il s'agisse d'une vraie tentative de contournement AMSI.
 
-Ce cas illustre une source de bruit d'une nature différente des précédents : **pas du bruit réseau périmétrique, mais un faux positif endpoint généré par l'outil de sécurité Microsoft lui-même**. Signal à retenir pour tout déploiement SIEM avec MDE : les agents de sécurité endpoint (MDE, CrowdStrike Falcon, etc.) génèrent régulièrement des scripts PowerShell qui peuvent déclencher des règles AMSI/obfuscation — une exclusion par chemin d'exécution est préférable à une désactivation de la règle.
+Ce cas illustre une source de bruit d'une nature différente des précédents : **pas du bruit réseau périmétrique, mais un faux positif endpoint généré par l'outil de sécurité Microsoft lui-même**. Signal à retenir pour tout déploiement SIEM avec MDE : les agents de sécurité endpoint (MDE, CrowdStrike Falcon, etc.) génèrent régulièrement des scripts PowerShell qui peuvent déclencher des règles AMSI/obfuscation, une exclusion par chemin d'exécution est préférable à une désactivation de la règle.
 
 ### Fix appliqué
 
@@ -323,11 +323,11 @@ regexMatch("log.eventDataScriptBlockText", "(?i)(iex|invoke-expression|-enc |-en
 WHERE id = 1424;
 ```
 
-> ⚠️ **ID corrigé** — ce fix visait initialement l'ID 1436, qui après un revert de snapshot pointait vers une règle différente ("GCP Firewall Rule Created"). La vraie règle PowerShell vit sous l'ID **1424** en v11.2.11. Voir la section [Les ID de règles ne sont pas stables entre versions](#-les-id-de-règles-ne-sont-pas-stables-entre-versions-utmstack) pour la méthode de recherche utilisée pour la retrouver.
+> ⚠️ **ID corrigé** : ce fix visait initialement l'ID 1436, qui après un revert de snapshot pointait vers une règle différente ("GCP Firewall Rule Created"). La vraie règle PowerShell vit sous l'ID **1424** en v11.2.11. Voir la section [Les ID de règles ne sont pas stables entre versions](#-les-id-de-règles-ne-sont-pas-stables-entre-versions-utmstack) pour la méthode de recherche utilisée pour la retrouver.
 
 ---
 
-## Fix 6 — Règle 876 v2 « Medium level Suricata alert » — deuxième itération
+## Fix 6 : Règle 876 v2 « Medium level Suricata alert », deuxième itération
 
 ### Diagnostic
 
@@ -340,7 +340,7 @@ http.http_user_agent: "Microsoft-Delivery-Optimization/10.1" / "10.0"
 target.ip: 192.168.1.203 (100% des 36 occurrences)
 ```
 
-La signature détecte un exécutable Windows (en-tête "MZ") téléchargé depuis un hôte désigné par IP brute plutôt qu'un nom de domaine — un pattern généralement associé à du C2 évitant le DNS. Mais Microsoft Delivery Optimization (le CDN interne de Windows Update) utilise couramment des IP directes pour ses téléchargements, sans lien avec une activité malveillante. Confirmé : 100% des occurrences ont ce User-Agent précis, 100% ciblent le WAN local (donc c'est bien OPNsense qui télécharge, pas une machine tierce qui le contacte).
+La signature détecte un exécutable Windows (en-tête "MZ") téléchargé depuis un hôte désigné par IP brute plutôt qu'un nom de domaine : un pattern généralement associé à du C2 évitant le DNS. Mais Microsoft Delivery Optimization (le CDN interne de Windows Update) utilise couramment des IP directes pour ses téléchargements, sans lien avec une activité malveillante. Confirmé : 100% des occurrences ont ce User-Agent précis, 100% ciblent le WAN local (donc c'est bien OPNsense qui télécharge, pas une machine tierce qui le contacte).
 
 ### Fix appliqué
 
@@ -360,7 +360,7 @@ WHERE id = 876;
 
 ---
 
-## Fix 7 — Règle 521 « Malicious File Download Detection »
+## Fix 7 : Règle 521 « Malicious File Download Detection »
 
 ### Diagnostic
 
@@ -376,7 +376,7 @@ exists("origin.ip") &&
 exists("target.ip")
 ```
 
-La signature Suricata déclenchée était `NF - Generic - Exe file masquerading using Right-to-Left Override - MITRE T1036` (SID 5018812, catégorie `A Network Trojan was detected`) — une détection légitime en soi (technique RTLO utilisée pour déguiser des exécutables malveillants), mais qui matche par accident sur certains noms de fichiers de mise à jour Windows/Defender. Le trafic contenait déjà le flowbit `ET.INFO.WindowsUpdate`, confirmant son origine légitime — mais la règle de corrélation 521 ne tenait pas compte de ce marqueur : le mot-clé `"file"` présent dans la signature RTLO, combiné à la catégorie `A Network Trojan was detected`, suffisait à faire matcher la règle et déclencher le SOAR.
+La signature Suricata déclenchée était `NF - Generic - Exe file masquerading using Right-to-Left Override - MITRE T1036` (SID 5018812, catégorie `A Network Trojan was detected`), une détection légitime en soi (technique RTLO utilisée pour déguiser des exécutables malveillants), mais qui matche par accident sur certains noms de fichiers de mise à jour Windows/Defender. Le trafic contenait déjà le flowbit `ET.INFO.WindowsUpdate`, confirmant son origine légitime, mais la règle de corrélation 521 ne tenait pas compte de ce marqueur : le mot-clé `"file"` présent dans la signature RTLO, combiné à la catégorie `A Network Trojan was detected`, suffisait à faire matcher la règle et déclencher le SOAR.
 
 ### Fix appliqué
 
@@ -398,7 +398,7 @@ WHERE id = 521;
 
 ---
 
-## Méthode d'application — pattern réutilisable
+## Méthode d'application : pattern réutilisable
 
 Pour éviter les problèmes d'échappement de guillemets imbriqués (`$$...$$`, guillemets doubles dans `equals("...")`) à travers `docker exec -c`, le SQL est écrit dans un fichier, copié dans le conteneur, puis exécuté via `-f` :
 
@@ -419,17 +419,17 @@ docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmsta
 "SELECT rule_definition_def FROM utm_correlation_rules WHERE id = <id>;"
 ```
 
-> ℹ️ `docker exec -it` avec une commande non-interactive (`-c "SELECT..."` redirigée vers un fichier) peut sembler « figer » le terminal — c'est en réalité le pager (`less`) du résultat psql qui attend une touche. `q` débloque immédiatement. Pour éviter le piège, ne pas utiliser `-it` quand la sortie est redirigée.
+> ℹ️ `docker exec -it` avec une commande non-interactive (`-c "SELECT..."` redirigée vers un fichier) peut sembler « figer » le terminal : c'est en réalité le pager (`less`) du résultat psql qui attend une touche. `q` débloque immédiatement. Pour éviter le piège, ne pas utiliser `-it` quand la sortie est redirigée.
 
 ---
 
-## ⚠️ Étape obligatoire — redémarrer les services de corrélation
+## ⚠️ Étape obligatoire : redémarrer les services de corrélation
 
 **Une modification de `utm_correlation_rules` en base ne suffit pas.** Constat fait le 2026-06-30 : malgré un `UPDATE` confirmé en base (vérifié par `SELECT`), une alerte Dshield correspondant exactement au nouveau critère d'exclusion de la règle 876 a continué à être créée plus de 3 heures après l'application du fix.
 
 **Cause identifiée** : `utm_correlation_rules` est lue en mémoire **au démarrage** des services `utmstack_event-processor-worker` et `utmstack_event-processor-manager`, et n'est pas relue à chaud. Tant que ces services tournent depuis avant la modification SQL, ils continuent d'évaluer les alertes avec l'ancienne définition de règle.
 
-**Action requise après tout `UPDATE` sur `utm_correlation_rules`** — redémarrer les deux services, un par un pour limiter le risque (prudence justifiée par un historique d'instabilité Docker Swarm sur ce lab) :
+**Action requise après tout `UPDATE` sur `utm_correlation_rules`** : redémarrer les deux services, un par un pour limiter le risque (prudence justifiée par un historique d'instabilité Docker Swarm sur ce lab) :
 
 ```bash
 docker service update --force utmstack_event-processor-worker
@@ -443,9 +443,9 @@ Validation finale : observer dans le Log Explorer qu'un nouvel événement corre
 
 ---
 
-## Le backlog historique — pas de nettoyage manuel nécessaire
+## Le backlog historique, pas de nettoyage manuel nécessaire
 
-Les ~118 932 alertes "Tunneling Detection" déjà générées avant le fix ne sont pas supprimées rétroactivement par la modification de règle — celle-ci n'agit que sur les futures alertes.
+Les ~118 932 alertes "Tunneling Detection" déjà générées avant le fix ne sont pas supprimées rétroactivement par la modification de règle : celle-ci n'agit que sur les futures alertes.
 
 Vérification de la politique ISM (`_plugins/_ism/policies/utmstack_ism_policy`) :
 
@@ -462,19 +462,19 @@ Rétention fixe à **30 jours** sur les index `v11-alert-*` (template partagé a
 
 > ⚠️ Un nettoyage manuel via `_update_by_query` est possible (changement de `status`/`statusLabel` en masse) mais déconseillé en routine : risque de timeout sur ~30 index, conflits de version avec les processus actifs (cron de purge, SOC-AI), et opération irréversible sur des documents existants. La rétention naturelle à 30 jours est suffisante dans la plupart des cas. Si un nettoyage immédiat est nécessaire, valider d'abord avec `/_count` (non destructif) sur un seul index avant d'élargir à `v11-alert-*`, et utiliser `wait_for_completion=false` + `requests_per_second` pour throttler l'opération.
 
-**Architecture à considérer pour une solution durable** : découpler la politique ISM des alertes (cycle de vie court — objet de triage opérationnel) de celle des logs bruts (cycle de vie long — donnée forensique/historique), plutôt que de partager `utmstack_ism_policy` entre `v11-log-*` et `v11-alert-*`.
+**Architecture à considérer pour une solution durable** : découpler la politique ISM des alertes (cycle de vie court, objet de triage opérationnel) de celle des logs bruts (cycle de vie long, donnée forensique et historique), plutôt que de partager `utmstack_ism_policy` entre `v11-log-*` et `v11-alert-*`.
 
 ---
 
-## ⚠️ Comportement confirmé — réinitialisation des règles au redémarrage
+## ⚠️ Comportement confirmé : réinitialisation des règles au redémarrage
 
-**Constaté empiriquement le 2026-07-01** après un reboot d'UTMStack : les règles `system_owner=true` sont **réinitialisées à leur définition d'origine** au démarrage. Les fixes 530, 525, 875 et 876 ont tous été écrasés. La règle 1436 (PowerShell MDE) a survécu à ce reboot — comportement non encore expliqué, à surveiller.
+**Constaté empiriquement le 2026-07-01** après un reboot d'UTMStack : les règles `system_owner=true` sont **réinitialisées à leur définition d'origine** au démarrage. Les fixes 530, 525, 875 et 876 ont tous été écrasés. La règle 1436 (PowerShell MDE) a survécu à ce reboot : comportement non encore expliqué, à surveiller.
 
 Ce n'est plus une hypothèse : **tout reboot ou update UTMStack nécessite une réapplication des fixes**.
 
 ---
 
-## Automatisation — service systemd de réapplication au démarrage
+## Automatisation : service systemd de réapplication au démarrage
 
 Plutôt que de réappliquer manuellement après chaque reboot (procédure décrite dans la section précédente), un service systemd gère la réapplication automatiquement.
 
@@ -490,10 +490,10 @@ cp /root/update-rule1424.sql /root/utmstack-fixes/
 cp /root/update-rule521.sql /root/utmstack-fixes/
 ```
 
-> ℹ️ **Pour un lecteur qui reconstruit ces fichiers depuis zéro** : voici le contenu final et à jour de chacun des 5 fichiers, prêt à copier-coller directement (`nano /root/update-rule<id>.sql`, coller, sauvegarder). Ce sont les mêmes contenus que dans les sections Fix 1 à 6 plus haut — regroupés ici pour éviter d'avoir à les rechercher un par un.
+> ℹ️ **Pour un lecteur qui reconstruit ces fichiers depuis zéro** : voici le contenu final et à jour de chacun des 5 fichiers, prêt à copier-coller directement (`nano /root/update-rule<id>.sql`, coller, sauvegarder). Ce sont les mêmes contenus que dans les sections Fix 1 à 6 plus haut : regroupés ici pour éviter d'avoir à les rechercher un par un.
 
 <details>
-<summary><strong>update-rule530.sql</strong> (Fix 1 — Tunneling Detection)</summary>
+<summary><strong>update-rule530.sql</strong> (Fix 1 : Tunneling Detection)</summary>
 
 ```sql
 UPDATE utm_correlation_rules
@@ -518,7 +518,7 @@ WHERE id = 530;
 </details>
 
 <details>
-<summary><strong>update-rule875.sql</strong> (Fix 3 — High level Suricata alert)</summary>
+<summary><strong>update-rule875.sql</strong> (Fix 3 : High level Suricata alert)</summary>
 
 ```sql
 UPDATE utm_correlation_rules
@@ -533,7 +533,7 @@ WHERE id = 875;
 </details>
 
 <details>
-<summary><strong>update-rule876.sql</strong> (Fix 6 — version finale, remplace le Fix 2)</summary>
+<summary><strong>update-rule876.sql</strong> (Fix 6 : version finale, remplace le Fix 2)</summary>
 
 ```sql
 UPDATE utm_correlation_rules
@@ -549,7 +549,7 @@ WHERE id = 876;
 </details>
 
 <details>
-<summary><strong>update-rule525.sql</strong> (Fix 4 — Port Scan Detection)</summary>
+<summary><strong>update-rule525.sql</strong> (Fix 4 : Port Scan Detection)</summary>
 
 ```sql
 UPDATE utm_correlation_rules
@@ -574,7 +574,7 @@ WHERE id = 525;
 </details>
 
 <details>
-<summary><strong>update-rule1424.sql</strong> (Fix 5 — PowerShell / MDE, ID vérifié au 2026-07-02)</summary>
+<summary><strong>update-rule1424.sql</strong> (Fix 5 : PowerShell / MDE, ID vérifié au 2026-07-02)</summary>
 
 ```sql
 UPDATE utm_correlation_rules
@@ -586,11 +586,11 @@ regexMatch("log.eventDataScriptBlockText", "(?i)(iex|invoke-expression|-enc |-en
 WHERE id = 1424;
 ```
 
-> ⚠️ Avant d'appliquer ce fichier sur une instance différente de ce lab (ou après tout revert de snapshot), vérifier que l'ID 1424 correspond bien à cette règle — voir la section [Les ID de règles ne sont pas stables entre versions](#-les-id-de-règles-ne-sont-pas-stables-entre-versions-utmstack).
+> ⚠️ Avant d'appliquer ce fichier sur une instance différente de ce lab (ou après tout revert de snapshot), vérifier que l'ID 1424 correspond bien à cette règle : voir la section [Les ID de règles ne sont pas stables entre versions](#-les-id-de-règles-ne-sont-pas-stables-entre-versions-utmstack).
 </details>
 
 <details>
-<summary><strong>update-rule521.sql</strong> (Fix 7 — Malicious File Download, faux positif RTLO/Windows Update)</summary>
+<summary><strong>update-rule521.sql</strong> (Fix 7 : Malicious File Download, faux positif RTLO/Windows Update)</summary>
 
 ```sql
 UPDATE utm_correlation_rules
@@ -614,7 +614,7 @@ WHERE id = 521;
 # au démarrage pour les règles system_owner=true (530, 525, 875, 876)
 
 LOG="/var/log/utmstack-fix-rules.log"
-echo "$(date) — Démarrage réapplication des fixes de règles" >> $LOG
+echo "$(date) : Démarrage réapplication des fixes de règles" >> $LOG
 
 # Attendre que PostgreSQL soit prêt (timeout 300s)
 TIMEOUT=300
@@ -632,38 +632,38 @@ while true; do
   sleep 5
   ELAPSED=$((ELAPSED + 5))
   if [ $ELAPSED -ge $TIMEOUT ]; then
-    echo "$(date) — ERREUR : timeout attente PostgreSQL après ${TIMEOUT}s" >> $LOG
+    echo "$(date) : ERREUR : timeout attente PostgreSQL après ${TIMEOUT}s" >> $LOG
     exit 1
   fi
 done
 
-echo "$(date) — PostgreSQL prêt après ${ELAPSED}s" >> $LOG
+echo "$(date) : PostgreSQL prêt après ${ELAPSED}s" >> $LOG
 
 # Réappliquer les fixes
 for sql in update-rule530.sql update-rule875.sql update-rule876.sql update-rule525.sql update-rule1424.sql update-rule521.sql; do
   if [ -f "/root/utmstack-fixes/$sql" ]; then
     docker cp /root/utmstack-fixes/$sql $POSTGRES_ID:/tmp/$sql
     docker exec -i $POSTGRES_ID psql -U postgres -d utmstack -f /tmp/$sql >> $LOG 2>&1
-    echo "$(date) — Fix appliqué : $sql" >> $LOG
+    echo "$(date) : Fix appliqué : $sql" >> $LOG
   else
-    echo "$(date) — ERREUR : fichier manquant /root/utmstack-fixes/$sql" >> $LOG
+    echo "$(date) : ERREUR : fichier manquant /root/utmstack-fixes/$sql" >> $LOG
   fi
 done
 
 # Attendre 120s que Docker Swarm et les event-processor soient stables
-echo "$(date) — Attente 120s avant redémarrage des event-processor" >> $LOG
+echo "$(date) : Attente 120s avant redémarrage des event-processor" >> $LOG
 sleep 120
 
-echo "$(date) — Redémarrage event-processor-worker" >> $LOG
+echo "$(date) : Redémarrage event-processor-worker" >> $LOG
 docker service update --force utmstack_event-processor-worker >> $LOG 2>&1
 
-echo "$(date) — Attente 30s avant redémarrage event-processor-manager" >> $LOG
+echo "$(date) : Attente 30s avant redémarrage event-processor-manager" >> $LOG
 sleep 30
 
-echo "$(date) — Redémarrage event-processor-manager" >> $LOG
+echo "$(date) : Redémarrage event-processor-manager" >> $LOG
 docker service update --force utmstack_event-processor-manager >> $LOG 2>&1
 
-echo "$(date) — Terminé — fixes de règles appliqués avec succès" >> $LOG
+echo "$(date) : Terminé : fixes de règles appliqués avec succès" >> $LOG
 ```
 
 ```bash
@@ -674,7 +674,7 @@ chmod +x /usr/local/bin/utmstack-fix-rules.sh
 
 ```ini
 [Unit]
-Description=UTMStack — Réapplication des fixes de règles de corrélation
+Description=UTMStack : Réapplication des fixes de règles de corrélation
 After=docker.service
 Requires=docker.service
 After=network-online.target
@@ -714,21 +714,21 @@ tail -50 /var/log/utmstack-fix-rules.log
 - Redémarrage manager : ~20s pour converger
 - **Durée totale : ~3 minutes**
 
-> ℹ️ Le service est `oneshot` — il s'exécute une fois au démarrage puis reste en état `active (exited)`. C'est le comportement attendu, pas une erreur.
+> ℹ️ Le service est `oneshot` : il s'exécute une fois au démarrage puis reste en état `active (exited)`. C'est le comportement attendu, pas une erreur.
 
 ---
 
 ## ⚠️ Les ID de règles ne sont pas stables entre versions UTMStack
 
-**Incident du 2026-07-01/02** : après un revert vers un snapshot antérieur (v11.2.8) puis une remise à jour vers v11.2.11, le fix prévu pour l'ID **1436** ("Windows: Suspicious PowerShell...") s'est retrouvé appliqué à une règle totalement différente — **"GCP Firewall Rule Created — Open Ingress"**. Entre les versions, UTMStack avait réattribué cet ID à une autre règle ; la vraie règle PowerShell vivait désormais sous l'ID **1424**.
+**Incident du 2026-07-01/02** : après un revert vers un snapshot antérieur (v11.2.8) puis une remise à jour vers v11.2.11, le fix prévu pour l'ID **1436** ("Windows: Suspicious PowerShell...") s'est retrouvé appliqué à une règle totalement différente : **"GCP Firewall Rule Created - Open Ingress"**. Entre les versions, UTMStack avait réattribué cet ID à une autre règle ; la vraie règle PowerShell vivait désormais sous l'ID **1424**.
 
-Un script qui réapplique un fix par `UPDATE ... WHERE id = X` **sans vérifier au préalable que `X` correspond toujours au bon `rule_name`** peut donc silencieusement corrompre une règle sans rapport. C'est arrivé une fois dans ce lab — voir plus bas la procédure de retour en arrière pour ce cas précis.
+Un script qui réapplique un fix par `UPDATE ... WHERE id = X` **sans vérifier au préalable que `X` correspond toujours au bon `rule_name`** peut donc silencieusement corrompre une règle sans rapport. C'est arrivé une fois dans ce lab : voir plus bas la procédure de retour en arrière pour ce cas précis.
 
-### Méthode de recherche — retrouver une règle après un changement d'ID
+### Méthode de recherche : retrouver une règle après un changement d'ID
 
 Ne jamais appliquer un `UPDATE ... WHERE id = X` sur une règle `system_owner=true` sans avoir d'abord confirmé son identité. La méthode utilisée dans ce lab, à chaque fois qu'un ID semblait suspect :
 
-**Étape 1 — Chercher par nom plutôt que par ID.** Le `rule_name` est plus stable que l'`id` entre versions (mais pas garanti à 100% non plus — vérifier aussi le contenu si un doute persiste) :
+**Étape 1 : chercher par nom plutôt que par ID.** Le `rule_name` est plus stable que l'`id` entre versions (mais pas garanti à 100% non plus : vérifier aussi le contenu si un doute persiste) :
 
 ```bash
 docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
@@ -742,27 +742,27 @@ docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmsta
 "SELECT id, rule_name, rule_category, rule_definition_def FROM utm_correlation_rules WHERE id IN (1424,1140,1362,1341);"
 ```
 
-**Étape 2 — Avant d'appliquer un `UPDATE`, toujours vérifier ce qu'il y a déjà à cet ID.** Une simple lecture avant écriture aurait évité l'incident du 1436 :
+**Étape 2 : avant d'appliquer un `UPDATE`, toujours vérifier ce qu'il y a déjà à cet ID.** Une simple lecture avant écriture aurait évité l'incident du 1436 :
 
 ```bash
 docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -x -c \
 "SELECT id, rule_name, rule_definition_def FROM utm_correlation_rules WHERE id = 1436;"
 ```
 
-Si le `rule_name` retourné ne correspond pas à ce qu'on s'apprête à modifier, **s'arrêter** — l'ID a bougé, il faut relancer l'étape 1.
+Si le `rule_name` retourné ne correspond pas à ce qu'on s'apprête à modifier, **s'arrêter** : l'ID a bougé, il faut relancer l'étape 1.
 
-**Étape 3 — Si une règle a été écrasée par erreur**, deux options selon la disponibilité de sa vraie définition d'origine :
+**Étape 3 : si une règle a été écrasée par erreur**, deux options selon la disponibilité de sa vraie définition d'origine :
 - Si elle est retrouvable (recherche externe, autre instance, contact communautaire UTMStack) : la restaurer avec un `UPDATE` normal.
 - Si elle est introuvable et que la règle ne s'applique pas à l'environnement actuel (ex : règle cloud GCP dans un lab sans source GCP configurée) : la désactiver proprement plutôt que la laisser dans un état incohérent :
   ```bash
   docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
   "UPDATE utm_correlation_rules SET rule_active = false WHERE id = <id>;"
   ```
-  C'est réversible et explicite — préférable à une règle active dont le nom et la logique ne correspondent plus.
+  C'est réversible et explicite : préférable à une règle active dont le nom et la logique ne correspondent plus.
 
 ### Conséquence pour le script d'automatisation
 
-Le script `utmstack-fix-rules.sh` (section précédente) applique ses `UPDATE` par ID, sans cette vérification de nom — c'est un choix assumé pour la vitesse d'exécution automatique au démarrage, mais **le fichier SQL de chaque fix doit être revalidé manuellement (étape 1 et 2 ci-dessus) après tout revert de snapshot vers une version différente**, avant de laisser le service tourner en confiance. Un revert n'est pas un reboot ordinaire — c'est le seul scénario où ce lab a rencontré une dérive d'ID.
+Le script `utmstack-fix-rules.sh` (section précédente) applique ses `UPDATE` par ID, sans cette vérification de nom. C'est un choix assumé pour la vitesse d'exécution automatique au démarrage, mais **le fichier SQL de chaque fix doit être revalidé manuellement (étape 1 et 2 ci-dessus) après tout revert de snapshot vers une version différente**, avant de laisser le service tourner en confiance. Un revert n'est pas un reboot ordinaire : c'est le seul scénario où ce lab a rencontré une dérive d'ID.
 
 **État actuel des IDs vérifiés dans ce lab (v11.2.11, au 2026-07-15) :**
 
@@ -774,13 +774,13 @@ Le script `utmstack-fix-rules.sh` (section précédente) applique ses `UPDATE` p
 | Port Scan Detection | 525 | Port Scan Detection |
 | Windows Suspicious PowerShell | **1424** *(anciennement 1436)* | Windows: Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) |
 | Malicious File Download Detection | 521 | Malicious File Download Detection |
-| GCP Firewall Rule Created | 1436 | GCP Firewall Rule Created — Open Ingress *(désactivée, `rule_active = false` — définition d'origine non restaurée après collision d'ID)* |
+| GCP Firewall Rule Created | 1436 | GCP Firewall Rule Created : Open Ingress *(désactivée, `rule_active = false`, définition d'origine non restaurée après collision d'ID)* |
 
 ---
 
 ## ⚠️ Checklist post-reboot / post-update UTMStack
 
-**Comportement confirmé empiriquement le 2026-07-01, et régulièrement depuis** : un reboot UTMStack — ou même le simple redémarrage d'un conteneur `event-processor` sans reboot serveur (confirmé le 5 juillet) — réinitialise les règles `system_owner=true` à leur définition d'origine. Aucune règle n'est à l'abri de façon fiable et permanente ; l'automatisation (service au boot + cron horaire de vérification, voir section précédente) est nécessaire, pas optionnelle.
+**Comportement confirmé empiriquement le 2026-07-01, et régulièrement depuis** : un reboot UTMStack, ou même le simple redémarrage d'un conteneur `event-processor` sans reboot serveur (confirmé le 5 juillet), réinitialise les règles `system_owner=true` à leur définition d'origine. Aucune règle n'est à l'abri de façon fiable et permanente ; l'automatisation (service au boot + cron horaire de vérification, voir section précédente) est nécessaire, pas optionnelle.
 
 **Depuis le 2026-07-01**, le service `utmstack-fix-rules` gère automatiquement la réapplication au démarrage, complété depuis le 5 juillet par un cron horaire de vérification (`utmstack-fix-rules-check.sh`) qui couvre le cas des redémarrages de conteneur isolés. La vérification manuelle ci-dessous reste utile après un update majeur, un revert de snapshot, ou en cas de doute :
 
@@ -792,7 +792,7 @@ systemctl status utmstack-fix-rules.service
 # Consulter le log d'exécution
 tail -50 /var/log/utmstack-fix-rules.log
 
-# Vérification manuelle des définitions si doute — par nom, pas seulement par ID
+# Vérification manuelle des définitions si doute : par nom, pas seulement par ID
 docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack -c \
 "SELECT id, rule_name FROM utm_correlation_rules WHERE id IN (530,875,876,525,1424,521);"
 ```

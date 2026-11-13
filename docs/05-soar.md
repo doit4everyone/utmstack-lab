@@ -1,6 +1,6 @@
 ---
-title: "SOAR & Automatisation — UTMStack Lab | DoIt4Everyone"
-description: "Configuration du SOAR UTMStack v11.2.8 — Ban automatique CrowdSec via SSH, déduplication, replay detection, fermeture dynamique des alertes."
+title: "SOAR & Automatisation : UTMStack Lab | DoIt4Everyone"
+description: "Configuration du SOAR UTMStack v11.2.8 : ban automatique CrowdSec via SSH, déduplication, replay detection, fermeture dynamique des alertes."
 lang: fr
 ---
 <style>
@@ -27,7 +27,7 @@ lang: fr
 
 > [← Retour à l'index](../)
 
-> ⚠️ **Version v0.2** — Les tests Red Team / Kali seront ajoutés en V4.
+> ⚠️ **Version v0.2** : les tests Red Team / Kali seront ajoutés en V4.
 
 ---
 
@@ -38,22 +38,22 @@ UTMStack détecte une alerte (Known Malicious IP / Suricata Anomaly)
     ↓
 Flow SOAR déclenche soar_ban.bat sur gest-srv (agent Windows)
     ↓
-SSH synchrone → OPNsense (10.100.1.254) — ConnectTimeout=3s
+SSH synchrone → OPNsense (10.100.1.254) : ConnectTimeout=3s
     ↓
-soar_ban.sh — Replay detection + déduplication 7j + cscli ban
+soar_ban.sh : Replay detection + déduplication 7j + cscli ban
     ↓
 CrowdSec banne l'IP 24h
     ↓
 logger syslog → CROWDSEC_BAN avec country/ASN → UTMStack
     ↓
-cron utmstack-close-alerts.sh (5 min) — ferme les alertes SOAR + purge PENDING
+cron utmstack-close-alerts.sh (5 min) : ferme les alertes SOAR + purge PENDING
 ```
 
-> ℹ️ **Country et ASN** sont fournis directement par les variables SOAR `$(adversary.geolocation.countryCode)` et `$(adversary.geolocation.asn)` — aucun lookup GeoIP externe requis.
+> ℹ️ **Country et ASN** sont fournis directement par les variables SOAR `$(adversary.geolocation.countryCode)` et `$(adversary.geolocation.asn)` : aucun lookup GeoIP externe requis.
 
 ---
 
-## Étape 1 — Clé SSH pour le compte SYSTEM
+## Étape 1 : Clé SSH pour le compte SYSTEM
 
 L'agent UTMStack tourne sous `NT AUTHORITY\SYSTEM`. La clé SSH doit être accessible depuis ce contexte.
 
@@ -87,7 +87,7 @@ echo "ssh-ed25519 AAAA... utmstack-soar" > /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
 ```
 
-> ⚠️ **Persistance** — Configurer la clé via **System → Access → Users → root → Authorized Keys** dans l'interface GUI OPNsense pour survivre aux reboots.
+> ⚠️ **Persistance** : configurer la clé via **System → Access → Users → root → Authorized Keys** dans l'interface GUI OPNsense pour survivre aux reboots.
 
 ### Test depuis SYSTEM
 
@@ -100,7 +100,7 @@ type C:\UTMStack\soar_debug.log
 
 ---
 
-## Étape 2 — Script soar_ban.sh sur OPNsense
+## Étape 2 : Script soar_ban.sh sur OPNsense
 
 4 niveaux de protection contre le replay et les bans intempestifs.
 
@@ -135,7 +135,7 @@ esac
 # -------------------------------------------------------
 # 1. Détection de replay par timestamp de l'événement
 # -------------------------------------------------------
-# Les timestamps SOAR sont en UTC (suffixe Z) — TZ=UTC obligatoire
+# Les timestamps SOAR sont en UTC (suffixe Z) : TZ=UTC obligatoire
 if [ -n "$EVENT_TIMESTAMP" ] && [ "$EVENT_TIMESTAMP" != "null" ] && [ "$EVENT_TIMESTAMP" != '$(timestamp)' ]; then
     TS_CLEAN=$(echo "$EVENT_TIMESTAMP" | sed 's/\.[0-9]*//' | sed 's/+[0-9:]*//' | sed 's/Z$//' | tr 'T' ' ')
     EVENT_UNIX=$(TZ=UTC date -j -f "%Y-%m-%d %H:%M:%S" "$TS_CLEAN" "+%s" 2>/dev/null)
@@ -154,7 +154,7 @@ if [ -n "$EVENT_TIMESTAMP" ] && [ "$EVENT_TIMESTAMP" != "null" ] && [ "$EVENT_TI
 fi
 
 # -------------------------------------------------------
-# 2. Déduplication IP 7 jours — filet de sécurité
+# 2. Déduplication IP 7 jours : filet de sécurité
 # -------------------------------------------------------
 RECENT_BANS="/conf/soar_recent_bans.txt"
 
@@ -177,7 +177,7 @@ if grep -q " $IP$" "$RECENT_BANS" 2>/dev/null; then
             curl -sk -X POST "https://10.100.1.150/api/utm-alerts/status" \
               -H "Authorization: Bearer $TOKEN" \
               -H "Content-Type: application/json" \
-              -d "{\"alertIds\":[\"$ALERT_ID\"],\"status\":5,\"statusObservation\":\"Auto-closed by SOAR — IP already in dedup 7j\"}" \
+              -d "{\"alertIds\":[\"$ALERT_ID\"],\"status\":5,\"statusObservation\":\"Auto-closed by SOAR : IP already in dedup 7j\"}" \
               >> "$LOG" 2>&1
         fi
     fi
@@ -205,7 +205,7 @@ fi
 
 # -------------------------------------------------------
 # 4. Fermeture de l'alerte via UTMStack API
-# (ALERT_ID non exposé en v11.2.8 CE — section prête pour version future)
+# (ALERT_ID non exposé en v11.2.8 CE : section prête pour version future)
 # -------------------------------------------------------
 if [ -n "$ALERT_ID" ] && [ "$ALERT_ID" != "null" ]; then
     TOKEN=$(cat /conf/utmstack_token.txt 2>/dev/null)
@@ -227,9 +227,9 @@ chmod +x /usr/local/bin/soar_ban.sh
 cp /usr/local/bin/soar_ban.sh /conf/soar_ban.sh
 ```
 
-> ⚠️ **TZ=UTC obligatoire** — Les timestamps SOAR sont en UTC (suffixe Z). Sans ce préfixe, `date -j` sur FreeBSD interprète l'heure comme locale (CEST = UTC+2), causant un faux-positif de 2h qui déclenche systématiquement la détection de replay.
+> ⚠️ **TZ=UTC obligatoire** : les timestamps SOAR sont en UTC (suffixe Z). Sans ce préfixe, `date -j` sur FreeBSD interprète l'heure comme locale (CEST = UTC+2), causant un faux-positif de 2h qui déclenche systématiquement la détection de replay.
 
-> ℹ️ **stdout aux points de sortie** — chaque `echo "OK: ..."` sans redirection vers `$LOG` est capturé par l'agent UTMStack via SSH et affiché dans la console interactive. Nécessaire pour que l'agent reçoive une réponse.
+> ℹ️ **stdout aux points de sortie** : chaque `echo "OK: ..."` sans redirection vers `$LOG` est capturé par l'agent UTMStack via SSH et affiché dans la console interactive. Nécessaire pour que l'agent reçoive une réponse.
 
 > ℹ️ **nohup ne fonctionne pas en csh** (shell OPNsense/FreeBSD). L'exécution en arrière-plan via SSH doit utiliser `sh -c '... &'`.
 
@@ -271,7 +271,7 @@ chmod 600 /conf/utmstack_token.txt
 
 ---
 
-## Étape 3 — Script soar_ban.bat sur gest-srv
+## Étape 3 : Script soar_ban.bat sur gest-srv
 
 ```powershell
 Set-Content "C:\Program Files\UTMStack\UTMStack Agent\soar_ban.bat" -Encoding ASCII -Value '@echo off
@@ -284,23 +284,23 @@ echo [%DATE% %TIME%] Exit: %ERRORLEVEL% >> "%LOGFILE%"
 exit 0'
 ```
 
-> ⚠️ **Encodage** — Utiliser impérativement `-Encoding ASCII`. Un encodage UTF-16 (défaut PowerShell) rend le BAT silencieusement non fonctionnel.
+> ⚠️ **Encodage** : utiliser impérativement `-Encoding ASCII`. Un encodage UTF-16 (défaut PowerShell) rend le BAT silencieusement non fonctionnel.
 
-> ℹ️ **SSH synchrone** avec `ConnectTimeout=3` — sur LAN la connexion prend < 1s. L'exécution synchrone permet à l'agent de capturer l'output de soar_ban.sh (`OK: BAN IP...`) et de le retourner à UTMStack.
+> ℹ️ **SSH synchrone** avec `ConnectTimeout=3` : sur LAN la connexion prend < 1s. L'exécution synchrone permet à l'agent de capturer l'output de soar_ban.sh (`OK: BAN IP...`) et de le retourner à UTMStack.
 
-> ℹ️ **exit 0 explicite** — garantit que l'agent Windows reçoit toujours un code de retour propre, indépendamment du résultat SSH.
+> ℹ️ **exit 0 explicite** : garantit que l'agent Windows reçoit toujours un code de retour propre, indépendamment du résultat SSH.
 
-> ⚠️ **PENDING comportement** — Même avec exit 0 et output, UTMStack v11.2.8 CE ne marque **jamais** les exécutions SOAR comme COMPLETED via le retour gRPC de l'agent. La purge automatique des PENDING dans `utmstack-close-alerts.sh` reste indispensable. Confirmé par analyse du bytecode Java (`utmstack.war`) et monitoring `utm_alert_response_rule_execution`.
+> ⚠️ **PENDING comportement** : Même avec exit 0 et output, UTMStack v11.2.8 CE ne marque **jamais** les exécutions SOAR comme COMPLETED via le retour gRPC de l'agent. La purge automatique des PENDING dans `utmstack-close-alerts.sh` reste indispensable. Confirmé par analyse du bytecode Java (`utmstack.war`) et monitoring `utm_alert_response_rule_execution`.
 
 ---
 
-## Étape 4 — Flows SOAR dans UTMStack
+## Étape 4 : Flows SOAR dans UTMStack
 
 ### Création des règles
 
 Dans UTMStack → **SOAR → Automation Rules → New Rule** :
 
-**Flow 5000 — Known Malicious IP :**
+**Flow 5000 : Known Malicious IP :**
 
 | Champ | Valeur |
 |---|---|
@@ -309,7 +309,7 @@ Dans UTMStack → **SOAR → Automation Rules → New Rule** :
 | Agent | gest-srv |
 | Commande | `soar_ban.bat $(adversary.ip) $(adversary.geolocation.countryCode) $(adversary.geolocation.asn) $(timestamp)` |
 
-**Flow 5001 — Suricata Anomaly :**
+**Flow 5001 : Suricata Anomaly :**
 
 | Champ | Valeur |
 |---|---|
@@ -318,7 +318,7 @@ Dans UTMStack → **SOAR → Automation Rules → New Rule** :
 | Agent | gest-srv |
 | Commande | `soar_ban.bat $(adversary.ip) $(adversary.geolocation.countryCode) $(adversary.geolocation.asn) $(timestamp)` |
 
-### ⚠️ Bug UTMStack v11.2.8 — Bouton Create Flow
+### ⚠️ Bug UTMStack v11.2.8 : Bouton Create Flow
 
 Le bouton **Create Flow** est non fonctionnel dans tous les navigateurs sauf Edge. Même sous Edge, seul **Update Flow** est fiable. Dupliquer un flow existant comme contournement.
 
@@ -333,7 +333,7 @@ WHERE id IN (5000, 5001);"
 
 > ℹ️ Les modifications de `rule_cmd` dans PostgreSQL prennent effet **sans restart** du backend.
 
-### Variables SOAR disponibles — v11.2.8
+### Variables SOAR disponibles : v11.2.8
 
 Variables confirmées par analyse du code source (`utm_alert_response_rule.sql` extrait de `utmstack.war`) :
 
@@ -351,11 +351,11 @@ Variables confirmées par analyse du code source (`utm_alert_response_rule.sql` 
 
 > ⚠️ **UTMStack v11.3.0 :** les variables suivent la structure du document d'alerte. `$(origin.ip)` renvoie `null` ; l'adresse source de l'événement déclencheur s'obtient par `$(lastEvent.origin.ip)` (autres champs constatés dans l'alerte : `adversary.ip`, `target.ip`, `lastEvent.target.ip`). `$(adversary.geolocation.latitude)` et `$(adversary.geolocation.longitude)` se résolvent et transmettent la position calculée par UTMStack. La variable v11.2 `$(log.message)` n'a pas d'équivalent vérifié en v11.3.0. Pour trouver le bon chemin d'une variable, lire le JSON d'une alerte réelle dans Threat Management.
 
-> ⚠️ **L'alert ID n'est pas exposé comme variable SOAR** — ni `$(id)`, `$(alertId)`, `$(alert_id)`, ni `$(uuid)` ne fonctionnent. Confirmé par analyse bytecode Java (`utmstack.war`) et tests exhaustifs. Non documenté sur le GitHub UTMStack ni sur docs.utmstack.com.
+> ⚠️ **L'alert ID n'est pas exposé comme variable SOAR**, ni `$(id)`, `$(alertId)`, `$(alert_id)`, ni `$(uuid)` ne fonctionnent. Confirmé par analyse bytecode Java (`utmstack.war`) et tests exhaustifs. Non documenté sur le GitHub UTMStack ni sur docs.utmstack.com.
 
 ---
 
-## Étape 5 — Compatibilité Microsoft Defender for Endpoint
+## Étape 5 : Compatibilité Microsoft Defender for Endpoint
 
 Si MDE est actif sur l'agent Windows, les règles ASR bloquent silencieusement l'exécution des commandes SOAR.
 
@@ -366,7 +366,7 @@ Si MDE est actif sur l'agent Windows, les règles ASR bloquent silencieusement l
 
 **Cause :** La règle ASR `d1e49aac-8f56-4280-b9ba-993a6d77406c` bloque les processus enfants créés par le service agent UTMStack.
 
-**Lab — Offboarder MDE :**
+**Lab : Offboarder MDE :**
 - M365 Defender portal → **Settings → Endpoints → Offboarding** → script local
 - Supprimer les clés de registre résiduelles :
 
@@ -374,19 +374,19 @@ Si MDE est actif sur l'agent Windows, les règles ASR bloquent silencieusement l
 Remove-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Windows Defender Exploit Guard\ASR\Rules" -Force
 ```
 
-**Production — Indicator of Allow :**
+**Production : Indicator of Allow :**
 - M365 Defender → **Settings → Endpoints → Indicators → Files → Add**
 - Hash SHA1 de `utmstack_agent_service_windows_amd64.exe` → Action : **Allow**
 
 ---
 
-## Étape 6 — Gestion automatique des alertes et PENDING
+## Étape 6 : Gestion automatique des alertes et PENDING
 
-### Contexte — Deux problèmes distincts
+### Contexte : deux problèmes distincts
 
-**Problème 1 — PENDING SOAR (cause racine du replay massif)**
+**Problème 1 : PENDING SOAR (cause racine du replay massif)**
 
-Quand le SOAR envoie une commande à l'agent Windows, l'agent exécute `soar_ban.bat` mais UTMStack v11.2.8 CE **ne marque jamais** l'exécution comme COMPLETED via le retour gRPC — même avec exit 0 et output. Les entrées restent PENDING indéfiniment. UTMStack retente toutes les actions PENDING en batch toutes les 5 minutes → vagues de bans intempestifs.
+Quand le SOAR envoie une commande à l'agent Windows, l'agent exécute `soar_ban.bat` mais UTMStack v11.2.8 CE **ne marque jamais** l'exécution comme COMPLETED via le retour gRPC, même avec exit 0 et output. Les entrées restent PENDING indéfiniment. UTMStack retente toutes les actions PENDING en batch toutes les 5 minutes → vagues de bans intempestifs.
 
 **Diagnostic :**
 ```bash
@@ -394,7 +394,7 @@ docker exec -it $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d ut
 "SELECT execution_status, COUNT(*) FROM utm_alert_response_rule_execution GROUP BY execution_status;"
 ```
 
-**Problème 2 — Replay au redémarrage backend**
+**Problème 2 : Replay au redémarrage backend**
 
 Au redémarrage du backend UTMStack, toutes les alertes OPEN sont rejouées par le SOAR → milliers d'exécutions en quelques secondes.
 
@@ -402,10 +402,10 @@ Au redémarrage du backend UTMStack, toutes les alertes OPEN sont rejouées par 
 
 ---
 
-### Script utmstack-close-alerts.sh — dynamique
+### Script utmstack-close-alerts.sh : dynamique
 
 Deux fonctions en un seul script :
-1. Ferme les alertes gérées par le SOAR **après 15 minutes** — détection dynamique depuis PostgreSQL, zéro maintenance
+1. Ferme les alertes gérées par le SOAR **après 15 minutes** : détection dynamique depuis PostgreSQL, zéro maintenance
 2. Purge les PENDING SOAR de plus de 3 minutes
 
 ```bash
@@ -422,7 +422,7 @@ nano /usr/local/bin/utmstack-close-alerts.sh
 # Les alertes NON gérées par le SOAR (PowerShell Empire, Brute Force, etc.)
 # restent ouvertes pour investigation par l'analyste SOC.
 # Lors de l'ajout d'un nouveau flow SOAR, ce script le prend en compte
-# automatiquement — aucune modification requise.
+# automatiquement : aucune modification requise.
 
 PSQL="docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack"
 
@@ -467,7 +467,7 @@ if [ -n "$ALERT_NAMES" ]; then
           }
         },
         "script": {
-          "source": "ctx._source.status = 5; ctx._source.statusLabel = \"Completed\"; ctx._source.statusObservation = \"Auto-closed — SOAR processed (CrowdSec ban)\"",
+          "source": "ctx._source.status = 5; ctx._source.statusLabel = \"Completed\"; ctx._source.statusObservation = \"Auto-closed : SOAR processed (CrowdSec ban)\"",
           "lang": "painless"
         }
       }' 2>/dev/null)
@@ -494,11 +494,11 @@ done
 chmod +x /usr/local/bin/utmstack-close-alerts.sh
 ```
 
-> ℹ️ **15 minutes** — fenêtre d'investigation pour les alertes SOAR avant fermeture automatique. Le ban CrowdSec ayant déjà été appliqué par soar_ban.sh, le replay SOAR pendant cette fenêtre est inoffensif grâce à la déduplication 7 jours.
+> ℹ️ **15 minutes** : fenêtre d'investigation pour les alertes SOAR avant fermeture automatique. Le ban CrowdSec ayant déjà été appliqué par soar_ban.sh, le replay SOAR pendant cette fenêtre est inoffensif grâce à la déduplication 7 jours.
 
-> ℹ️ **Détection dynamique** — le script lit `utm_alert_response_rule WHERE rule_active = true` et extrait les noms d'alertes des conditions JSON. Tout nouveau flow SOAR activé est automatiquement inclus sans modifier ce script.
+> ℹ️ **Détection dynamique** : le script lit `utm_alert_response_rule WHERE rule_active = true` et extrait les noms d'alertes des conditions JSON. Tout nouveau flow SOAR activé est automatiquement inclus sans modifier ce script.
 
-### Cron — toutes les 5 minutes
+### Cron : toutes les 5 minutes
 
 ```bash
 nano /etc/cron.d/utmstack-close-alerts
@@ -537,11 +537,11 @@ PSQL="docker exec $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d 
 echo "$(date) === utmstack-pre-restart.sh démarré ==="
 
 # 1. Désactiver les flows SOAR
-echo "$(date) — Désactivation des flows SOAR 5000 et 5001..."
+echo "$(date) : Désactivation des flows SOAR 5000 et 5001..."
 $PSQL -c "UPDATE utm_alert_response_rule SET rule_active = false WHERE id IN (5000, 5001);"
 
 # 2. Fermer TOUTES les alertes ouvertes
-echo "$(date) — Fermeture de toutes les alertes OPEN..."
+echo "$(date) : Fermeture de toutes les alertes OPEN..."
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
   -u 'admin:<OPENSEARCH_PASSWORD>' \
   -X POST "https://localhost:9200/v11-alert-*/_update_by_query" \
@@ -549,7 +549,7 @@ docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
   -d '{
     "query": {"term": {"status": 2}},
     "script": {
-      "source": "ctx._source.status = 5; ctx._source.statusLabel = \"Completed\"; ctx._source.statusObservation = \"Pre-restart close — prevent SOAR replay\"",
+      "source": "ctx._source.status = 5; ctx._source.statusLabel = \"Completed\"; ctx._source.statusObservation = \"Pre-restart close : prevent SOAR replay\"",
       "lang": "painless"
     }
   }'
@@ -558,13 +558,13 @@ echo ""
 sleep 5
 
 # 3. Redémarrer le backend
-echo "$(date) — Restart utmstack_backend..."
+echo "$(date) : Restart utmstack_backend..."
 docker service update --force utmstack_backend > /dev/null 2>&1
-echo "$(date) — Attente 5 minutes pour vidage de la queue..."
+echo "$(date) : Attente 5 minutes pour vidage de la queue..."
 sleep 300
 
 # 4. Deuxième fermeture
-echo "$(date) — Deuxième fermeture post-queue..."
+echo "$(date) : Deuxième fermeture post-queue..."
 docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
   -u 'admin:<OPENSEARCH_PASSWORD>' \
   -X POST "https://localhost:9200/v11-alert-*/_update_by_query" \
@@ -580,11 +580,11 @@ docker exec $(docker ps -q -f name=utmstack_node1) curl -sk \
 echo ""
 
 # 5. Purge PENDING résiduels
-echo "$(date) — Purge PENDING..."
+echo "$(date) : Purge PENDING..."
 $PSQL -c "UPDATE utm_alert_response_rule_execution SET execution_status = 'COMPLETED', command_result = 'pre-restart-purge' WHERE execution_status = 'PENDING';"
 
 # 6. Réactiver les flows SOAR
-echo "$(date) — Réactivation des flows SOAR 5000 et 5001..."
+echo "$(date) : Réactivation des flows SOAR 5000 et 5001..."
 $PSQL -c "UPDATE utm_alert_response_rule SET rule_active = true WHERE id IN (5000, 5001);"
 
 echo "$(date) === Terminé ==="
@@ -600,9 +600,9 @@ chmod +x /usr/local/bin/utmstack-pre-restart.sh
 
 | Niveau | Mécanisme | Rôle |
 |---|---|---|
-| **1 — Purge PENDING** | Cron 5min dans `utmstack-close-alerts.sh` | Corrige la cause racine — empêche les retries en batch |
-| **2 — Timestamp event > 2h** | `TZ=UTC date -j` dans `soar_ban.sh` | Bloque les bans si UTMStack rejoue un vieux log |
-| **3 — Déduplication IP 7 jours** | `/conf/soar_recent_bans.txt` | Filet de sécurité si timestamp indisponible |
+| **1 : Purge PENDING** | Cron 5min dans `utmstack-close-alerts.sh` | Corrige la cause racine : empêche les retries en batch |
+| **2 : Timestamp event > 2h** | `TZ=UTC date -j` dans `soar_ban.sh` | Bloque les bans si UTMStack rejoue un vieux log |
+| **3 : Déduplication IP 7 jours** | `/conf/soar_recent_bans.txt` | Filet de sécurité si timestamp indisponible |
 
 ---
 
@@ -666,13 +666,13 @@ AND rule_definition_def NOT LIKE '%Microsoft Azure AD Sync%';
 
 ---
 
-## Limitations connues — UTMStack v11.2.8 Community Edition
+## Limitations connues : UTMStack v11.2.8 Community Edition
 
 | Limitation | Description | Contournement |
 |---|---|---|
 | **PENDING permanent** | UTMStack ne marque jamais COMPLETED via gRPC, même avec exit 0 | Cron purge toutes les 5 min |
 | **Alert ID non exposé** | `$(alertId)`, `$(id)`, `$(uuid)` retournent null dans les variables SOAR | Fermeture via cron (15 min) |
-| **API Keys bloquées** | UI Enterprise — la table `api_keys` existe en base mais l'interface est verrouillée | Token JWT browser (13 mois) dans `/conf/utmstack_token.txt` |
+| **API Keys bloquées** | UI Enterprise : la table `api_keys` existe en base mais l'interface est verrouillée | Token JWT browser (13 mois) dans `/conf/utmstack_token.txt` |
 | **Playbooks built-in** | 17 rules prédéfinies Windows/Linux, toutes désactivées, aucune pour Suricata/réseau | Créer des flows custom (5000/5001) |
 | **Create Flow button** | Non fonctionnel sauf Edge (Update Flow seulement) | Modifier `rule_cmd` via PostgreSQL |
 

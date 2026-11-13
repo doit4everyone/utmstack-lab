@@ -1,5 +1,5 @@
 ---
-title: "SOC AI — Analyse automatique des alertes | DoIt4Everyone"
+title: "SOC AI : Analyse automatique des alertes | DoIt4Everyone"
 description: "Configuration SOC AI dans UTMStack v11.2.8 : Mistral AI, Google Gemini, analyse automatique des alertes, création d'incidents. Comparatif providers et recommandations RGPD."
 lang: fr
 ---
@@ -23,7 +23,7 @@ lang: fr
   table { width: 100%; display: table; margin: 20px 0; }
 </style>
 
-# SOC AI — Analyse automatique des alertes
+# SOC AI : Analyse automatique des alertes
 
 > [← Retour à l'index](../)
 
@@ -33,7 +33,7 @@ lang: fr
 
 La fonctionnalité **SOC AI** intègre un modèle de langage directement dans le workflow d'investigation des alertes UTMStack. Elle analyse automatiquement les alertes, les corrèle avec le contexte historique et les feeds de threat intelligence, et génère des recommandations actionnables.
 
-> ⚠️ **Avertissement UTMStack** — *"This evaluation has been made by an Artificial Intelligence beta that is still in training mode. Use this information carefully and at your own risk."* Le SOC AI est en phase bêta — les analyses sont indicatives et doivent être validées par un analyste.
+> ⚠️ **Avertissement UTMStack** : *"This evaluation has been made by an Artificial Intelligence beta that is still in training mode. Use this information carefully and at your own risk."* Le SOC AI est en phase bêta : les analyses sont indicatives et doivent être validées par un analyste.
 
 ---
 
@@ -55,7 +55,7 @@ UTMStack v11.2.8 supporte les providers suivants :
 
 ---
 
-## Étape 1 — Obtenir une clé API Mistral
+## Étape 1 : Obtenir une clé API Mistral
 
 ### Procédure
 
@@ -64,13 +64,13 @@ UTMStack v11.2.8 supporte les providers suivants :
 3. **Workspace → API Keys → Create new key**
 4. Nommez la clé (ex: `utmstack-soar`)
 5. Sélectionnez le plan **Experiment** (gratuit)
-6. Copiez la clé générée — elle n'est affichée qu'une seule fois
+6. Copiez la clé générée : elle n'est affichée qu'une seule fois
 
 > ⚠️ Ne partagez jamais une clé API en clair dans un chat, email ou dépôt GitHub.
 
 ---
 
-## Étape 2 — Configuration dans UTMStack
+## Étape 2 : Configuration dans UTMStack
 
 **UTMStack → Integrations → SOC AI → Mistral AI**
 
@@ -94,13 +94,13 @@ Pour chaque alerte déclenchée, le SOC AI génère automatiquement :
 
 **Classification :** `Possible incident` / `False positive` / `Confirmed incident`
 
-**Reasoning** — contexte et corrélation :
+**Reasoning** : contexte et corrélation :
 - Corrélation avec ThreatWinds threat intelligence
 - Historique des alertes similaires (ex: *58 similar alerts for this signature*)
 - Identification des outils offensifs (ex: `zgrab`, `zmap`)
 - Analyse du comportement réseau
 
-**Next steps** — recommandations actionnables :
+**Next steps** : recommandations actionnables :
 - Immediate Isolation and Blocking
 - Detailed Forensic Analysis
 - Threat Intelligence Correlation
@@ -132,7 +132,7 @@ Test réalisé sur la même alerte *Known Malicious IP Detected* (`ET SCAN Zmap 
 | Localisation données | 🇪🇺 Europe | 🇺🇸 USA |
 | RGPD / nLPD Suisse | ✅ Conforme | ⚠️ À vérifier |
 
-**Observation importante :** UTMStack utilise un **template de prompt fixe** — le contenu de l'analyse est identique quel que soit le modèle. La qualité intrinsèque du modèle n'impacte pas visiblement le rendu dans l'interface v11.2.8.
+**Observation importante :** UTMStack utilise un **template de prompt fixe**, le contenu de l'analyse est identique quel que soit le modèle. La qualité intrinsèque du modèle n'impacte pas visiblement le rendu dans l'interface v11.2.8.
 
 ---
 
@@ -154,10 +154,10 @@ Test réalisé sur la même alerte *Known Malicious IP Detected* (`ET SCAN Zmap 
 
 ## Limitations connues
 
-- **Langue** : analyses en anglais uniquement — pas de system prompt configurable dans l'interface native UTMStack
+- **Langue** : analyses en anglais uniquement, pas de system prompt configurable dans l'interface native UTMStack
 - **Template fixe** : la structure de l'analyse est imposée par UTMStack, indépendamment du modèle
-- **Bêta** : fonctionnalité en cours de développement — à utiliser en complément d'une analyse humaine
-- **Données sensibles** : les données d'alerte sont envoyées au provider IA — choisir un provider conforme aux exigences de l'organisation
+- **Bêta** : fonctionnalité en cours de développement, à utiliser en complément d'une analyse humaine
+- **Données sensibles** : les données d'alerte sont envoyées au provider IA, choisir un provider conforme aux exigences de l'organisation
 
 ---
 

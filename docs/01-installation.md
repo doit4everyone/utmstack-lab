@@ -31,7 +31,7 @@ description: "Guide complet installation UTMStack v11.2.8 Community Edition sous
 ## 📋 Table des matières
 
 1. [Paramètres de la machine virtuelle](#1-paramètres-de-la-machine-virtuelle)
-2. [Bug critique — DHCP](#2-bug-critique--le-dhcp-fait-planter-linstallateur)
+2. [Bug critique : DHCP](#2-bug-critique--le-dhcp-fait-planter-linstallateur)
 3. [Procédure d'installation](#3-procédure-dinstallation)
    - [3.1 Boot depuis l'ISO](#31-boot-depuis-liso)
    - [3.2 Configuration réseau](#32-configuration-réseau-dans-linstallateur)
@@ -44,7 +44,7 @@ description: "Guide complet installation UTMStack v11.2.8 Community Edition sous
 7. [Ports importants](#7-ports-importants-v1128)
 8. [Snapshots recommandés](#8-snapshots-recommandés)
 9. [Credentials](#9-credentials)
-10. [RAM minimum réelle — la leçon du 29 juin 2026](#10-ram-minimum-réelle--la-leçon-du-29-juin-2026)
+10. [RAM minimum réelle : la leçon du 29 juin 2026](#10-ram-minimum-réelle--la-leçon-du-29-juin-2026)
 
 ---
 
@@ -55,26 +55,26 @@ Créer une nouvelle VM dans VMware Workstation avec les paramètres suivants :
 | Paramètre | Valeur |
 |-----------|--------|
 | Système d'exploitation | Linux → Ubuntu 64-bit |
-| RAM (installation) | 14336 MB — minimum requis par l'installateur |
-| RAM (post-install) | 10240 MB — réduire après installation |
+| RAM (installation) | 14336 MB : minimum requis par l'installateur |
+| RAM (post-install) | 10240 MB : réduire après installation |
 | vCPU | 1 socket × 4 cœurs |
-| Disque | 150 GB SATA — thin provisioning |
+| Disque | 150 GB SATA : thin provisioning |
 | Firmware | UEFI |
 | Réseau | Personnalisé (VMnet selon l'environnement) |
 | Contrôleur I/O | LSI Logic (SCSI) |
-| CD/DVD | SATA — pointer vers l'ISO UTMStack v11 |
+| CD/DVD | SATA : pointer vers l'ISO UTMStack v11 |
 
-> ⚠️ **État du périphérique — DÉCOCHER « Connecté » sur la carte réseau avant de démarrer la VM.**
+> ⚠️ **État du périphérique : DÉCOCHER « Connecté » sur la carte réseau avant de démarrer la VM.**
 
 ---
 
-## 2. Bug critique — Le DHCP fait planter l'installateur
+## 2. Bug critique : le DHCP fait planter l'installateur
 
 ### Symptôme
 
 - L'installateur ISO démarre
 - Une barre orange avec `[Help]` apparaît en haut de l'écran
-- L'écran reste noir indéfiniment — le disque n'est jamais écrit
+- L'écran reste noir indéfiniment : le disque n'est jamais écrit
 
 ### Cause
 
@@ -96,7 +96,7 @@ Démarrer avec la carte réseau **déconnectée**. L'installateur affiche alors 
 
 ### 3.2 Configuration réseau dans l'installateur
 
-L'installateur détecte que la carte réseau est déconnectée et affiche : `disabled — autoconfiguration failed`.
+L'installateur détecte que la carte réseau est déconnectée et affiche : `disabled, autoconfiguration failed`.
 
 - Cliquer sur l'interface réseau listée (ex : `ens33`)
 - Sélectionner **« Edit IPv4 configuration »**
@@ -133,7 +133,7 @@ Pendant que l'installateur attend sur l'écran Network configuration :
 | Your name | Nom complet (ex : Admin UTMStack) |
 | Your server's name | Nom de la machine (ex : utmstack) |
 | Pick a username | Identifiant SSH (ex : admin) |
-| Choose a password | Mot de passe sudo — **noter impérativement** |
+| Choose a password | Mot de passe sudo : **noter impérativement** |
 | Confirm your password | Confirmation |
 
 - L'installation Ubuntu se déroule automatiquement (10–20 minutes)
@@ -168,7 +168,7 @@ Environ 30 minutes après le début de l'installation, vérifier que tous les se
 docker service ls
 ```
 
-### Installation réussie — tous les services à 1/1
+### Installation réussie : tous les services à 1/1
 
 ```
 ✅ utmstack_agentmanager              1/1
@@ -212,7 +212,7 @@ tail -f /var/log/utmstack/installer.log
 | Message affiché | Signification |
 |-----------------|---------------|
 | Generating Stack configuration... | Calcul de la distribution mémoire |
-| Memory distribution successful | RAM suffisante — installation continue |
+| Memory distribution successful | RAM suffisante : installation continue |
 | Downloading images... | Téléchargement Docker (10–20 min) |
 | Installing reverse proxy... | Configuration nginx |
 | Initializing databases... | PostgreSQL + OpenSearch |
@@ -220,7 +220,7 @@ tail -f /var/log/utmstack/installer.log
 | Generating Connection Key... | Génération token agents |
 | Installation finished successfully. | Installation terminée ✔ |
 
-**Erreur fréquente — RAM insuffisante :**
+**Erreur fréquente : RAM insuffisante :**
 ```
 error balancing memory: insufficient memory: Available 7897MB < Total Minimum Required 11150MB
 ```
@@ -245,7 +245,7 @@ apt install unattended-upgrades -y
 dpkg-reconfigure --priority=low unattended-upgrades
 ```
 
-### 6.3 Extension LVM — disque partiel par défaut
+### 6.3 Extension LVM : disque partiel par défaut
 
 ```bash
 df -h /
@@ -281,7 +281,7 @@ docker service ls   # Vérifier 1/1
 
 - Power Off la VM UTMStack
 - VM → Settings → Memory → **10240 MB**
-- Power On — tous les services remontent automatiquement
+- Power On : tous les services remontent automatiquement
 
 ---
 
@@ -290,9 +290,9 @@ docker service ls   # Vérifier 1/1
 | Port | Service | Usage |
 |------|---------|-------|
 | 443 / 10001 | Frontend | Interface web |
-| 9000 | agentmanager | gRPC agents — contrôle |
+| 9000 | agentmanager | gRPC agents : contrôle |
 | 9001 | agentmanager | HTTP agents |
-| 50051 | event-processor-worker | gRPC — envoi logs agents |
+| 50051 | event-processor-worker | gRPC : envoi logs agents |
 | 8080 | event-processor-worker | HTTP |
 | 8000 | event-processor-manager | HTTP |
 | 7014 | Agent Windows | Réception syslog TCP/UDP |
@@ -324,7 +324,7 @@ New-NetFirewallRule -DisplayName "UTMStack Syslog TCP 7014" -Direction Inbound -
 |-------|--------|
 | Interface web | `https://<IP configurée>` |
 | Username web | `admin` |
-| Password web | Généré à l'installation — affiché en fin d'installateur |
+| Password web | Généré à l'installation : affiché en fin d'installateur |
 | SSH user | Username saisi à l'étape 3.4 |
 | SSH password | Password saisi à l'étape 3.4 |
 | Admin interface | `https://<IP>:9090` |
@@ -333,15 +333,15 @@ New-NetFirewallRule -DisplayName "UTMStack Syslog TCP 7014" -Direction Inbound -
 
 ---
 
-## 10. RAM minimum réelle — la leçon du 29 juin 2026
+## 10. RAM minimum réelle : la leçon du 29 juin 2026
 
 ### Ce que disait ce guide jusqu'ici
 
 L'étape 6.7 recommandait de réduire la VM à **10 GB** après l'installation initiale, pour économiser des ressources sur un lab où UTMStack partage l'hôte avec d'autres VMs. Cette recommandation **reste valable pour le fonctionnement quotidien**, mais elle cache un piège sérieux découvert après plusieurs semaines d'exploitation continue.
 
-### Le piège — `UTMStackComponentsUpdater`
+### Le piège : `UTMStackComponentsUpdater`
 
-UTMStack embarque un service systemd, **`UTMStackComponentsUpdater`**, qui tourne en arrière-plan en permanence et vérifie périodiquement s'il existe une nouvelle version sur GitHub. S'il en trouve une, il tente automatiquement de télécharger les nouvelles images Docker et de redéployer la stack — **sans aucune notification ni demande de confirmation.**
+UTMStack embarque un service systemd, **`UTMStackComponentsUpdater`**, qui tourne en arrière-plan en permanence et vérifie périodiquement s'il existe une nouvelle version sur GitHub. S'il en trouve une, il tente automatiquement de télécharger les nouvelles images Docker et de redéployer la stack : **sans aucune notification ni demande de confirmation.**
 
 Le problème : ce processus de mise à jour a besoin de faire tourner temporairement les **anciens et les nouveaux conteneurs en parallèle** pendant la transition, ce qui exige nettement plus de RAM que le fonctionnement normal.
 
@@ -351,9 +351,9 @@ Sur une VM réduite à 10 GB (conformément à l'étape 6.7), ce service échoue
 error balancing memory: insufficient memory: Available 9913MB < Total Minimum Required 11150MB. (System requires 12150MB)
 ```
 
-### La conséquence — une boucle d'échec silencieuse de plusieurs semaines
+### La conséquence : une boucle d'échec silencieuse de plusieurs semaines
 
-Sans limite de tentatives, systemd relance ce service **toutes les 2 minutes, indéfiniment**, dès qu'une mise à jour est disponible. Sur un lab resté allumé 3 semaines sans interruption, ça représente plus de **14 500 tentatives échouées** — entièrement invisibles dans l'interface UTMStack, et qui ne produisent aucune alerte.
+Sans limite de tentatives, systemd relance ce service **toutes les 2 minutes, indéfiniment**, dès qu'une mise à jour est disponible. Sur un lab resté allumé 3 semaines sans interruption, ça représente plus de **14 500 tentatives échouées** : entièrement invisibles dans l'interface UTMStack, et qui ne produisent aucune alerte.
 
 > ⚠️ **Risque concret observé en lab :** si une opération de maintenance manuelle (redémarrage de service, `docker stack deploy`) intervient pile au moment où ce cycle d'échec de l'updater tente sa propre opération de redéploiement, les deux processus entrent en collision sur le réseau overlay Docker Swarm. Résultat observé : DNS interne instable (`server misbehaving`), table de routage IPVS désynchronisée (`no destination available` affiché en boucle sur la console), et services applicatifs (notamment `agentmanager`, responsable du SOAR) qui crashent en boucle sans lien apparent avec la cause réelle. Le diagnostic de cet incident a nécessité une journée complète, alors que la cause racine était une simple limite de RAM insuffisante pour un service qu'on ne savait même pas actif.
 
@@ -367,7 +367,7 @@ Sans limite de tentatives, systemd relance ce service **toutes les 2 minutes, in
 
 ### Deux stratégies possibles
 
-**Stratégie A — Garder le mode économique (10 GB), désactiver l'auto-updater**
+**Stratégie A : Garder le mode économique (10 GB), désactiver l'auto-updater**
 
 Recommandé si tu préfères gérer les mises à jour manuellement, à un moment choisi :
 
@@ -384,7 +384,7 @@ Pour mettre à jour manuellement quand tu le décides : remonter temporairement 
 
 L'installeur détecte l'installation existante et propose la mise à jour. Une fois terminée et le système stabilisé, redescendre la VM à 10 GB (étape 6.7).
 
-**Stratégie B — Allouer durablement 16 GB à la VM**
+**Stratégie B : Allouer durablement 16 GB à la VM**
 
 Recommandé si l'hôte dispose de la RAM nécessaire pour les autres VMs du lab en plus de celle-ci. Laisse l'auto-updater fonctionner normalement en arrière-plan, sans intervention.
 
@@ -395,7 +395,7 @@ systemctl status UTMStackComponentsUpdater --no-pager
 journalctl -u UTMStackComponentsUpdater --no-pager | tail -20
 ```
 
-Si tu vois un `restart counter` élevé (plusieurs centaines ou milliers) accompagné de `error balancing memory`, c'est le signe que ce piège est déjà actif sur ton installation — applique l'une des deux stratégies ci-dessus avant qu'une opération de maintenance ne déclenche le même type d'incident.
+Si tu vois un `restart counter` élevé (plusieurs centaines ou milliers) accompagné de `error balancing memory`, c'est le signe que ce piège est déjà actif sur ton installation : applique l'une des deux stratégies ci-dessus avant qu'une opération de maintenance ne déclenche le même type d'incident.
 
 ---
 
