@@ -74,7 +74,7 @@ Champs agrégeables vérifiés dans le lab :
 | `raw.keyword` | syslog | liste des messages bruts (bans CrowdSec) |
 | `@timestamp` | tous | chronologies (DATE_HISTOGRAM) |
 
-> ℹ️ Les champs `origin.geolocation.latitude` et `longitude` existent (type `float`), mais les cartes d'UTMStack ne s'en servent pas. Voir [Cartes des adresses bloquées](#cartes-des-adresses-bloquées).
+> ℹ️ Les champs `origin.geolocation.latitude` et `longitude` (type `float`) ne servent pas de regroupement, mais les cartes en ont besoin pour placer les points. Voir [Cartes des adresses bloquées](#cartes-des-adresses-bloquées).
 
 ---
 
@@ -232,14 +232,15 @@ Pour les cartes, le filtre ne change rien : les alertes et les drops d'un même 
 
 ### Fonctionnement des cartes UTMStack
 
-Les cartes (`COORDINATE_MAP_CHART`) ne lisent pas la latitude et la longitude des événements. Elles **regroupent les événements par `origin.ip.keyword`**, et c'est l'interface qui place ensuite chaque adresse sur un fond OpenStreetMap. Toutes les cartes livrées par UTMStack sont construites ainsi (O365, pfSense, NetFlow, GCP).
+Les cartes (`COORDINATE_MAP_CHART`) **regroupent les événements par `origin.ip.keyword`**, puis placent chaque adresse sur un fond OpenStreetMap à l'aide des coordonnées **enregistrées dans les événements** (`origin.geolocation.latitude` et `longitude`). UTMStack remplit ces champs à l'ingestion, à partir de sa propre base de géolocalisation, pour les sources dont le parser extrait une adresse source (Suricata, O365, pfSense, NetFlow). Toutes les cartes livrées par UTMStack sont construites ainsi.
 
-Une carte construite sur `origin.geolocation.latitude` et `longitude` reste donc vide. C'est probablement ce qui empêchait la carte « Threat Map » de la version v11.2 du lab de s'afficher, d'où la remarque de l'époque selon laquelle les cartes ne fonctionnaient pas.
-
-Deux conditions suffisent pour qu'une carte fonctionne :
+Trois conditions sont donc nécessaires pour qu'une carte fonctionne :
 
 1. l'index contient un champ `origin.ip` agrégeable (`origin.ip.keyword`) ;
-2. la visualisation reprend le `chart_config` d'une carte système, d'où la méthode par copie SQL décrite plus haut.
+2. les événements portent `origin.geolocation.latitude` et `longitude` : sans eux, la carte affiche « No data found », même si le regroupement par adresse fonctionne ;
+3. la visualisation reprend le `chart_config` d'une carte système, d'où la méthode par copie SQL décrite plus haut.
+
+Une carte construite en regroupant sur la latitude et la longitude reste vide. C'est probablement ce qui empêchait la carte « Threat Map » de la version v11.2 du lab de s'afficher, d'où la remarque de l'époque selon laquelle les cartes ne fonctionnaient pas.
 
 ### Cartes du lab
 
@@ -333,9 +334,48 @@ Ces messages arrivent dans `v11-log-syslog-*`. Le filtre syslog d'UTMStack n'en 
 | CrowdSec - Derniers Bans | table | `raw` contient `CROWDSEC_BAN` | `raw.keyword` (50 derniers) |
 | CrowdSec - Top Pays | barres | `raw` contient `CROWDSEC_BAN` | `crowdsec_country.keyword` (ingest pipeline, voir plus bas) |
 
-> ⚠️ **Pas de carte des bans CrowdSec en l'état.** Les événements n'ont pas de champ `origin.ip`, et la carte n'a rien sur quoi regrouper. Les adresses bannies par le SOAR viennent toutes d'alertes Suricata ou « Known Malicious IP » : la carte « Blocked IPs » de Suricata montre déjà, pour l'essentiel, leur origine.
+| CrowdSec - Banned IPs Map | carte | `raw` contient `CROWDSEC_BAN` | `origin.ip.keyword` (ingest pipeline) |
 
-<!-- À COMPLÉTER : ingest pipeline crowdsec-country (existe, mais n'est plus appliqué aux index v11-log-syslog-* en v11.3.0) ; extension à origin.ip et carte CrowdSec, après validation. Visualisation 1000012 « Top Pays » CrowdSec vide pour la même raison. -->
+### Ingest pipeline `crowdsec-country`
+
+Faute de champs extraits par UTMStack, un ingest pipeline OpenSearch lit le message `CROWDSEC_BAN` au moment de l'indexation et ajoute :
+
+| Champ | Source | Usage |
+|---|---|---|
+| `crowdsec_country` | champ `country` du message | « CrowdSec - Top Pays » |
+| `origin.ip` | champ `ip` du message | regroupement de la carte |
+| `origin.geolocation.latitude` / `longitude` | champs `lat` et `lon` du message, sinon processeur `geoip` d'OpenSearch | position des points |
+
+Les champs `lat` et `lon` sont la position de l'adresse calculée par UTMStack. Le SOAR les transmet au script (variables `$(adversary.geolocation.latitude)` et `$(adversary.geolocation.longitude)`, voir le chapitre 05), et `soar_ban.sh` les ajoute au message :
+
+```
+<169>Nov 13 13:56:42 ms.lab.local crowdsec[5471]: CROWDSEC_BAN {"event_type":"ban","ip":"198.51.100.208","reason":"utmstack","country":"GB","as":"25369","lat":"51.5081","lon":"-0.1278","type":"ban"}
+```
+
+Le processeur `geoip` d'OpenSearch ne sert qu'en secours, quand le message ne porte pas de coordonnées (bans antérieurs, ban manuel). Sa base embarquée est nettement moins précise que celle d'UTMStack : il place souvent l'adresse au centre du pays, et se trompe parfois de pays (une adresse AWS australienne placée aux États-Unis, une adresse bulgare en Allemagne).
+
+Le pipeline est disponible dans le dépôt : [`configs/opensearch/crowdsec-pipeline.json`](https://github.com/doit4everyone/utmstack-lab/tree/main/configs/opensearch/crowdsec-pipeline.json). Il se teste sans rien enregistrer avec `_simulate`, puis s'enregistre :
+
+```bash
+CID=$(docker ps -qf name=utmstack_node1 | head -1)
+docker cp crowdsec-pipeline.json $CID:/tmp/p.json
+docker exec -i $CID curl -sk -K - -H 'Content-Type: application/json' -X PUT \
+  'https://localhost:9200/_ingest/pipeline/crowdsec-country' -d @/tmp/p.json < /root/.os.curl
+```
+
+> ⚠️ **Le pipeline doit être appliqué par un cron, pas par un template.** En v11.3.0, le template d'index d'UTMStack (`utmstack_indexes`, qui couvre tous les `v11-log-*`) est prioritaire, et les templates OpenSearch ne se combinent pas : un template dédié, même pour les seuls index syslog, n'est jamais appliqué. Augmenter sa priorité ferait pire, il remplacerait celui d'UTMStack et ses mappings. Le lab applique donc le réglage `index.default_pipeline` à l'index du jour toutes les 5 minutes, avec [`scripts/utmstack-syslog-pipeline.sh`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/utmstack-syslog-pipeline.sh) :
+
+```bash
+( crontab -l 2>/dev/null; echo '*/5 * * * * /usr/local/bin/utmstack-syslog-pipeline.sh' ) | crontab -
+```
+
+Le pipeline ne s'applique qu'aux événements indexés après sa mise en place. Les événements déjà indexés se retraitent avec `_update_by_query`, qui ajoute les champs sans rien supprimer :
+
+```bash
+docker exec -i $CID curl -sk -K - -H 'Content-Type: application/json' -X POST \
+  "https://localhost:9200/v11-log-syslog-$(date -u +%Y-%m-%d)/_update_by_query?pipeline=crowdsec-country&refresh=true" \
+  -d '{"query":{"term":{"origin.process.keyword":"crowdsec"}}}' < /root/.os.curl
+```
 
 ---
 
