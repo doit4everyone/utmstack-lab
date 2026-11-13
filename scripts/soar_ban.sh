@@ -14,8 +14,8 @@ echo "$(date) START: IP=$IP COUNTRY=$COUNTRY ASN=$ASN TS=$EVENT_TIMESTAMP ORIGIN
 [ -z "$COUNTRY" ] || [ "$COUNTRY" = "null" ] && COUNTRY="Unknown"
 [ -z "$ASN" ] || [ "$ASN" = "null" ] && ASN="AS0"
 # Coordonnées UTMStack de l'adresse (carte CrowdSec) : vides si absentes ou non numériques
-case "$LAT" in ""|*[!0-9.-]*) LAT="" ;; esac
-case "$LON" in ""|*[!0-9.-]*) LON="" ;; esac
+echo "$LAT" | grep -Eq '^-?[0-9]+([.][0-9]+)?$' || LAT=""
+echo "$LON" | grep -Eq '^-?[0-9]+([.][0-9]+)?$' || LON=""
 
 # -------------------------------------------------------
 # 0. Protection des adresses internes
