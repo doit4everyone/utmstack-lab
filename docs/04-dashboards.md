@@ -193,12 +193,13 @@ Toutes les visualisations portent sur `v11-log-suricata-*` et sur les 24 derniè
 |---|---|---|---|
 | Suricata - Total Alertes | compteur | `event.eventType` = `alert` | |
 | Drops IPS Suricata | compteur | `event.eventType` = `drop` | |
-| Blocked IPS Suricata | compteur | `event.alert.action` = `blocked` | |
+| Blocked IPS Suricata | compteur | `event.eventType` = `alert` et `event.alert.action` = `blocked` | |
 | allowed IPS Suricata | compteur | `event.alert.action` = `allowed` | |
-| Top 10 blocked Suricata | barres | `event.alert.action` = `blocked` | `origin.geolocation.aso.keyword` |
+| Top 10 blocked Suricata | barres | `alert` et `blocked` | `origin.geolocation.aso.keyword` |
 | Suricata - Timeline Alertes | courbe | `event.eventType` = `alert` | `@timestamp` par heure |
 | Suricata - Top Source IPs | barres | `event.eventType` = `alert` | `origin.ip.keyword` |
 | Suricata - Top Pays | barres | `event.eventType` = `alert` | `origin.geolocation.country.keyword` |
+| Suricata - Top Pays (codes ISO) | barres | `event.eventType` = `alert` | `origin.geolocation.countryCode.keyword` |
 | Suricata - Top ASO Sources | barres | `event.eventType` = `alert` | `origin.geolocation.aso.keyword` |
 | Suricata - Top Ports Cibles | barres | `event.eventType` = `alert` | `target.port` |
 | Suricata - Blocked IPs Map | carte | `event.alert.action` = `blocked` | `origin.ip.keyword` |
@@ -208,10 +209,22 @@ Toutes les visualisations portent sur `v11-log-suricata-*` et sur les 24 derniè
 Les trois compteurs du haut ne comptent pas la même chose :
 
 - **Blocked** compte les **alertes** des règles en mode `drop` (règles NF, Spamhaus, Dshield, CINS) : une alerte par flux bloqué.
-- **Drops IPS** compte les **paquets** supprimés par Suricata en mode IPS : des événements séparés (`event.eventType` = `drop`), sans signature.
+- **Drops IPS** compte les **paquets** supprimés par Suricata en mode IPS (`event.eventType` = `drop`).
 - **Allowed** compte les alertes des règles restées en mode `alert` : le flux est signalé mais passe. C'est sur cette population que le SOAR intervient (chapitre 05, flow 5002).
 
-Un même paquet supprimé produit en général à la fois une alerte `blocked` et un événement `drop`. Le 13 novembre 2026, sur 24 heures, les deux populations comptaient les mêmes 132 adresses sources. La seule différence était l'adresse WAN d'OPNsense, présente uniquement dans les drops, probablement pour les paquets de retour des flux supprimés.
+> ⚠️ **Piège : un événement `drop` porte aussi l'alerte.** Quand c'est une règle qui supprime le paquet, Suricata joint à l'événement `drop` le bloc `alert` de la règle, avec `action` = `blocked`, la signature et le sid. Un filtre sur `event.alert.action` = `blocked` seul compte donc à la fois les alertes et les paquets supprimés, et le même scan est compté plusieurs fois. Le 13 novembre 2026, sur 24 heures, ce filtre renvoyait 1 471 événements : 684 alertes et 787 drops. D'où le filtre supplémentaire `event.eventType` = `alert` sur toutes les visualisations « blocked » qui comptent des alertes.
+
+Ajout du filtre en une fois, dans une transaction :
+
+```sql
+UPDATE utm_visualization
+SET filters = (filters::jsonb || '[{"operator":"IS","field":"event.eventType","value":"alert"}]'::jsonb)::text,
+    modified_date = NOW()
+WHERE name IN ('Blocked IPS Suricata', 'Top 10 blocked Suricata', 'Suricata - Count NF Blocked', 'Suricata - Top NF Scanners')
+  AND filters NOT LIKE '%"event.eventType"%';
+```
+
+Pour les cartes, le filtre ne change rien : les alertes et les drops d'un même flux ont la même adresse source.
 
 ---
 
@@ -255,7 +268,7 @@ COMMIT;
 SQL
 ```
 
-Une carte des drops (`event.eventType` = `drop`) a aussi été essayée. Elle affichait exactement les mêmes points que la carte des alertes bloquées et a été retirée.
+Une carte des drops (`event.eventType` = `drop`) a aussi été essayée. Elle affichait exactement les mêmes points que la carte des alertes bloquées, pour la raison expliquée plus haut (un drop porte l'alerte de la règle), et a été retirée.
 
 ### Pourquoi si peu de points
 
@@ -263,7 +276,7 @@ La carte paraît pauvre comparée aux compteurs. Les chiffres du 13 novembre 202
 
 | Mesure | Valeur |
 |---|---|
-| Alertes `blocked` | 1 481 |
+| Événements `blocked` (alertes et drops) | 1 481 |
 | Adresses distinctes | 129 |
 | Fournisseurs distincts | 41 |
 | Villes distinctes (environ le nombre de points) | 24 |
@@ -272,11 +285,11 @@ La carte paraît pauvre comparée aux compteurs. Les chiffres du 13 novembre 202
 
 Trois effets se cumulent :
 
-- un scanner teste des dizaines de ports, et chaque sonde bloquée crée une alerte : environ 11 alertes par adresse en moyenne ;
-- le volume est très concentré : une poignée de moteurs de recherche d'équipements exposés (de la famille de Shodan ou Censys) produit la majorité des alertes ;
-- la carte place les adresses à la ville de leur centre de données, et toutes les adresses d'un même hébergeur se superposent.
+- un scanner teste des dizaines de ports, et chaque sonde bloquée crée une alerte et un ou plusieurs drops : environ 11 événements par adresse en moyenne ;
+- le volume est très concentré : une poignée de moteurs de recherche d'équipements exposés (de la famille de Shodan ou Censys) produit la majorité des événements ;
+- la carte place chaque adresse à la ville de sa géolocalisation (celle du centre de données, par exemple Toronto pour une adresse DigitalOcean), et toutes les adresses d'un même hébergeur dans une même ville se superposent. Il faut souvent zoomer pour distinguer un point posé près d'une frontière ou d'un lac.
 
-C'est le bruit de fond normal d'une adresse publique, et pas une attaque distribuée. Le vrai signal d'un changement serait une hausse soudaine du nombre d'**adresses distinctes**, plus que du nombre d'alertes. Les chiffres ci-dessus s'obtiennent par cette requête :
+C'est le bruit de fond normal d'une adresse publique, et pas une attaque distribuée. Le vrai signal d'un changement serait une hausse soudaine du nombre d'**adresses distinctes**, plus que du nombre d'événements. Les chiffres ci-dessus s'obtiennent par cette requête :
 
 ```bash
 docker exec -i $(docker ps -qf name=utmstack_node1|head -1) curl -sk -K - -H 'Content-Type: application/json' \
@@ -294,8 +307,8 @@ Les règles NF (chapitre 02) reconnaissent les scanners connus par leurs adresse
 
 | Visualisation | Type | Filtre | Regroupement |
 |---|---|---|---|
-| Suricata - Count NF Blocked | compteur | `blocked` et `raw` contient `NF` | |
-| Suricata - Top NF Scanners | barres | `blocked` et `raw` contient `NF` | `origin.geolocation.aso.keyword` (13 premiers) |
+| Suricata - Count NF Blocked | compteur | `alert`, `blocked` et `raw` contient `NF` | |
+| Suricata - Top NF Scanners | barres | `alert`, `blocked` et `raw` contient `NF` | `origin.geolocation.aso.keyword` (13 premiers) |
 | Suricata - Rapport Scanner | table | `alert`, `blocked` et `raw` contient `NF` | `origin.ip.keyword` (15 premières) |
 | Suricata - NF Scanners Map | carte | `blocked` et `raw` contient `NF` | `origin.ip.keyword` |
 
@@ -318,6 +331,7 @@ Ces messages arrivent dans `v11-log-syslog-*`. Le filtre syslog d'UTMStack n'en 
 | CrowdSec - Total Bans | compteur | `raw` contient `CROWDSEC_BAN` | |
 | CrowdSec - Timeline Bans | courbe | `raw` contient `CROWDSEC_BAN` | `@timestamp` par heure |
 | CrowdSec - Derniers Bans | table | `raw` contient `CROWDSEC_BAN` | `raw.keyword` (50 derniers) |
+| CrowdSec - Top Pays | barres | `raw` contient `CROWDSEC_BAN` | `crowdsec_country.keyword` (ingest pipeline, voir plus bas) |
 
 > ⚠️ **Pas de carte des bans CrowdSec en l'état.** Les événements n'ont pas de champ `origin.ip`, et la carte n'a rien sur quoi regrouper. Les adresses bannies par le SOAR viennent toutes d'alertes Suricata ou « Known Malicious IP » : la carte « Blocked IPs » de Suricata montre déjà, pour l'essentiel, leur origine.
 
