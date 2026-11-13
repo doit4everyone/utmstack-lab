@@ -252,7 +252,7 @@ Un enseignement contre-intuitif s'est dégagé de ce comparatif : **sur une tâc
 La méthode pour l'étendre à un autre lab est la même : **observer les signatures qui remontent réellement**, pas deviner à l'avance. Deux sources concrètes pour trouver la signification d'une signature inconnue :
 
 1. **La documentation Emerging Threats / Proofpoint** — les règles `ET *` suivent une nomenclature stable par catégorie (`ET WEB_SERVER`, `ET POLICY`, `ET SCAN`, `ET MALWARE`...), consultable sur [rules.emergingthreats.net](https://rules.emergingthreats.net/)
-2. **Le champ `msg` de la règle Suricata elle-même** — visible directement dans OpenSearch (`lastEvent.log.alert.signature`), généralement assez explicite pour classer sans ambiguïté
+2. **Le champ `msg` de la règle Suricata elle-même**, visible directement dans OpenSearch (`lastEvent.event.alert.signature`), généralement assez explicite pour classer sans ambiguïté
 
 > ⚠️ **Cette liste vit, elle n'est jamais figée.** Chaque nouvelle source de données (agent Windows plus riche, intégration O365, tests offensifs Kali) fait apparaître des signatures que la liste actuelle ne couvre pas — elles tombent alors par défaut en INDÉTERMINÉ, visibles mais non priorisées automatiquement. C'est un filet de sécurité, pas un défaut : mieux vaut une signature ignorée du tri mais visible, qu'une signature mal classée silencieusement. La liste doit être revue à chaque élargissement significatif du périmètre de collecte.
 >

@@ -73,8 +73,11 @@ Chaque type d'événement existe en deux variantes : **Information** (NTLMv2 nor
 | **4020** | **4021** | Client | Auth NTLM sortante + Reason ID (0-11) expliquant le non-usage de Kerberos |
 | **4022** | **4023** | Serveur | Réception d'une auth NTLM entrante |
 | **4024** | **4025** | DC | Passthrough NTLM validé par le DC |
+| **4032** | **4033** | DC | Passthrough NTLM traité par le DC (observé sur Server 2025, voir ci-dessous) |
 
 > Les anciens Event IDs 8001-8004 (Server 2022 et antérieurs) sont remplacés par 4020-4025 sur 24H2 / Server 2025, avec en plus le niveau Warning et le Reason ID côté client.
+
+> ⚠️ **Observé en lab (novembre 2026) :** sur le DC Windows Server 2025, le passthrough est journalisé en **4032** (Information), et non en 4024 : « Le contrôleur de domaine DC01-MAIN-SITE a traité une demande d'authentification NTLM transférée provenant de ce domaine », avec le client, le serveur, la version NTLM et le statut. Un 4033 est apparu une fois, probablement sa variante Warning. Les 8001 à 8004 continuent aussi d'être écrits quand les stratégies d'audit « Restreindre NTLM » sont actives (8002 observé sur le même DC). L'abonnement WEF ne transmettait au départ que 4020 à 4025 : les 4032 n'arrivaient pas dans UTMStack, et le tableau de bord restait vide alors que le DC journalisait du NTLM. Le filtre de l'abonnement couvre désormais 4020 à 4025, 4032, 4033 et 8001 à 8004.
 
 > ⚠️ L'agent UTMStack v11.2.8 CE ne collecte pas `Microsoft-Windows-NTLM/Operational` nativement. Il faut router ces événements vers `ForwardedEvents` via Windows Event Forwarding.
 
@@ -277,31 +280,51 @@ base64 -w 0 ntlm-subscription.xml
 **Événements Security (disponibles immédiatement) :**
 
 ```
-log.eventCode = 4624
-log.eventDataAuthenticationPackageName = NTLM
+event.eventCode = 4624
+event.eventDataAuthenticationPackageName = NTLM
 ```
 
 **Événements NTLM/Operational (après déploiement WEF) :**
 
 ```
-log.channel = ForwardedEvents
-log.eventCode = 4021
+event.channel = ForwardedEvents
+event.providerName = Microsoft-Windows-NTLM
+event.eventCode = 4021
+```
+
+> ℹ️ **UTMStack v11.3.0 :** ces champs s'appelaient `log.*` en v11.2. Les champs `event.*` se filtrent avec `term` sur la valeur exacte (`match_phrase` et `wildcard` renvoient 0 sans erreur) et ne sont pas agrégeables. Voir le [chapitre 11](11-correlations-yaml.html#migration-utmstack-v1130).
+
+**Mettre à jour le filtre d'un abonnement existant.** Le script de déploiement s'arrête dès que l'abonnement existe : remplacer le XML dans SYSVOL (ou le Base64 du script Intune) ne suffit pas. Sur chaque machine, en administrateur :
+
+```powershell
+wecutil ds NTLM-Operational-Local
+wecutil cs "\\lab.local\SYSVOL\lab.local\scripts\ntlm-subscription.xml"
+wecutil gr NTLM-Operational-Local
+```
+
+`gr` doit afficher l'état `Active`. Les autorisations posées sur le canal lors du premier déploiement restent en place. `ReadExistingEvents` valant `false`, les événements antérieurs ne sont pas transmis.
+
+**Comparer la source et UTMStack** quand le tableau de bord reste vide : compter les événements par jour et par ID sur le DC, puis dans OpenSearch sur la même période. Une journée avec des événements à la source et 0 dans UTMStack désigne un ID que l'abonnement ne transmet pas.
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-NTLM/Operational'; StartTime=(Get-Date).AddDays(-10)} |
+  Group-Object { $_.TimeCreated.ToString('MM-dd') + ' ' + $_.Id } | Sort-Object Name | Select-Object Count, Name
 ```
 
 ### Dashboard NTLM — Widgets validés en lab
 
-Construit et testé dans UTMStack avec les champs réels confirmés (`log.providerName: Microsoft-Windows-NTLM` sur `v11-log-wineventlog-*`) :
+Construit et testé dans UTMStack sur `v11-log-wineventlog-*`, avec le filtre `event.providerName` = `Microsoft-Windows-NTLM`. La définition complète des visualisations et leur réparation après le passage à la v11.3.0 sont décrites au [chapitre 04](04-dashboards.html#tableau-de-bord-ntlm).
 
-| Widget | Type | Champ / Filtre | Résultat observé |
+| Widget | Type | Champ / Filtre | Résultat observé (v11.2) |
 |---|---|---|---|
-| Total Authentifications | Metric | Count, filtre `log.providerName: Microsoft-Windows-NTLM` | 9 événements / 7 jours |
-| NTLMv1 détecté | Metric | `log.data.NtlmVersion: NTLMv1` | **0** — aucune dépendance legacy |
-| Échecs NTLM | Metric | `log.data.Status` (ou `StatusMsg`) `is not 0` | 1 (test simulé) |
-| Top machines | Bar horizontal | Terms `log.computer.keyword` | DC01-MAIN-SITE, DC01-RM |
-| Top comptes | Bar horizontal | Terms `log.data.Username.keyword` | Comptes machine ($) et utilisateurs |
-| Versions NTLM | Pie/Donut | Terms `log.data.NtlmVersion.keyword` | 100% NTLMv2 |
+| Total Authentifications | Metric | Count, filtre `event.providerName: Microsoft-Windows-NTLM` | 9 événements / 7 jours |
+| NTLMv1 détecté | Metric | `event.data.NtlmVersion: NTLMv1` | **0**, aucune dépendance legacy |
+| Échecs NTLM | Metric | `event.data.StatusMsg` `is not 0` | 1 (test simulé) |
+| Top machines | Bar horizontal | Terms `dataSource.keyword` | DC01-MAIN-SITE, DC01-RM |
 
-> Le widget Table avec buckets Terms en cascade (Machine → Compte → Event ID → Version → Raison) s'est révélé peu fiable dans cette version d'UTMStack — le champ `Size` des sub-buckets ne se met pas à jour correctement et les lignes se mélangent. Pour le détail événement par événement, privilégier une recherche sauvegardée dans Log Explorer plutôt qu'une Table de dashboard.
+> ⚠️ **Widgets retirés en v11.3.0 :** « Top comptes » (Terms sur `log.data.Username.keyword`) et « Versions NTLM » (Terms sur `log.data.NtlmVersion.keyword`) regroupaient sur des champs qui n'existent plus qu'en `event.*`, non agrégeables. Ils n'ont pas de remplaçant dans le module de visualisation. Pour le détail par compte, utiliser une recherche sauvegardée dans Log Explorer.
+
+> Le widget Table avec buckets Terms en cascade (Machine → Compte → Event ID → Version → Raison) s'est révélé peu fiable dans cette version d'UTMStack, le champ `Size` des sub-buckets ne se mettant pas à jour correctement et les lignes se mélangeant. Pour le détail événement par événement, privilégier une recherche sauvegardée dans Log Explorer plutôt qu'une Table de dashboard.
 
 ### Observations en lab
 
@@ -658,7 +681,7 @@ Le dashboard NTLM construit en Phase 1 devient l'outil de mesure du projet de mi
 | NTLMv1 détecté | LmPackageName=NTLM V1 | High |
 | Blocage NTLM déclenché | eventCode=4002 (server blocked) | Info |
 | Échec auth multiple NTLM | eventCode=4625 + même target.user > 5 en 5 min | Medium |
-| Auth NTLM directe sur DC | eventCode=4024/4025 hors compte machine | Medium |
+| Auth NTLM directe sur DC | eventCode=4024/4025 (4032/4033 sur Server 2025) hors compte machine | Medium |
 
 ### KPI de migration
 
@@ -693,7 +716,8 @@ Le SIEM UTMStack joue un rôle central dans les trois phases : cartographie en P
 
 | Limitation | Impact | Contournement |
 |---|---|---|
-| Agent UTMStack v11.2.8 ne collecte pas NTLM/Operational nativement | Events 4021–4025 / 8001–8004 absents | WEF → ForwardedEvents |
+| Agent UTMStack (v11.2.8 et v11.3.0) ne collecte pas NTLM/Operational nativement | Événements 4020 à 4025, 4032, 4033 et 8001 à 8004 absents | WEF → ForwardedEvents |
+| Le script de déploiement ne met pas à jour un abonnement existant | Un nouveau filtre (ID ajoutés) n'est pas appliqué | `wecutil ds` puis `wecutil cs` sur chaque machine |
 | Canal NTLM/Operational disponible uniquement sur Win 11 24H2 / Server 2025 | Machines plus anciennes non couvertes | Couverture partielle via Security log (4624/4625/4776) |
 | Canal ForwardedEvents désactivé par défaut sur Server 2025 | Souscription WEF active mais aucun événement reçu (erreur 3ae9) | `wevtutil sl ForwardedEvents /e:true` (intégré dans le script) |
 | `localhost` ne fonctionne pas comme Subscription Manager | Forwarder WinRM refuse la connexion (erreur 2150859027) | Utiliser le FQDN dynamique via WMI `(Get-WmiObject Win32_ComputerSystem).Domain` |

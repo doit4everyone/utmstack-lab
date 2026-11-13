@@ -27,6 +27,13 @@ lang: fr
 
 > [← Retour à l'index](../)
 
+> ⚠️ **Document historique, UTMStack v11.2 (juin et juillet 2026).** Cette annexe décrit le diagnostic et les correctifs appliqués en v11.2 : champs `log.*`, modification directe des règles natives en base, réapplication au démarrage par un service systemd. Elle est conservée telle quelle pour la méthode de diagnostic, toujours valable. En **v11.3.0**, deux choses ont changé :
+>
+> - les champs `log.*` s'appellent `event.*` (indexés en `flat_object` : filtrables avec `term`, non agrégeables) ;
+> - le backend réécrit les règles natives depuis ses propres fichiers à chaque démarrage. Les correctifs se font par **clone** de la règle native, puis désactivation de l'originale par son nom.
+>
+> Les règles et la méthode à jour sont décrites au [chapitre 11](11-correlations-yaml.html#migration-utmstack-v1130), section « Clones de règles natives ». Les tableaux de bord sont au [chapitre 04](04-dashboards.html).
+
 ---
 
 ## Contexte — l'alert fatigue, un phénomène universel sur les SIEM

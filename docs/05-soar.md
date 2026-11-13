@@ -346,9 +346,10 @@ Variables confirmées par analyse du code source (`utm_alert_response_rule.sql` 
 | `$(target.user)` | Utilisateur cible |
 | `$(target.process)` | Processus cible |
 | `$(target.file)` | Fichier cible |
-| `$(origin.ip)` | IP d'origine |
-| `$(log.message)` | Message du log brut |
+| `$(origin.ip)` | IP d'origine (v11.2 ; renvoie `null` en v11.3.0, voir ci-dessous) |
 | `$(timestamp)` | Timestamp de l'événement original Suricata |
+
+> ⚠️ **UTMStack v11.3.0 :** les variables suivent la structure du document d'alerte. `$(origin.ip)` renvoie `null` ; l'adresse source de l'événement déclencheur s'obtient par `$(lastEvent.origin.ip)` (autres champs constatés dans l'alerte : `adversary.ip`, `target.ip`, `lastEvent.target.ip`). `$(adversary.geolocation.latitude)` et `$(adversary.geolocation.longitude)` se résolvent et transmettent la position calculée par UTMStack. La variable v11.2 `$(log.message)` n'a pas d'équivalent vérifié en v11.3.0. Pour trouver le bon chemin d'une variable, lire le JSON d'une alerte réelle dans Threat Management.
 
 > ⚠️ **L'alert ID n'est pas exposé comme variable SOAR** — ni `$(id)`, `$(alertId)`, `$(alert_id)`, ni `$(uuid)` ne fonctionnent. Confirmé par analyse bytecode Java (`utmstack.war`) et tests exhaustifs. Non documenté sur le GitHub UTMStack ni sur docs.utmstack.com.
 
@@ -648,37 +649,20 @@ docker exec -it $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d ut
 
 ---
 
-## Réduction des faux positifs — Règles built-in
+## Réduction des faux positifs : règles built-in
 
-Les règles de corrélation built-in (icône 🚫 dans l'UI) ne sont pas modifiables via l'interface. Modification directe en base :
-
-```bash
-docker exec -it $(docker ps -q -f name=utmstack_postgres) psql -U postgres -d utmstack
-```
-
-**Exclusions connues :**
+Les règles de corrélation built-in (icône 🚫 dans l'UI) ne sont pas modifiables via l'interface. En v11.2, le lab leur ajoutait des exclusions directement en base, par exemple pour « PowerShell Empire Detection » :
 
 ```sql
--- Exclure Azure AD Connect (AADConnector.psm1)
+-- v11.2 uniquement : méthode devenue inopérante en v11.3.0
 UPDATE utm_correlation_rules
 SET rule_definition_def = rule_definition_def ||
   E'\n&& !contains("log.data.Path", "Microsoft Azure AD Sync")'
 WHERE rule_name = 'PowerShell Empire Detection'
 AND rule_definition_def NOT LIKE '%Microsoft Azure AD Sync%';
-
--- Exclure MDE scripts (Log4j scanner, DataCollection)
-UPDATE utm_correlation_rules
-SET rule_definition_def = rule_definition_def || 
-  E'\n&& !contains("log.data.Path", "Windows Defender Advanced Threat Protection")'
-WHERE rule_name = 'PowerShell Empire Detection'
-AND rule_definition_def NOT LIKE '%Windows Defender Advanced Threat Protection%';
 ```
 
-Restart backend après modification :
-
-```bash
-/usr/local/bin/utmstack-pre-restart.sh
-```
+> ⚠️ **UTMStack v11.3.0 :** cette méthode ne fonctionne plus, pour deux raisons. Le backend réécrit les règles natives depuis ses propres fichiers à chaque démarrage, en ne conservant que leur statut actif ou inactif : une exclusion ajoutée en base disparaît au redémarrage suivant. Et le champ `log.data.Path` est devenu `event.data.Path`. La méthode retenue est le **clone** : copier la règle native dans une règle utilisateur avec l'exclusion (`!(exists("event.data.Path") && contains("event.data.Path", "..."))`), puis désactiver la native par son nom. Voir le [chapitre 11, Corriger une règle native : la méthode du clone](11-correlations-yaml.html#corriger-une-règle-native--la-méthode-du-clone).
 
 ---
 

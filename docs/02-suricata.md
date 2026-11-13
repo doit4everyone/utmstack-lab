@@ -39,7 +39,7 @@ Agent UTMStack gest-srv
     ↓
 Parseur natif Suricata UTMStack
     ↓
-origin.ip / log.alert.signature / origin.geolocation.* / ...
+origin.ip / event.alert.signature / origin.geolocation.* / ...
 ```
 
 > ℹ️ OPNsense tourne sous FreeBSD — aucun agent UTMStack ou Filebeat n'est disponible. La source `file()` native syslog-ng lit directement `eve.json` en C de façon asynchrone — aucun script shell intermédiaire nécessaire.
@@ -97,7 +97,7 @@ source s_suricata_eve {
 };
 ```
 
-> ⚠️ **`program-override("suricata")` est obligatoire.** Sans lui, syslog-ng envoie la priorité `<13>` (user-level) au lieu de `<174>` (local5.info) et UTMStack ne parse pas les champs JSON — les événements arrivent en raw sans `origin.ip`, `log.alert.signature`, etc.
+> ⚠️ **`program-override("suricata")` est obligatoire.** Sans lui, syslog-ng envoie la priorité `<13>` (user-level) au lieu de `<174>` (local5.info) et UTMStack ne parse pas les champs JSON : les événements arrivent en raw sans `origin.ip`, `event.alert.signature`, etc.
 
 Si la source n'existe pas, créez-la directement dans `suricata-native.conf` (voir ci-dessous).
 
@@ -186,10 +186,11 @@ Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événe
 |---|---|
 | `dataType` | `suricata` |
 | `dataSource` | `10.100.1.254` |
-| `log.eventType` | `alert` |
-| `log.alert.signature` | Nom de la règle déclenchée |
-| `log.alert.severity` | 1 (High) à 3 (Low) |
-| `log.alert.category` | Catégorie MITRE |
+| `event.eventType` | `alert` |
+| `event.alert.signature` | Nom de la règle déclenchée |
+| `event.alert.action` | `blocked` ou `allowed` |
+| `event.alert.severity` | 1 (High) à 3 (Low) |
+| `event.alert.category` | Catégorie de la signature |
 | `origin.ip` | IP source de l'attaque |
 | `origin.geolocation.country` | Pays (enrichi automatiquement) |
 | `origin.geolocation.countryCode` | Code pays |
@@ -197,7 +198,7 @@ Dans UTMStack → **Log Explorer** → filtre `dataType: suricata` — l'événe
 | `origin.geolocation.aso` | Nom de l'AS |
 | `target.ip` | IP cible |
 
-> ✅ Si `origin.ip` et `log.alert.signature` apparaissent → le pipeline fonctionne correctement et les règles de corrélation UTMStack peuvent se déclencher.
+> ✅ Si `origin.ip` et `event.alert.signature` apparaissent → le pipeline fonctionne correctement et les règles de corrélation UTMStack peuvent se déclencher.
 
 ---
 

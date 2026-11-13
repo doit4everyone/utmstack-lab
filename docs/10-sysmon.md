@@ -643,8 +643,8 @@ Un ticket a été ouvert auprès d'UTMStack pour demander l'ajout natif de ce ca
 `ForwardedEvents` **est** collecté nativement par l'agent. Le WEF permet à chaque machine de forwarder ses propres events Sysmon vers son propre canal `ForwardedEvents` — sans collecteur central, sans exposition réseau entre machines. L'agent UTMStack collecte ensuite `ForwardedEvents` normalement.
 
 Les events arrivent dans UTMStack en conservant leurs métadonnées d'origine :
-- `log.providerName` : `Microsoft-Windows-Sysmon`
-- `log.channel` : `Microsoft-Windows-Sysmon/Operational`
+- `event.providerName` : `Microsoft-Windows-Sysmon`
+- `event.channel` : `Microsoft-Windows-Sysmon/Operational`
 - `dataSource` : nom de la machine source
 
 ### Périmètre de fonctionnement
@@ -842,18 +842,20 @@ Les events Sysmon forwarded via WEF arrivent dans UTMStack avec leurs métadonn�
 
 | Champ OpenSearch | Valeur exemple | EID |
 |---|---|---|
-| `log.providerName` | `Microsoft-Windows-Sysmon` | tous |
-| `log.channel` | `Microsoft-Windows-Sysmon/Operational` | tous |
-| `log.eventCode` | `12` | RegistryEvent |
-| `log.data.Image` | `C:\Windows\System32\lsass.exe` | 1, 10, 12/13 |
-| `log.data.ProcessGuid` | `{6e2a3eee-c8d7-...}` | 1, 10 |
-| `log.data.RuleName` | `RegistryEvent - Run keys et persistance` | tous |
-| `log.data.TargetObject` | `HKLM\System\CurrentControlSet\...` | 12/13 |
-| `log.data.User` | `AUTORITE NT\Système` | tous |
-| `log.data.UtcTime` | `2026-08-07 13:39:02.077` | tous |
+| `event.providerName` | `Microsoft-Windows-Sysmon` | tous |
+| `event.channel` | `Microsoft-Windows-Sysmon/Operational` | tous |
+| `event.eventCode` | `12` | RegistryEvent |
+| `event.data.Image` | `C:\Windows\System32\lsass.exe` | 1, 10, 12/13 |
+| `event.data.ProcessGuid` | `{6e2a3eee-c8d7-...}` | 1, 10 |
+| `event.data.RuleName` | `RegistryEvent - Run keys et persistance` | tous |
+| `event.data.TargetObject` | `HKLM\System\CurrentControlSet\...` | 12/13 |
+| `event.data.User` | `AUTORITE NT\Système` | tous |
+| `event.data.UtcTime` | `2026-08-07 13:39:02.077` | tous |
 | `dataSource` | `DC01-MAIN-SITE` | tous |
 
-> Les champs `log.data.CommandLine`, `log.data.ParentImage` (EID 1), `log.data.TargetImage`, `log.data.GrantedAccess` (EID 10) et `log.data.PipeName` (EID 17/18) doivent être confirmés en live avant d'écrire les règles YAML du chapitre 11.
+> Les champs `event.data.CommandLine`, `event.data.ParentImage` (EID 1), `event.data.TargetImage`, `event.data.GrantedAccess` (EID 10) et `event.data.PipeName` (EID 17/18) doivent être confirmés en live avant d'écrire les règles YAML du chapitre 11.
+
+> ℹ️ **UTMStack v11.3.0 :** ces champs s'appelaient `log.*` en v11.2. Ils sont indexés en `flat_object` : `term` fonctionne, `match_phrase` et `wildcard` renvoient 0 sans erreur, et ils ne sont pas agrégeables (voir le [chapitre 11](11-correlations-yaml.html#migration-utmstack-v1130)).
 
 ### Requête de vérification depuis UTMStack
 
@@ -865,7 +867,7 @@ docker exec $(docker ps -q -f name=utmstack_node1) \
   -H 'Content-Type: application/json' \
   -d '{
     "query": {
-      "term": { "log.providerName": "Microsoft-Windows-Sysmon" }
+      "term": { "event.providerName": "Microsoft-Windows-Sysmon" }
     },
     "size": 5,
     "sort": [{ "@timestamp": { "order": "desc" }}]

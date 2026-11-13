@@ -148,9 +148,9 @@ L'agent UTMStack collecte nativement les canaux Windows suivants sans configurat
 | 5007 | Configuration modifiée (exclusions...) | HIGH | ✅ MDM-WIN11-01 |
 | 5013 | Modification bloquée par Tamper Protection | HIGH | ✅ MDM-WIN11-01 |
 
-**Comportement multi-événements :** pour une même détection, Defender peut générer plusieurs Event 1116 avec le même `Detection ID` mais des champs `Path` différents. Ce comportement est normal — il reflète les différents moteurs de détection (antivirus classique, SmartScreen). Pour une vue complète d'une détection, grouper par `log.data.Detection ID`.
+**Comportement multi-événements :** pour une même détection, Defender peut générer plusieurs Event 1116 avec le même `Detection ID` mais des champs `Path` différents. Ce comportement est normal : il reflète les différents moteurs de détection (antivirus classique, SmartScreen). Pour une vue complète d'une détection, filtrer sur sa valeur de `event.data.Detection ID` (champ non agrégeable en v11.3.0 : le regroupement automatique n'est plus possible).
 
-**Richesse des champs selon le vecteur :** les logs générés lors d'un téléchargement web (via SmartScreen) sont significativement plus riches que les détections sur écriture locale — ils incluent l'URL source, le PID du processus navigateur, et le contexte réseau complet dans `log.data.Path`.
+**Richesse des champs selon le vecteur :** les logs générés lors d'un téléchargement web (via SmartScreen) sont significativement plus riches que les détections sur écriture locale : ils incluent l'URL source, le PID du processus navigateur, et le contexte réseau complet dans `event.data.Path`.
 
 #### Règle native active
 
@@ -309,7 +309,7 @@ Contrairement à l'agent standard qui collecte des logs syslog, le collecteur UT
 
 **Index OpenSearch :** `v11-log-utmstack-*` avec `dataType: utmstack` et `dataSource: utmstack`.
 
-**Champs notables :** `log.containerName` (nom du conteneur source), `log.args.context`, `log.args.method`, `log.args.path`.
+**Champs notables :** `event.containerName` (nom du conteneur source), `event.args.context`, `event.args.method`, `event.args.path` (`log.*` en v11.2).
 
 ---
 
@@ -479,7 +479,7 @@ Créer un abonnement aux événements : **Événements** → **+ Abonnement à u
 
 ### 7.3 Types d'événements observés
 
-Deux canaux distincts avec des structures de champs différentes dans UTMStack :
+Deux canaux distincts avec des structures de champs différentes dans UTMStack. Les champs ci-dessous ont été relevés en v11.2 (août 2026), quand ils s'appelaient encore `log.*`. En v11.3.0, les règles natives Azure s'appuient sur `event.azureKind`, `event.azureOperation` et `actionResult` ; l'intégration Azure du lab étant désactivée, la correspondance exacte n'a pas pu être revérifiée (voir le [chapitre 11, série A](11-correlations-yaml.html#série-a--azure-activity-log)) :
 
 | Canal | Structure des champs | Catégories |
 |---|---|---|
@@ -493,7 +493,7 @@ Deux canaux distincts avec des structures de champs différentes dans UTMStack :
 - **Security** : alertes Microsoft Defender for Cloud
 - **ResourceActionSuccess/Failure** : actions sur les ressources via Event Grid
 
-**Exemple — tentative de suppression d'un Resource Group verrouillé :**
+**Exemple (v11.2) : tentative de suppression d'un Resource Group verrouillé :**
 
 ```json
 {
@@ -614,14 +614,16 @@ Le SOC AI natif est un complément rapide pour les équipes sans ressources pour
 
 | Index | Source | DataType | Champs clés |
 |---|---|---|---|
-| `v11-log-wineventlog-*` | Agents Windows | `wineventlog` | `log.eventCode`, `log.providerName`, `log.computer` |
-| `v11-log-suricata-*` | OPNsense/Suricata | `suricata` | `log.alert.signature`, `log.src_ip`, `log.dest_ip` |
-| `v11-log-linux-*` | Agents Linux | `linux` | `log.message`, `dataSource` |
-| `v11-log-utmstack-*` | Collecteur UTMStack | `utmstack` | `log.containerName`, `log.args.*` |
-| `v11-log-o365-*` | Microsoft 365 | `o365` | `action`, `log.Workload`, `log.RecordType`, `origin.user` |
-| `v11-log-azure-*` | Azure Event Hub | `azure` | `log.operationName`, `log.resultType`, `log.category` |
-| `v11-log-sysmon-*` | Sysmon via WEF | `sysmon` | `log.data.Image`, `log.data.CommandLine`, `log.data.ParentImage` |
-| `v11-log-generic-*` | Syslog générique | `generic` | `log.message`, `dataSource` |
+| `v11-log-wineventlog-*` | Agents Windows, y compris Sysmon et NTLM via WEF (`ForwardedEvents`) | `wineventlog` | `event.eventCode`, `event.providerName`, `event.channel`, `event.data.*` |
+| `v11-log-suricata-*` | OPNsense/Suricata | `suricata` | `event.eventType`, `event.alert.signature`, `event.alert.action`, `origin.ip`, `target.ip` |
+| `v11-log-linux-*` | Agents Linux | `linux` | `event.*`, `dataSource` |
+| `v11-log-utmstack-*` | Collecteur UTMStack | `utmstack` | `event.containerName`, `event.args.*` |
+| `v11-log-o365-*` | Microsoft 365 | `o365` | `action`, `event.Workload`, `origin.user` |
+| `v11-log-azure-*` | Azure Event Hub | `azure` | `event.azureKind`, `event.azureOperation`, `actionResult` |
+| `v11-log-syslog-*` | Syslog (OPNsense, CrowdSec, SOAR) | `syslog` | `raw`, `event.message`, `origin.host`, `origin.process` |
+| `v11-log-generic-*` | Syslog générique | `generic` | `event.*`, `dataSource` |
+
+> ℹ️ **UTMStack v11.3.0 :** les champs propres à chaque source, `log.*` en v11.2, s'appellent désormais `event.*` et sont indexés en `flat_object` : filtrables (`term`), mais pas agrégeables. Les champs typés (`origin.*`, `target.*`, `dataSource`, `action`, `actionResult`) restent agrégeables, avec `.keyword` pour les champs texte. Voir le [chapitre 11](11-correlations-yaml.html#migration-utmstack-v1130) et le [chapitre 04](04-dashboards.html#ce-que-la-v1130-change-pour-les-visualisations).
 
 **Champs communs à tous les index :**
 

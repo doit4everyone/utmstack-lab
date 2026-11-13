@@ -552,9 +552,9 @@ cp /conf/suricata-drop-fix /etc/cron.d/suricata-drop-fix
 Contrairement à Spamhaus et Dshield (Partie 4, nativement en `drop`), le flux **ET CINS Active Threat Intelligence** (`ciarmy.rules` — CINS Army, liste de réputation IP) est livré par Emerging Threats en mode `alert`. Les IP listées comme malveillantes par CINS traversent donc le firewall sans être bloquées :
 
 ```
-log.alert.action: allowed
-log.alert.metadata.tag: CINS
-log.alert.signature: "ET CINS Active Threat Intelligence Poor Reputation IP group X"
+event.alert.action: allowed
+event.alert.metadata.tag: CINS
+event.alert.signature: "ET CINS Active Threat Intelligence Poor Reputation IP group X"
 ```
 
 Volume mesuré : **299 règles** au format `alert ip [...] any -> $HOME_NET any` dans `ciarmy.rules`, organisées en groupes (`group 1` à `group N`).
@@ -647,9 +647,9 @@ Ce lab suit une règle générale (voir l'annexe [Réduction du bruit — règle
 Le cas rencontré ici est une exception délibérée à cette règle, parce qu'il ne présente **aucune ambiguïté** :
 
 ```
-log.http.hostname: 127.0.0.1
-log.http.url: /cgi-bin/ViewLog.asp
-log.http.http_user_agent: r00ts3c-owned-you
+event.http.hostname: 127.0.0.1
+event.http.url: /cgi-bin/ViewLog.asp
+event.http.http_user_agent: r00ts3c-owned-you
 ```
 
 C'est une tentative d'exploitation d'une vulnérabilité connue sur des DVR/NVR en marque blanche (endpoint `ViewLog.asp`), avec un User-Agent auto-signé par un botnet/scanner automatisé — aucun logiciel légitime n'envoie jamais `r00ts3c-owned-you` comme User-Agent. Volume observé : **12 tentatives en une journée, depuis 3 IP distinctes** (Italie, Hong Kong, Chine), certaines en GET, d'autres en POST — cohérent avec un botnet distribué qui scanne Internet en continu, pas un acteur unique ciblant ce lab spécifiquement.
