@@ -5,12 +5,17 @@ COUNTRY=$2
 ASN=$3
 EVENT_TIMESTAMP=$4
 ORIGIN=$5
-ALERT_ID=$6
+LAT=$6
+LON=$7
+ALERT_ID=$8
 
-echo "$(date) START: IP=$IP COUNTRY=$COUNTRY ASN=$ASN TS=$EVENT_TIMESTAMP ORIGIN=$ORIGIN" >> "$LOG"
+echo "$(date) START: IP=$IP COUNTRY=$COUNTRY ASN=$ASN TS=$EVENT_TIMESTAMP ORIGIN=$ORIGIN LAT=$LAT LON=$LON" >> "$LOG"
 
 [ -z "$COUNTRY" ] || [ "$COUNTRY" = "null" ] && COUNTRY="Unknown"
 [ -z "$ASN" ] || [ "$ASN" = "null" ] && ASN="AS0"
+# Coordonnées UTMStack de l'adresse (carte CrowdSec) : vides si absentes ou non numériques
+case "$LAT" in ""|*[!0-9.-]*) LAT="" ;; esac
+case "$LON" in ""|*[!0-9.-]*) LON="" ;; esac
 
 # -------------------------------------------------------
 # 0. Protection des adresses internes
@@ -104,7 +109,7 @@ if ! /usr/local/bin/cscli decisions list --ip "$IP" 2>/dev/null | grep -q "ban";
     /usr/local/bin/cscli decisions add --ip "$IP" --duration 24h --reason utmstack
     echo "$(date +%s) $IP" >> "$RECENT_BANS"
     logger -p local5.alert -t crowdsec \
-      "CROWDSEC_BAN {\"event_type\":\"ban\",\"ip\":\"$IP\",\"reason\":\"utmstack\",\"country\":\"$COUNTRY\",\"as\":\"$ASN\",\"type\":\"ban\"}"
+      "CROWDSEC_BAN {\"event_type\":\"ban\",\"ip\":\"$IP\",\"reason\":\"utmstack\",\"country\":\"$COUNTRY\",\"as\":\"$ASN\",\"lat\":\"$LAT\",\"lon\":\"$LON\",\"type\":\"ban\"}"
     echo "$(date) BAN: $IP ($COUNTRY / $ASN)" >> "$LOG"
     echo "OK: BAN $IP ($COUNTRY / $ASN)"
 else
