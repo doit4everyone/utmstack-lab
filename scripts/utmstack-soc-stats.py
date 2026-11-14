@@ -27,6 +27,9 @@ def compter(depuis, filtres, jusqua="now"):
     return r["aggregations"]["ip"]["value"], r["hits"]["total"]["value"]
 
 BLOQUE = [{"term": {"event.eventType": "alert"}}, {"term": {"event.alert.action": "blocked"}}]
+# Règles NF (scanners connus) : signature commençant par « NF - ». La requête prefix
+# fonctionne sur le flat_object event.*, contrairement à match_phrase et wildcard.
+NF = BLOQUE + [{"prefix": {"event.alert.signature": "NF - "}}]
 
 # Reconstitution de l'historique : utmstack-soc-stats.py --backfill 30
 # Un document par jour passé (journée complète, heure suisse), horodaté à 12:00 UTC
@@ -36,9 +39,11 @@ if len(sys.argv) == 3 and sys.argv[1] == "--backfill":
         ip, alertes = compter("now-%dd/d" % n, BLOQUE, "now-%dd/d" % (n - 1))
         if alertes == 0:
             continue
+        nf_ip, nf_alertes = compter("now-%dd/d" % n, NF, "now-%dd/d" % (n - 1))
         jour = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=n)).replace(
             hour=12, minute=0, second=0, microsecond=0)
-        stats = {"blocked_ips_day": ip, "blocked_alerts_day": alertes}
+        stats = {"blocked_ips_day": ip, "blocked_alerts_day": alertes,
+                 "nf_ips_day": nf_ip, "nf_alerts_day": nf_alertes}
         doc = {"@timestamp": jour.isoformat().replace("+00:00", "Z"), "dataType": "syslog",
                "dataSource": "utmstack-soc-stats", "raw": "SOC_STATS " + json.dumps(stats), "soc_stats": stats}
         os_req("POST", "/v11-log-syslog-%s/_doc" % jour.strftime("%Y-%m-%d"), doc)
@@ -47,10 +52,14 @@ if len(sys.argv) == 3 and sys.argv[1] == "--backfill":
 
 ip_jour, alertes_jour = compter("now/d", BLOQUE)
 ip_24h, alertes_24h = compter("now-24h", BLOQUE)
+nf_jour, nf_alertes_jour = compter("now/d", NF)
+nf_24h, nf_alertes_24h = compter("now-24h", NF)
 
 now = datetime.datetime.now(datetime.timezone.utc)
 stats = {"blocked_ips_day": ip_jour, "blocked_alerts_day": alertes_jour,
-         "blocked_ips_24h": ip_24h, "blocked_alerts_24h": alertes_24h}
+         "blocked_ips_24h": ip_24h, "blocked_alerts_24h": alertes_24h,
+         "nf_ips_day": nf_jour, "nf_alerts_day": nf_alertes_jour,
+         "nf_ips_24h": nf_24h, "nf_alerts_24h": nf_alertes_24h}
 doc = {"@timestamp": now.isoformat().replace("+00:00", "Z"),
        "dataType": "syslog", "dataSource": "utmstack-soc-stats",
        "raw": "SOC_STATS " + json.dumps(stats), "soc_stats": stats}
