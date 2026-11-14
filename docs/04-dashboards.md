@@ -298,6 +298,38 @@ docker exec -i $(docker ps -qf name=utmstack_node1|head -1) curl -sk -K - -H 'Co
   -d '{"size":0,"track_total_hits":true,"query":{"bool":{"filter":[{"term":{"event.alert.action":"blocked"}},{"range":{"@timestamp":{"gte":"now-24h"}}}]}},"aggs":{"ip":{"cardinality":{"field":"origin.ip.keyword"}},"villes":{"cardinality":{"field":"origin.geolocation.city.keyword"}},"aso":{"cardinality":{"field":"origin.geolocation.aso.keyword"}},"top10":{"terms":{"field":"origin.ip.keyword","size":10}}}}' < /root/.os.curl
 ```
 
+### Compter les adresses distinctes
+
+Le bon indicateur de suivi n'est donc pas le nombre d'alertes, mais le **nombre d'adresses distinctes**. UTMStack ne sait pas le calculer dans une visualisation : en v11.3.0, le backend n'accepte que les métriques `COUNT`, `AVERAGE`, `MAX`, `MIN`, `MEDIAN` et `SUM` (`MetricAggregationEnum`). L'interface propose `UNIQUE_COUNT`, mais la visualisation échoue.
+
+Le lab contourne la limite avec un script horaire, [`scripts/utmstack-soc-stats.py`](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/utmstack-soc-stats.py). Il demande à OpenSearch le nombre exact d'adresses distinctes (agrégation `cardinality`, exacte jusqu'à 40 000 valeurs avec `precision_threshold`), puis écrit le résultat dans un document de l'index syslog, sous forme de champs numériques :
+
+| Champ | Contenu |
+|---|---|
+| `soc_stats.blocked_ips_24h` | adresses distinctes bloquées sur 24 heures glissantes |
+| `soc_stats.blocked_alerts_24h` | alertes bloquées sur 24 heures glissantes |
+| `soc_stats.blocked_ips_day` | adresses distinctes bloquées depuis minuit (heure suisse) |
+| `soc_stats.blocked_alerts_day` | alertes bloquées depuis minuit |
+
+Les visualisations lisent ces champs avec la métrique `MAX`, qui est disponible :
+
+| Visualisation | Type | Filtre | Métrique |
+|---|---|---|---|
+| Suricata - Adresses bloquées distinctes (24 h) | compteur | `@timestamp` sur 70 minutes, `raw` contient `SOC_STATS` | MAX de `soc_stats.blocked_ips_24h` |
+| Suricata - Adresses bloquées distinctes par jour | courbe, 30 jours | `raw` contient `SOC_STATS` | MAX de `soc_stats.blocked_ips_day`, `DATE_HISTOGRAM` par jour |
+
+Le dernier passage horaire d'une journée porte le total du jour : le maximum par jour donne donc le nombre d'adresses distinctes de la journée. L'option `--backfill 30` reconstitue l'historique, un document par jour passé :
+
+```bash
+install -m 700 utmstack-soc-stats.py /usr/local/bin/utmstack-soc-stats.py
+/usr/local/bin/utmstack-soc-stats.py --backfill 30
+( crontab -l; echo '2 * * * * /usr/local/bin/utmstack-soc-stats.py > /dev/null 2>&1' ) | crontab -
+```
+
+Dans le lab, la courbe oscille entre 120 et 150 adresses distinctes par jour, avec un pic au-dessus de 180. Une hausse durable au-delà de cette plage serait le signe d'un changement réel, par exemple un scan distribué.
+
+> ℹ️ Les colonnes de la courbe sont découpées en UTC, alors que le total du jour est calculé depuis minuit, heure suisse. La valeur d'une journée peut glisser d'une heure : c'est sans effet sur la tendance.
+
 > ℹ️ `-K - < /root/.os.curl` transmet les identifiants OpenSearch par l'entrée standard, depuis un fichier lisible par root seul (`chmod 600`), pour qu'ils n'apparaissent ni dans la ligne de commande ni dans l'historique. Le fichier contient une seule ligne : `user = "admin:<mot de passe>"`.
 
 ---
