@@ -1,0 +1,30 @@
+name: High level Suricata alert (lab)
+dataTypes:
+  - suricata
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Initial Access
+technique: "T1190 - Exploit Public-Facing Application"
+adversary: origin
+references:
+  - https://docs.suricata.io/en/latest/rules/meta.html
+description: 'Alerte Suricata de sévérité haute : tentative d''exploitation, communication de malware ou comportement réseau suspect. Next Steps: 1. Identifier la signature via event.alert.signature et sa catégorie. 2. Vérifier la direction du flux et si le flux a été bloqué (event.alert.action). 3. Pour un hôte interne, investiguer le processus à l''origine. 4. Pour un flux entrant laissé passer, vérifier les journaux du service ciblé. Note technique : clone de la règle native 875 (v11.3.0), qui exclut les flux déjà bloqués à destination de l''interface WAN d''OPNsense (192.168.1.203, à remplacer). Les autres sources de bruit relevées en novembre 2026 se traitent à la source et non dans la règle : RTLO 5018812 par la règle NF 1000047, connexions IKEv2 du VPN du lab par suppression dans threshold.config, rulesets App-detect (YouTube, Reddit) à désactiver, LLMNR à désactiver par GPO.'
+where: |-
+  equals("event.eventType", "alert") &&
+  equals("severity", "critical") &&
+  !(equals("target.ip", "192.168.1.203") && equals("event.alert.action", "blocked"))
+afterEvents:
+  - indexPattern: v11-log-suricata-*
+    with:
+      - field: origin.ip
+        operator: filter_term
+        value: "{{.origin.ip}}"
+    or: null
+    within: 15m
+    count: 3
+groupBy:
+  - adversary.ip
+  - target.ip
+deduplicateBy: []

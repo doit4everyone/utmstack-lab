@@ -130,6 +130,10 @@ Légende : ✅ validée en v11.3.0 par un test réel ; 🔵 validée en passif (
 | Fichier | Statut | Notes |
 |---|---|---|
 | [suricata-medium-lab.yml](suricata/suricata-medium-lab.yml) | ✅ | Clone de la règle native 876 (voir « Clones de règles natives ») |
+| [suricata-high-lab.yml](suricata/suricata-high-lab.yml) | ✅ | Clone de la règle native 875 |
+| [suricata-portscan-lab.yml](suricata/suricata-portscan-lab.yml) | ✅ | Clone de la règle native 525 |
+| [suricata-tunneling-lab.yml](suricata/suricata-tunneling-lab.yml) | ✅ | Clone de la règle native 530 |
+| [suricata-inbound-ban-lab.yml](suricata/suricata-inbound-ban-lab.yml) | ✅ | Déclencheur du flow SOAR 5002 : attaques entrantes laissées passer sur le WAN ([chapitre 05](https://doit4everyone.github.io/utmstack-lab/docs/05-soar.html)) |
 
 ### Supervision du pipeline
 
@@ -173,10 +177,13 @@ Puis redémarrer les event-processors (voir « Procédure d'import »). Toujours
 
 | Clone | Règle native désactivée | Exclusion ajoutée |
 |---|---|---|
-| [suricata-medium-lab.yml](suricata/suricata-medium-lab.yml) | Medium level Suricata alert (876) | Trafic entrant vers le WAN déjà bloqué par Suricata, trafic Microsoft Delivery Optimization ; `adversary: origin` au lieu de `target` |
+| [suricata-medium-lab.yml](suricata/suricata-medium-lab.yml) | Medium level Suricata alert (876) | Trafic entrant vers le WAN déjà bloqué par Suricata, trafic Microsoft Delivery Optimization, réponses 403 du reverse proxy (sid 2101201), requêtes du pipeline SOC vers Ollama (port 11434), signatures bannies par le flow SOAR 5002 ; `adversary: origin` au lieu de `target` |
+| [suricata-high-lab.yml](suricata/suricata-high-lab.yml) | High level Suricata alert (875) | Trafic entrant vers le WAN déjà bloqué par Suricata |
+| [suricata-portscan-lab.yml](suricata/suricata-portscan-lab.yml) | Port Scan Detection (525) | Trafic entrant vers le WAN déjà bloqué par Suricata |
+| [suricata-tunneling-lab.yml](suricata/suricata-tunneling-lab.yml) | Tunneling Detection (530) | Tout le trafic à destination du WAN : un tunnel concerne un hôte interne qui sort, pas une sonde entrante |
 | [windows-suspicious-powershell-lab.yml](windows/windows-suspicious-powershell-lab.yml) | Windows: Suspicious PowerShell (Encoded / Download Cradle / AMSI Bypass) (1424) | Scripts du dossier `DataCollection` de Microsoft Defender for Endpoint (scanner Log4Shell signé Microsoft) |
 
-> ℹ️ Dans `suricata-medium-lab.yml`, l'adresse `192.168.1.203` est l'interface WAN d'OPNsense dans le lab. La remplacer par celle de l'environnement.
+> ℹ️ Dans les clones Suricata, l'adresse `192.168.1.203` est l'interface WAN d'OPNsense dans le lab. La remplacer par celle de l'environnement.
 
 > ℹ️ Quand la règle native évolue (nouvelle version d'UTMStack), comparer sa définition avec celle du clone et reporter les changements.
 

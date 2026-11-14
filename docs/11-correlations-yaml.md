@@ -38,7 +38,7 @@ lang: fr
 - [Série L : Linux auditd](#série-l--linux-auditd) : L1 · L2
 - [Série M : Microsoft 365 et Entra ID](#série-m--microsoft-365-et-entra-id) : Brute Force · Password Spray · Impossible Travel · Mailbox Activity · DLP · MDE · Token Protection · M5 · M6 · M7 · M10 · M2 · M8 · M11 · M12 · M13 · M14 · M-new-1 · M-new-2
 - [Série A : Azure Activity Log](#série-a--azure-activity-log) : A1 · A2 · A3 · A4a · A4b · A5 · A6 · A7 · A8 · A9 · A10 · A11
-- [Clones de règles natives](#clones-de-règles-natives) : Suricata Medium (876) · PowerShell suspect (1424)
+- [Clones de règles natives](#clones-de-règles-natives) : Suricata Medium (876), High (875), Port Scan (525), Tunneling (530) · PowerShell suspect (1424)
 - [Matrice de couverture MITRE ATT&CK](#matrice-de-couverture-mitre-attck)
 - [Note finale](#note-finale--détection-comportementale-cve-et-complémentarité-des-outils)
 
@@ -82,7 +82,7 @@ Le backend v11.3.0 réécrit les règles natives depuis ses propres fichiers à 
 2. désactiver la règle native **par son nom** (les identifiants changent d'une version à l'autre) ;
 3. redémarrer les event-processors.
 
-Les deux clones du lab sont décrits dans la section [Clones de règles natives](#clones-de-règles-natives).
+Les clones du lab sont décrits dans la section [Clones de règles natives](#clones-de-règles-natives).
 
 ### Diagnostiquer dans OpenSearch
 
@@ -2639,7 +2639,10 @@ La règle native se déclenche sur toute alerte Suricata de sévérité moyenne.
 **Exclusions ajoutées :**
 
 - le trafic entrant vers le WAN d'OPNsense (`192.168.1.203` dans le lab, à remplacer) **et** déjà bloqué (`event.alert.action = blocked`). Le trafic sortant bloqué reste détecté : un hôte du LAN qui tente de joindre une destination malveillante est un signal ;
-- le trafic Microsoft Delivery Optimization, identifié par son agent HTTP.
+- le trafic Microsoft Delivery Optimization, identifié par son agent HTTP ;
+- les réponses 403 du reverse proxy (sid 2101201) ;
+- les requêtes du pipeline SOC vers Ollama (port 11434) : leurs prompts contiennent des noms de signatures d'attaque ;
+- les signatures traitées par la règle « Suricata - Inbound Attack Allowed on WAN (lab) », dont les adresses sont bannies automatiquement par le flow SOAR 5002 (chapitre 05). Les deux listes de signatures doivent rester identiques.
 
 **Autre correction :** la règle native déclarait `adversary: target`, ce qui présentait le WAN comme la source et l'attaquant comme la cible. Le clone utilise `adversary: origin`.
 
@@ -2658,12 +2661,27 @@ technique: T1046 - Network Service Discovery
 adversary: origin
 references:
   - https://docs.suricata.io/en/latest/rules/meta.html
-description: 'Alerte Suricata de sévérité moyenne : reconnaissance, anomalie de protocole ou tentative d''exploitation non bloquée. Next Steps: 1. Identifier la signature via event.alert.signature et sa catégorie. 2. Vérifier la direction du flux (event.direction) : un flux entrant vers le WAN 192.168.1.203 vise un service publié par NAT (reverse proxy nginx vers la sous-CA), un flux sortant désigne un hôte du LAN masqué derrière le NAT, à identifier dans les logs NAT d''OPNsense. 3. Contrôler si le flux a été bloqué (event.alert.action). 4. Pour un flux entrant, vérifier les logs du service ciblé et le code de réponse. 5. Pour un flux sortant, investiguer le processus à l''origine sur l''hôte du LAN. Note technique : clone de la règle native 876 (v11.3.0), qui exclut le trafic entrant vers le WAN déjà bloqué et le trafic Microsoft Delivery Optimization.'
+description: 'Alerte Suricata de sévérité moyenne : reconnaissance, anomalie de protocole ou tentative d''exploitation non bloquée. Next Steps: 1. Identifier la signature via event.alert.signature et sa catégorie. 2. Vérifier la direction du flux (event.direction) : un flux entrant vers le WAN 192.168.1.203 vise un service publié par NAT (reverse proxy nginx vers la sous-CA), un flux sortant désigne un hôte du LAN masqué derrière le NAT, à identifier dans les logs NAT d''OPNsense. 3. Contrôler si le flux a été bloqué (event.alert.action). 4. Pour un flux entrant, vérifier les logs du service ciblé et le code de réponse. 5. Pour un flux sortant, investiguer le processus à l''origine sur l''hôte du LAN. Note technique : clone de la règle native 876 (v11.3.0), qui exclut le trafic entrant vers le WAN déjà bloqué, le trafic Microsoft Delivery Optimization, les réponses 403 du reverse proxy (sid 2101201) et les requêtes du pipeline SOC vers Ollama (port 11434), dont les prompts contiennent des noms de signatures d''attaque. Elle exclut aussi les signatures traitées par la règle « Suricata - Inbound Attack Allowed on WAN (lab) », dont les adresses sont bannies automatiquement par le flow SOAR 5002 : les deux listes de signatures doivent rester identiques.'
 where: |-
   equals("event.eventType", "alert") &&
   equals("severity", "warning") &&
   !(equals("target.ip", "192.168.1.203") && equals("event.alert.action", "blocked")) &&
-  !contains("event.http.http_user_agent", "Microsoft-Delivery-Optimization")
+  !contains("event.http.http_user_agent", "Microsoft-Delivery-Optimization") &&
+  !equals("event.alert.signature_id", 2101201) &&
+  !(equals("origin.ip", "192.168.1.203") && equals("target.port", 11434)) &&
+  !(equals("target.ip", "192.168.1.203") &&
+  equals("event.alert.action", "allowed") &&
+  (equals("event.alert.signature_id", 5024801) ||
+  equals("event.alert.signature_id", 2023753) ||
+  equals("event.alert.signature_id", 1000043) ||
+  equals("event.alert.signature_id", 1000019) ||
+  equals("event.alert.signature_id", 2016683) ||
+  equals("event.alert.signature_id", 2024916) ||
+  equals("event.alert.signature_id", 2034508) ||
+  equals("event.alert.signature_id", 2610542) ||
+  equals("event.alert.signature_id", 2610850) ||
+  regexMatch("event.alert.signature", "^ETN AGGRESSIVE IPs Group [0-9]+$") ||
+  regexMatch("event.alert.signature", "^ET SCAN ")))
 afterEvents:
   - indexPattern: v11-log-suricata-*
     with:
@@ -2674,6 +2692,164 @@ afterEvents:
     within: 15m
     count: 5
 groupBy: []
+deduplicateBy: []
+```
+
+### Suricata : High level Suricata alert, Port Scan Detection, Tunneling Detection (clones des 875, 525 et 530)
+
+En v11.2, ces trois règles natives étaient corrigées directement en base, et un service systemd réappliquait les correctifs au démarrage (voir l'annexe [Réduction du bruit](correlation-rules-tuning.html)). En v11.3.0, ce service est désactivé et les règles natives sont réécrites à chaque démarrage : les correctifs étaient perdus. Un bilan de 7 jours (novembre 2026) a guidé les clones :
+
+| Règle native | Alertes en 7 jours | Constat | Exclusion du clone |
+|---|---|---|---|
+| Tunneling Detection (530) | 138 | 100 % vers le WAN : scanners NF déjà bloqués (89), sondes SSH sur port non standard (49) | tout le trafic à destination du WAN |
+| Port Scan Detection (525) | 14 | 10 scanners NF déjà bloqués, 4 scans lents laissés passer | trafic vers le WAN déjà bloqué |
+| High level Suricata alert (875) | 744 | 484 RTLO (sid 5018812, réglé par la règle NF 1000047), LLMNR, connexions IKEv2 du VPN, scans SYN bloqués, App-detect | trafic vers le WAN déjà bloqué |
+
+Pour la 530, l'exclusion est plus large que pour les deux autres. Un tunnel concerne un hôte interne qui établit un canal sortant (SSH hors port 22, protocole autre que TLS sur le 443, DNS sur TCP volumineux). Une connexion SSH entrante sur le port 80 du WAN est une sonde, pas un tunnel : elle est déjà traitée par le flow SOAR 5002 et la règle Medium.
+
+Pour la 875, les autres sources de bruit se traitent à la source et non dans la règle : désactiver LLMNR par GPO (le constat « LLMNR in use » est un vrai défaut de durcissement), supprimer les signatures du VPN du lab dans `threshold.config`, désactiver les rulesets App-detect d'OPNsense.
+
+Les trois clones reprennent à l'identique les métadonnées, `afterEvents`, `groupBy` et `deduplicateBy` des règles natives v11.3.0. Attention : la 875 filtre en v11.3.0 sur `severity = critical`, et non plus `high` comme en v11.2.
+
+✅ **Statut v11.3.0 :** en service dans le lab depuis le 14 novembre 2026, règles natives 525, 530 et 875 désactivées.
+
+```yaml
+name: Tunneling Detection (lab)
+dataTypes:
+  - suricata
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Command and Control
+technique: "T1572 - Protocol Tunneling"
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1572/
+  - https://docs.suricata.io/en/latest/output/eve/eve-json-format.html
+description: 'Détecte les techniques de tunnel (SSH hors port 22, protocole autre que TLS sur le port 443, signature contenant « tunnel », DNS sur TCP avec un volume anormal) utilisées pour contourner les contrôles réseau ou établir un canal de commande et contrôle. Next Steps: 1. Identifier l''hôte interne à l''origine du flux et le processus concerné. 2. Vérifier si le tunnel est autorisé (administration, VPN). 3. Analyser la destination et le volume échangé (exfiltration). 4. Si l''activité est malveillante, isoler l''hôte et bloquer la destination. Note technique : clone de la règle native 530 (v11.3.0), qui exclut tout le trafic à destination de l''interface WAN d''OPNsense (192.168.1.203, à remplacer). Sur 7 jours, 100 % des alertes de la native visaient le WAN : scanners connus déjà bloqués par les règles NF, et sondes SSH sur port non standard, traitées par le flow SOAR 5002 et la règle « Medium level Suricata alert (lab) ». Un tunnel concerne un hôte interne qui sort, pas une sonde entrante.'
+where: |-
+  (
+    (equals("event.eventType", "alert") &&
+     (contains("event.alert.signature", "SSH") &&
+      !equals("target.port", 22))) ||
+    (equals("event.appProto", "ssh") &&
+     !equals("target.port", 22)) ||
+    (equals("event.eventType", "flow") &&
+     equals("protocol", "TCP") &&
+     equals("target.port", 443) &&
+     exists("event.appProto") &&
+     !oneOf("event.appProto", ["tls", "failed"])) ||
+    (equals("event.eventType", "alert") &&
+     contains("event.alert.signature", "tunnel")) ||
+    (equals("target.port", 53) &&
+     equals("protocol", "TCP") &&
+     greaterThan("event.flow.bytes_toserver", 5000))
+  ) &&
+  !equals("target.ip", "192.168.1.203")
+afterEvents:
+  - indexPattern: v11-log-suricata-*
+    with:
+      - field: origin.ip
+        operator: filter_term
+        value: "{{.origin.ip}}"
+      - field: target.port
+        operator: filter_term
+        value: "{{.target.port}}"
+    or: null
+    within: 30m
+    count: 5
+groupBy:
+  - adversary.ip
+  - target.port
+deduplicateBy: []
+```
+
+```yaml
+name: Port Scan Detection (lab)
+dataTypes:
+  - suricata
+impact:
+  confidentiality: 2
+  integrity: 1
+  availability: 1
+category: Discovery
+technique: "T1046 - Network Service Scanning"
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1046/
+  - https://docs.suricata.io/en/latest/output/eve/eve-json-format.html
+description: 'Détecte les scans de ports (signatures de scan, SYN courts, combinaisons de drapeaux TCP inhabituelles, anomalies de scan). Next Steps: 1. Vérifier la légitimité de l''adresse source (scanner interne autorisé ou menace externe). 2. Analyser les ports et services visés. 3. Rechercher une connexion réussie après le scan. 4. Bloquer l''adresse si elle est malveillante. Note technique : clone de la règle native 525 (v11.3.0), qui exclut les flux déjà bloqués à destination de l''interface WAN d''OPNsense (192.168.1.203, à remplacer). Ces scans de moteurs de recherche connus (règles NF) sont déjà arrêtés et suivis par le rapport des scanners NF ; les scans laissés passer restent détectés.'
+where: |-
+  (
+    (equals("event.eventType", "alert") &&
+     contains("event.alert.signature", ["scan", "SCAN", "portscan"])) ||
+    (equals("protocol", "TCP") &&
+     equals("event.tcp.flags", "S") &&
+     equals("event.flow.state", "new") &&
+     lessThan("event.flow.duration", 1)) ||
+    (equals("protocol", "TCP") &&
+     oneOf("event.tcp.flags", ["", "F", "FPU"])) ||
+    (equals("event.eventType", "anomaly") &&
+     contains("event.anomaly.event", "scan"))
+  ) &&
+  !(equals("target.ip", "192.168.1.203") && equals("event.alert.action", "blocked"))
+afterEvents:
+  - indexPattern: v11-log-suricata-*
+    with:
+      - field: origin.ip
+        operator: filter_term
+        value: "{{.origin.ip}}"
+    or: null
+    within: 10m
+    count: 50
+  - indexPattern: v11-log-suricata-*
+    with:
+      - field: origin.ip
+        operator: filter_term
+        value: "{{.origin.ip}}"
+      - field: target.ip
+        operator: filter_term
+        value: "{{.target.ip}}"
+    or: null
+    within: 10m
+    count: 20
+groupBy: []
+deduplicateBy:
+  - adversary.ip
+  - target.ip
+```
+
+```yaml
+name: High level Suricata alert (lab)
+dataTypes:
+  - suricata
+impact:
+  confidentiality: 3
+  integrity: 3
+  availability: 3
+category: Initial Access
+technique: "T1190 - Exploit Public-Facing Application"
+adversary: origin
+references:
+  - https://docs.suricata.io/en/latest/rules/meta.html
+description: 'Alerte Suricata de sévérité haute : tentative d''exploitation, communication de malware ou comportement réseau suspect. Next Steps: 1. Identifier la signature via event.alert.signature et sa catégorie. 2. Vérifier la direction du flux et si le flux a été bloqué (event.alert.action). 3. Pour un hôte interne, investiguer le processus à l''origine. 4. Pour un flux entrant laissé passer, vérifier les journaux du service ciblé. Note technique : clone de la règle native 875 (v11.3.0), qui exclut les flux déjà bloqués à destination de l''interface WAN d''OPNsense (192.168.1.203, à remplacer). Les autres sources de bruit relevées en novembre 2026 se traitent à la source et non dans la règle : RTLO 5018812 par la règle NF 1000047, connexions IKEv2 du VPN du lab par suppression dans threshold.config, rulesets App-detect (YouTube, Reddit) à désactiver, LLMNR à désactiver par GPO.'
+where: |-
+  equals("event.eventType", "alert") &&
+  equals("severity", "critical") &&
+  !(equals("target.ip", "192.168.1.203") && equals("event.alert.action", "blocked"))
+afterEvents:
+  - indexPattern: v11-log-suricata-*
+    with:
+      - field: origin.ip
+        operator: filter_term
+        value: "{{.origin.ip}}"
+    or: null
+    within: 15m
+    count: 3
+groupBy:
+  - adversary.ip
+  - target.ip
 deduplicateBy: []
 ```
 

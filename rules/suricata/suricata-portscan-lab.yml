@@ -1,0 +1,52 @@
+name: Port Scan Detection (lab)
+dataTypes:
+  - suricata
+impact:
+  confidentiality: 2
+  integrity: 1
+  availability: 1
+category: Discovery
+technique: "T1046 - Network Service Scanning"
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1046/
+  - https://docs.suricata.io/en/latest/output/eve/eve-json-format.html
+description: 'Détecte les scans de ports (signatures de scan, SYN courts, combinaisons de drapeaux TCP inhabituelles, anomalies de scan). Next Steps: 1. Vérifier la légitimité de l''adresse source (scanner interne autorisé ou menace externe). 2. Analyser les ports et services visés. 3. Rechercher une connexion réussie après le scan. 4. Bloquer l''adresse si elle est malveillante. Note technique : clone de la règle native 525 (v11.3.0), qui exclut les flux déjà bloqués à destination de l''interface WAN d''OPNsense (192.168.1.203, à remplacer). Ces scans de moteurs de recherche connus (règles NF) sont déjà arrêtés et suivis par le rapport des scanners NF ; les scans laissés passer restent détectés.'
+where: |-
+  (
+    (equals("event.eventType", "alert") &&
+     contains("event.alert.signature", ["scan", "SCAN", "portscan"])) ||
+    (equals("protocol", "TCP") &&
+     equals("event.tcp.flags", "S") &&
+     equals("event.flow.state", "new") &&
+     lessThan("event.flow.duration", 1)) ||
+    (equals("protocol", "TCP") &&
+     oneOf("event.tcp.flags", ["", "F", "FPU"])) ||
+    (equals("event.eventType", "anomaly") &&
+     contains("event.anomaly.event", "scan"))
+  ) &&
+  !(equals("target.ip", "192.168.1.203") && equals("event.alert.action", "blocked"))
+afterEvents:
+  - indexPattern: v11-log-suricata-*
+    with:
+      - field: origin.ip
+        operator: filter_term
+        value: "{{.origin.ip}}"
+    or: null
+    within: 10m
+    count: 50
+  - indexPattern: v11-log-suricata-*
+    with:
+      - field: origin.ip
+        operator: filter_term
+        value: "{{.origin.ip}}"
+      - field: target.ip
+        operator: filter_term
+        value: "{{.target.ip}}"
+    or: null
+    within: 10m
+    count: 20
+groupBy: []
+deduplicateBy:
+  - adversary.ip
+  - target.ip

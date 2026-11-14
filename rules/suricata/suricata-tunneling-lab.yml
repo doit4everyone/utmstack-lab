@@ -1,0 +1,49 @@
+name: Tunneling Detection (lab)
+dataTypes:
+  - suricata
+impact:
+  confidentiality: 3
+  integrity: 2
+  availability: 1
+category: Command and Control
+technique: "T1572 - Protocol Tunneling"
+adversary: origin
+references:
+  - https://attack.mitre.org/techniques/T1572/
+  - https://docs.suricata.io/en/latest/output/eve/eve-json-format.html
+description: 'Détecte les techniques de tunnel (SSH hors port 22, protocole autre que TLS sur le port 443, signature contenant « tunnel », DNS sur TCP avec un volume anormal) utilisées pour contourner les contrôles réseau ou établir un canal de commande et contrôle. Next Steps: 1. Identifier l''hôte interne à l''origine du flux et le processus concerné. 2. Vérifier si le tunnel est autorisé (administration, VPN). 3. Analyser la destination et le volume échangé (exfiltration). 4. Si l''activité est malveillante, isoler l''hôte et bloquer la destination. Note technique : clone de la règle native 530 (v11.3.0), qui exclut tout le trafic à destination de l''interface WAN d''OPNsense (192.168.1.203, à remplacer). Sur 7 jours, 100 % des alertes de la native visaient le WAN : scanners connus déjà bloqués par les règles NF, et sondes SSH sur port non standard, traitées par le flow SOAR 5002 et la règle « Medium level Suricata alert (lab) ». Un tunnel concerne un hôte interne qui sort, pas une sonde entrante.'
+where: |-
+  (
+    (equals("event.eventType", "alert") &&
+     (contains("event.alert.signature", "SSH") &&
+      !equals("target.port", 22))) ||
+    (equals("event.appProto", "ssh") &&
+     !equals("target.port", 22)) ||
+    (equals("event.eventType", "flow") &&
+     equals("protocol", "TCP") &&
+     equals("target.port", 443) &&
+     exists("event.appProto") &&
+     !oneOf("event.appProto", ["tls", "failed"])) ||
+    (equals("event.eventType", "alert") &&
+     contains("event.alert.signature", "tunnel")) ||
+    (equals("target.port", 53) &&
+     equals("protocol", "TCP") &&
+     greaterThan("event.flow.bytes_toserver", 5000))
+  ) &&
+  !equals("target.ip", "192.168.1.203")
+afterEvents:
+  - indexPattern: v11-log-suricata-*
+    with:
+      - field: origin.ip
+        operator: filter_term
+        value: "{{.origin.ip}}"
+      - field: target.port
+        operator: filter_term
+        value: "{{.target.port}}"
+    or: null
+    within: 30m
+    count: 5
+groupBy:
+  - adversary.ip
+  - target.port
+deduplicateBy: []
