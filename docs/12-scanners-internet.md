@@ -147,7 +147,7 @@ Le script écarte les adresses privées, puis indique pour chaque organisation l
 
 Sur les 4 390 événements de scanners non couverts, 900 ont quand même été bloqués par d'autres règles.
 
-L'écart entre la théorie et la pratique est net. **Sur le papier, les règles couvrent 30 % des adresses de scanners connues. Dans les faits, elles couvrent 81 % du trafic que ces scanners envoient réellement** (18 912 événements sur 23 302). Les scanners qui ne sont pas couverts sont, pour la plupart, ceux qui ne viennent jamais : Tenable, Intruder et Mandiant, les plus gros absents sur le papier, n'ont envoyé aucun paquet en 30 jours.
+L'écart entre la théorie et la pratique est net. **Sur le papier, les règles couvrent 30 % des adresses de scanners connues. Dans les faits, elles couvrent 81 % du trafic que ces scanners envoient réellement** (18 912 événements sur 23 302). Les scanners qui ne sont pas couverts sont, pour la plupart, ceux qui ne viennent jamais : Tenable, Intruder et Mandiant, les plus gros absents sur le papier, n'apparaissent dans aucun événement en 30 jours.
 
 Les scanners qui passent réellement, par volume :
 
