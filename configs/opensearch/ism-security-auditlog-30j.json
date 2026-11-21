@@ -1,0 +1,19 @@
+{
+  "policy": {
+    "description": "Journaux d'audit OpenSearch : aucune réplique (nœud unique), suppression après 30 jours",
+    "default_state": "actif",
+    "states": [
+      {
+        "name": "actif",
+        "actions": [ { "replica_count": { "number_of_replicas": 0 } } ],
+        "transitions": [ { "state_name": "suppression", "conditions": { "min_index_age": "30d" } } ]
+      },
+      {
+        "name": "suppression",
+        "actions": [ { "delete": {} } ],
+        "transitions": []
+      }
+    ],
+    "ism_template": [ { "index_patterns": ["security-auditlog-*"], "priority": 100 } ]
+  }
+}
