@@ -138,13 +138,16 @@ Le script écarte les adresses privées, puis indique pour chaque organisation l
 
 **Résultat sur 30 jours** (export du 17 novembre 2026) : 3 472 adresses publiques, 74 195 événements, dont 15 892 bloqués.
 
-| Constat | Adresses | Événements | Part des événements |
+| Origine du trafic | Adresses | Événements | Part du trafic total |
 |---|---|---|---|
-| Scanners connus non couverts par les règles | environ 550 | environ 4 400 | **6 %** |
-| dont bloqués quand même par d'autres règles | | 900 | |
+| Scanners connus (présents dans la liste OpenFilters) | 1 582 | 23 302 | 31 % |
+| dont couverts par les règles | 1 031 | 18 912 | 25 % |
+| dont **non couverts** par les règles | **551** | **4 390** | **6 %** |
 | Adresses hors de toute liste de scanners | 1 890 | 50 893 | 69 % |
 
-L'écart entre la théorie et la pratique est net : **les règles NF laissent passer 70 % des adresses connues, mais seulement 6 % du trafic de scanners réellement reçu.** Tenable, Intruder et Mandiant, les plus gros absents sur le papier, ne sont jamais venus.
+Sur les 4 390 événements de scanners non couverts, 900 ont quand même été bloqués par d'autres règles.
+
+L'écart entre la théorie et la pratique est net. **Sur le papier, les règles couvrent 30 % des adresses de scanners connues. Dans les faits, elles couvrent 81 % du trafic que ces scanners envoient réellement** (18 912 événements sur 23 302). Les scanners qui ne sont pas couverts sont, pour la plupart, ceux qui ne viennent jamais : Tenable, Intruder et Mandiant, les plus gros absents sur le papier, n'ont envoyé aucun paquet en 30 jours.
 
 Les scanners qui passent réellement, par volume :
 

@@ -137,7 +137,7 @@ Création et validation de règles de corrélation personnalisées pour UTMStack
 
 [→ Mesurer et combler les trous des règles NF](https://doit4everyone.github.io/utmstack-lab/docs/12-scanners-internet.html)
 
-Les règles NF bloquent les scanners Internet connus, mais que laissent-elles passer ? Mesure de leur couverture face à 75 organisations de scanners (30 % des adresses connues), puis face au trafic réellement reçu sur 30 jours (seulement 6 % des événements de scanners non couverts). Règles Suricata locales pour les trous qui comptent : Modat et BinaryEdge régénérées chaque semaine depuis leurs listes officielles, Censys et Group-IB en règles fixes vérifiées. Contrôle du double comptage et tableau de bord UTMStack « Scanners Internet » créé en SQL. [Scripts de mesure sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/scanners).
+Les règles NF bloquent les scanners Internet connus, mais que laissent-elles passer ? Mesure de leur couverture face à 75 organisations de scanners (30 % des adresses connues), puis face au trafic réellement reçu sur 30 jours (81 % du trafic des scanners connus déjà couvert). Règles Suricata locales pour les trous qui comptent : Modat et BinaryEdge régénérées chaque semaine depuis leurs listes officielles, Censys et Group-IB en règles fixes vérifiées. Contrôle du double comptage et tableau de bord UTMStack « Scanners Internet » créé en SQL. [Scripts de mesure sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/scanners).
 
 ---
 
