@@ -321,7 +321,8 @@ Ces deux règles sont fixes : la page Censys est à revérifier de temps en temp
 | Organisation | Décision | Raison |
 |---|---|---|
 | Tenable, Intruder, Mandiant | rien | jamais vus en 30 jours ; ils ne scannent en principe que les cibles de leurs clients |
-| VirusTotal, Strechoid, Infrawatch | rien | adresses Azure ou Google Cloud partagées et réattribuées, très peu d'événements par adresse : le risque de bloquer un jour un service légitime dépasse le gain |
+| VirusTotal, Strechoid | rien | adresses Google Cloud (VirusTotal) et Azure (Strechoid) partagées et réattribuées, très peu d'événements par adresse : le risque de bloquer un jour un service légitime dépasse le gain |
+| Infrawatch | rien pour l'instant | plages dédiées, mais 162 événements répartis sur 69 adresses en 30 jours : gain trop faible |
 | BitSight, FOFA | rien pour l'instant | intérêt modéré, à reconsidérer si leur volume augmente |
 | securityresearch.net | rien | une seule adresse, à surveiller |
 
