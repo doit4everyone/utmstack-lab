@@ -81,7 +81,7 @@ grep -hE '^(drop|alert)' /usr/local/etc/suricata/opnsense.rules/NF-*.rules \
 wc -l /tmp/nf-all.txt
 ```
 
-Dans le lab, la liste contient 1 219 entrées. Le filtre `^(drop|alert)` écarte les règles désactivées (lignes commentées), qui ne protègent plus rien, ainsi que les numéros de version présents dans les commentaires et qui ressemblent à des adresses. La liste inclut en revanche des adresses qui ne sont pas des scanners (serveurs DNS publics, adresses de destination de certaines règles), ce qui ne fausse pas la mesure : seules les adresses présentes dans les listes de scanners sont comptées.
+Dans le lab, la liste contient 1 219 entrées. Le filtre `^(drop|alert)` écarte les règles désactivées (lignes commençant par `#alert`), qui ne protègent plus rien, ainsi que les commentaires, où figurent des numéros de version qui ressemblent à des adresses (`2.9.16.1`, `2.8.18.0`). La liste inclut en revanche des adresses qui ne sont pas des scanners (serveurs DNS publics, adresses de destination de certaines règles), ce qui ne fausse pas la mesure : seules les adresses présentes dans les listes de scanners sont comptées.
 
 ### Calculer la couverture par organisation
 
