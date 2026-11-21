@@ -172,6 +172,8 @@ chmod +x /usr/local/bin/update-suricata-rules.sh
 
 ## Partie 2 : NF Rules (networkforensic.dk)
 
+> ℹ️ Les listes NF prennent du retard sur les scanners qui ajoutent des sondes : en novembre 2026, une adresse Modat sur trois leur échappait. Le [chapitre 12](12-scanners-internet.html) mesure leur couverture réelle et complète les trous par des règles locales dans `custom.rules` (SID 1000048 à 1000050 et 1000060 à 1000079), régénérées chaque semaine quand une liste officielle existe.
+
 ### Source
 
 [https://networkforensic.dk/SNORT/default.html](https://networkforensic.dk/SNORT/default.html) : règles écrites en format Snort, mises à jour régulièrement.

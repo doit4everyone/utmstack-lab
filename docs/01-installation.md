@@ -28,6 +28,8 @@ description: "Guide complet installation UTMStack v11.2.8 Community Edition sous
 
 > ⚠️ **Mise à jour critique (29 juin 2026) :** un incident terrain a révélé que la RAM recommandée à l'étape 6.7 (10 GB) bloque silencieusement le service d'auto-mise à jour d'UTMStack, créant une boucle d'échec invisible pendant des semaines. Voir la nouvelle section [10. RAM minimum réelle](#10-ram-minimum-réelle--la-leçon-du-29-juin-2026) avant d'appliquer l'étape 6.7.
 
+> ⚠️ **Mise à jour (21 novembre 2026) :** sur un nœud unique, OpenSearch finit par atteindre sa limite de 1000 shards et refuse alors de créer les index du jour, sans alerte visible. Voir la section [11. Limite de 1000 shards](#11-limite-de-1000-shards-sur-un-nœud-unique).
+
 ## 📋 Table des matières
 
 1. [Paramètres de la machine virtuelle](#1-paramètres-de-la-machine-virtuelle)
@@ -45,6 +47,7 @@ description: "Guide complet installation UTMStack v11.2.8 Community Edition sous
 8. [Snapshots recommandés](#8-snapshots-recommandés)
 9. [Credentials](#9-credentials)
 10. [RAM minimum réelle : la leçon du 29 juin 2026](#10-ram-minimum-réelle--la-leçon-du-29-juin-2026)
+11. [Limite de 1000 shards sur un nœud unique](#11-limite-de-1000-shards-sur-un-nœud-unique)
 
 ---
 
@@ -396,6 +399,85 @@ journalctl -u UTMStackComponentsUpdater --no-pager | tail -20
 ```
 
 Si tu vois un `restart counter` élevé (plusieurs centaines ou milliers) accompagné de `error balancing memory`, c'est le signe que ce piège est déjà actif sur ton installation : applique l'une des deux stratégies ci-dessus avant qu'une opération de maintenance ne déclenche le même type d'incident.
+
+
+---
+
+## 11. Limite de 1000 shards sur un nœud unique
+
+### Symptôme
+
+Le 21 novembre 2026, après la mise à jour en v11.3.2, plus aucune alerte des règles NF n'apparaissait dans UTMStack depuis deux jours. Côté OPNsense, tout fonctionnait : Suricata tournait et `eve.json` contenait plus de 8 000 alertes NF. Côté OpenSearch, le dernier événement Suricata datait du 19 novembre à 23:59:55 UTC.
+
+Une coupure franche à **minuit UTC** est le signe à reconnaître : c'est l'heure à laquelle UTMStack crée les index du jour (`v11-log-suricata-AAAA-MM-JJ`, `v11-alert-AAAA-MM-JJ`, etc.). La mise à jour n'était pas en cause.
+
+### Cause
+
+Le journal du conteneur OpenSearch (`utmstack_node1`) donne la cause exacte :
+
+```
+this action would add [2] total shards, but this cluster currently has [1000]/[1000] maximum shards open
+```
+
+OpenSearch limite par défaut le nombre de shards ouverts à 1000 par nœud (`cluster.max_shards_per_node`). L'installation UTMStack fonctionne sur **un seul nœud**, mais crée chaque index avec **une réplique**. Une réplique ne peut jamais être placée sur le même nœud que son original : elle reste non allouée (statut `yellow`), mais elle compte quand même dans la limite. Chaque index occupe donc deux places au lieu d'une.
+
+Dans le lab, la limite a été remplie par les journaux d'audit du module de sécurité d'OpenSearch (`security-auditlog-*`) : un index par jour depuis l'installation, 159 index, **jamais supprimés**, car la rétention d'UTMStack ne s'applique qu'aux index `v11-*`.
+
+Une fois la limite atteinte, la création des index du jour échoue, et le processeur d'événements d'UTMStack abandonne les écritures (`Bulk request completed with errors`) sans conserver les événements. **Les événements de la période sont perdus pour UTMStack**, les alertes aussi, et le SOAR ne voit plus rien. Aucune alarme ne le signale, puisque l'index des alertes ne peut pas être créé non plus.
+
+### Diagnostic
+
+```bash
+CID=$(docker ps -qf name=utmstack_node1 | head -1)
+g() { docker exec -i $CID curl -sk -K - "https://localhost:9200/$1" < /root/.os.curl; echo; }
+g '_cat/indices/v11-*?h=index,docs.count,creation.date.string&s=creation.date:desc' | head -12
+g '_cluster/health?filter_path=status,active_shards,unassigned_shards'
+g '_cluster/settings?include_defaults=true&filter_path=*.cluster.max_shards_per_node'
+```
+
+Si `active_shards` + `unassigned_shards` atteint 1000, la limite est atteinte. Pour voir quelles familles d'index portent les répliques non allouées :
+
+```bash
+g '_cat/shards?h=index,prirep,state' | awk '$3=="UNASSIGNED"{print $1}' \
+  | sed -E 's/[0-9]{4}[.-][0-9]{2}[.-][0-9]{2}.*$/<date>/' | sort | uniq -c | sort -rn
+```
+
+> ℹ️ Les commandes `_cat` doivent être envoyées en GET. Avec une option `-d`, curl envoie un POST et OpenSearch répond `Incorrect HTTP method`.
+
+### Correction
+
+**1. Supprimer les répliques des index UTMStack.** Elles n'ont jamais existé physiquement, aucune donnée n'est perdue :
+
+```bash
+docker exec -i $CID curl -sk -K - -X PUT -H 'Content-Type: application/json' \
+  "https://localhost:9200/v11-*/_settings" -d '{"index":{"number_of_replicas":0}}' < /root/.os.curl
+```
+
+Dans le lab, les index Suricata ont été recréés et les événements sont revenus dans la minute.
+
+**2. Mettre une rétention sur les journaux d'audit**, avec une politique ISM (Index State Management) qui retire la réplique, supprime l'index après 30 jours et s'applique d'elle-même aux nouveaux index (`ism_template`). Le fichier est dans le dépôt : [`configs/opensearch/ism-security-auditlog-30j.json`](https://github.com/doit4everyone/utmstack-lab/blob/main/configs/opensearch/ism-security-auditlog-30j.json).
+
+```bash
+docker exec -i $CID sh -c 'cat > /tmp/ism.json' < ism-security-auditlog-30j.json
+docker exec -i $CID curl -sk -K - -X PUT -H 'Content-Type: application/json' \
+  "https://localhost:9200/_plugins/_ism/policies/security-auditlog-30j" -d @/tmp/ism.json < /root/.os.curl
+docker exec -i $CID curl -sk -K - -X POST -H 'Content-Type: application/json' \
+  "https://localhost:9200/_plugins/_ism/add/security-auditlog-*" -d '{"policy_id":"security-auditlog-30j"}' < /root/.os.curl
+```
+
+La deuxième commande doit répondre `"failures":false`. ISM traite les index par cycles de quelques minutes : dans le lab, les 159 journaux d'audit sont passés à 29 en moins d'une heure.
+
+**3. Rendre la correction durable.** Le modèle d'index d'UTMStack recrée une réplique sur chaque nouvel index. Le script cron [`scripts/utmstack-syslog-pipeline.sh`](https://github.com/doit4everyone/utmstack-lab/blob/main/scripts/utmstack-syslog-pipeline.sh), qui tourne déjà toutes les 5 minutes pour CrowdSec (chapitre 04), remet les répliques à 0 sur `v11-*`, `top_queries-*` et `.opendistro-ism-managed-index-history-*`, avec un appel par famille d'index.
+
+> ⚠️ Les index système protégés (`.opendistro-ism-config`, `.opendistro-job-scheduler-lock`) refusent toute modification, même pour l'utilisateur `admin` (`security_exception`, code 403). Une requête qui les inclut est refusée **en bloc**, sans rien modifier sur les autres index : c'est pour cette raison que le script traite chaque famille séparément. Leurs 3 répliques non allouées restent, et le statut du cluster reste `yellow`, sans conséquence.
+
+Résultat dans le lab : **379 shards actifs sur 1000**, une marge qui ne se remplit plus, puisque les index `v11-*` sont purgés par UTMStack et les journaux d'audit par ISM.
+
+### Ce qu'il faut retenir
+
+- Sur un nœud unique, les répliques ne servent à rien et consomment la moitié de la limite de shards.
+- Tout ce qui crée un index par jour sans rétention finit par bloquer le cluster, même s'il ne s'agit que de quelques Mo par jour.
+- **Une surveillance qui passe par UTMStack ne voit pas cette panne**, puisque UTMStack ne peut plus rien écrire. Il faut une vérification hors bande : absence d'événements Suricata depuis 30 minutes, part de la limite de shards utilisée.
 
 ---
 

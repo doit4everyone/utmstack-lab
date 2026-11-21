@@ -34,6 +34,7 @@
 | [10 : Intégrations agents et sources de logs](docs/10-integrations-agents.md) | Agents Windows/Linux, M365, Azure Event Hub, SOC AI natif |
 | [10b : Sysmon, déploiement et configuration](docs/10-sysmon.md) | Sysmon v15.21, méthode registre ANSSI, WEF self-subscription → UTMStack |
 | [11 : Règles de corrélation YAML](docs/11-correlations-yaml.md) | Migration v11.3.0, 48 règles personnalisées (séries W, WD, S, L, M, A et clones de règles natives), 34 techniques MITRE ATT&CK |
+| [12 : Scanners Internet](docs/12-scanners-internet.md) | Couverture des règles NF mesurée, règles locales Modat, BinaryEdge, Censys et Group-IB, tableau de bord « Scanners Internet » |
 
 | Annexe | Description |
 |--------|-------------|

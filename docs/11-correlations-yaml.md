@@ -2961,3 +2961,7 @@ Ce chapitre illustre une approche de détection en trois axes :
 ---
 
 *Toutes les règles YAML sont disponibles dans le dépôt [`rules/`](https://github.com/doit4everyone/utmstack-lab/tree/main/rules).*
+
+---
+
+[← Sysmon](10-sysmon.md) | [→ Scanners Internet](12-scanners-internet.md)

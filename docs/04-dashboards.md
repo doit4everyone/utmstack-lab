@@ -347,6 +347,8 @@ Les règles NF (chapitre 02) reconnaissent les scanners connus par leurs adresse
 
 > ℹ️ Le filtre `CONTAIN` sur `raw` fonctionne dans les visualisations. Dans une requête OpenSearch directe, en revanche, `match_phrase` et `wildcard` sur `raw` renvoient 0 : voir le [chapitre 11](11-correlations-yaml.html#diagnostiquer-dans-opensearch).
 
+Les règles NF ne couvrent pas tous les scanners. Le [chapitre 12](12-scanners-internet.html) mesure ce qu'elles laissent passer, ajoute des règles locales (Modat, BinaryEdge, Censys, Group-IB) et décrit le tableau de bord « Scanners Internet », qui réunit ces visualisations NF et celles des règles locales.
+
 ---
 
 ## Tableau de bord CrowdSec

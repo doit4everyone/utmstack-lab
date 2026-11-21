@@ -60,7 +60,8 @@ Toutes les procédures sont testées et validées en conditions réelles sous VM
 | [09 : Pipeline SOC augmenté par IA locale](https://doit4everyone.github.io/utmstack-lab/docs/09-pipeline-llm.html) | Ollama + n8n, tri déterministe, threat intelligence, heartbeat de supervision, comparatif LLM |
 | [10 : Intégrations agents et sources de logs](https://doit4everyone.github.io/utmstack-lab/docs/10-integrations-agents.html) | Agents Windows/Linux, M365, Azure Event Hub, SOC AI natif, règles custom Defender & O365 |
 | [10b : Sysmon, Déploiement et configuration](https://doit4everyone.github.io/utmstack-lab/docs/10-sysmon.html) | Sysmon v15.21, deux configs XML (postes/DC), méthode registre ANSSI, WEF self-subscription → UTMStack |
-| [11 : Règles de corrélation YAML 🆕](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html) | Migration UTMStack v11.3.0, 48 règles personnalisées (séries W, WD, S, L, M, A et clones de règles natives), 34 techniques MITRE ATT&CK |
+| [11 : Règles de corrélation YAML](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html) | Migration UTMStack v11.3.0, 48 règles personnalisées (séries W, WD, S, L, M, A et clones de règles natives), 34 techniques MITRE ATT&CK |
+| [12 : Scanners Internet 🆕](https://doit4everyone.github.io/utmstack-lab/docs/12-scanners-internet.html) | Couverture des règles NF mesurée (théorie et trafic réel sur 30 jours), règles locales Modat, BinaryEdge, Censys et Group-IB régénérées chaque semaine, tableau de bord « Scanners Internet » |
 
 ---
 
@@ -126,11 +127,17 @@ Déploiement complet des sources de logs UTMStack : procédure d'installation de
 
 Déploiement de Sysmon v15.21 (schéma 4.91) en environnement hybride AD + Intune. Deux configurations XML distinctes, pour les postes membres et pour les contrôleurs de domaine, déployées via la méthode registre ANSSI (aucun XML exposé sur les machines cibles). Collecte dans UTMStack via Windows Event Forwarding self-subscription locale : chaque machine forwarde ses propres events Sysmon vers `ForwardedEvents`, collecté nativement par l'agent UTMStack. Validé sur Windows Server 2022/2025 et DC ; limitation documentée sur Windows 11 (ticket ouvert chez UTMStack). [Configurations XML sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/configs/sysmon).
 
-### 🎯 Règles de corrélation YAML 🆕
+### 🎯 Règles de corrélation YAML
 
 [→ 48 règles YAML personnalisées : séries W, WD, S, L, M, A](https://doit4everyone.github.io/utmstack-lab/docs/11-correlations-yaml.html)
 
 Création et validation de règles de corrélation personnalisées pour UTMStack v11.3.0, couvrant 34 techniques MITRE ATT&CK. Toutes les règles ont été migrées vers le nouveau schéma `event.*` de la v11.3.0 et revalidées par un test réel, à l'exception de la série Azure (intégration désactivée) et des règles impossibles à provoquer dans le lab, signalées dans le chapitre. Six séries organisées par source de logs : **W** (Windows natif : verrouillage, Pass-the-Hash, Kerberoasting, tâches planifiées, services suspects, clés Run), **WD** (Windows Defender : détection de malware, Tamper Protection, exclusions), **S** (Sysmon via WEF : LOLBAS, accès LSASS, named pipes C2, NTDS), **L** (Linux auditd : force brute SSH, sudo), **M** (Microsoft 365/Entra ID : force brute, pays inhabituel, vol de session, consentement OAuth, audit, étiquetage Purview, accès conditionnel) et **A** (Azure Activity Log : attribution de rôle, diagnostic settings, Key Vault, verrous de ressources, destruction bloquée). Le chapitre documente aussi la méthode pour corriger une règle native sans perdre la correction au redémarrage, les bonnes pratiques d'écriture des règles apprises pendant la migration et les prérequis de collecte. [Bibliothèque de règles YAML sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/rules).
+
+### 🌐 Scanners Internet 🆕
+
+[→ Mesurer et combler les trous des règles NF](https://doit4everyone.github.io/utmstack-lab/docs/12-scanners-internet.html)
+
+Les règles NF bloquent les scanners Internet connus, mais que laissent-elles passer ? Mesure de leur couverture face à 75 organisations de scanners (30 % des adresses connues), puis face au trafic réellement reçu sur 30 jours (seulement 6 % des événements de scanners non couverts). Règles Suricata locales pour les trous qui comptent : Modat et BinaryEdge régénérées chaque semaine depuis leurs listes officielles, Censys et Group-IB en règles fixes vérifiées. Contrôle du double comptage et tableau de bord UTMStack « Scanners Internet » créé en SQL. [Scripts de mesure sur GitHub](https://github.com/doit4everyone/utmstack-lab/tree/main/scripts/scanners).
 
 ---
 
