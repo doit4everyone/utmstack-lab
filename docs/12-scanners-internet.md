@@ -81,7 +81,7 @@ grep -hE '^(drop|alert)' /usr/local/etc/suricata/opnsense.rules/NF-*.rules \
 wc -l /tmp/nf-all.txt
 ```
 
-Dans le lab, la liste contient 1 233 entrées. Elle inclut aussi des adresses qui ne sont pas des scanners (serveurs DNS publics, adresses de destination de certaines règles), ce qui ne fausse pas la mesure : seules les adresses présentes dans les listes de scanners sont comptées.
+Dans le lab, la liste contient 1 219 entrées. Le filtre `^(drop|alert)` écarte les règles désactivées (lignes commentées), qui ne protègent plus rien, ainsi que les numéros de version présents dans les commentaires et qui ressemblent à des adresses. La liste inclut en revanche des adresses qui ne sont pas des scanners (serveurs DNS publics, adresses de destination de certaines règles), ce qui ne fausse pas la mesure : seules les adresses présentes dans les listes de scanners sont comptées.
 
 ### Calculer la couverture par organisation
 
@@ -94,7 +94,7 @@ python3 scanners-couverture.py couverture nf-all.txt internet-scanners/cidr moda
 
 Le dernier argument, facultatif, ajoute des listes déjà couvertes par des règles locales (ici la liste officielle Modat, couverte par la règle 1000048).
 
-**Résultat : les règles NF couvrent 30 % des adresses connues** (23 719 sur 77 975). Les plus gros trous :
+**Résultat : les règles NF couvrent 30 % des adresses connues** (23 661 sur 77 975). Les plus gros trous :
 
 | Organisation | Adresses | Couvertes | Manquantes |
 |---|---|---|---|
